@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
@@ -20,11 +21,15 @@ def snapshot_exists(snapshot_id: str) -> bool:
 def find_card_by_name(snapshot_id: str, name: str) -> Optional[Dict[str, Any]]:
     with connect() as con:
         row = con.execute(
-            "SELECT oracle_id, name, mana_cost, cmc, type_line, oracle_text, colors, color_identity "
+            "SELECT oracle_id, name, mana_cost, cmc, type_line, oracle_text, colors, color_identity, legalities_json, primitives_json "
             "FROM cards WHERE snapshot_id = ? AND LOWER(name) = LOWER(?) LIMIT 1",
             (snapshot_id, name)
         ).fetchone()
-        return dict(row) if row else None
+        card = dict(row) if row else None
+        if card is not None:
+            card["legalities"] = json.loads(card.get("legalities_json") or "{}")
+            card["primitives"] = json.loads(card.get("primitives_json") or "[]")
+        return card
 
 def list_snapshots(limit: int = 20):
     with connect() as con:
@@ -63,6 +68,21 @@ def suggest_card_names(snapshot_id: str, query: str, limit: int = 5) -> list[str
 
         return names
 
+def is_legal_in_format(card: dict, fmt: str) -> tuple[bool, str]:
+    legalities = card.get("legalities") or {}
+    status = legalities.get(fmt)
+
+    if status == "legal":
+        return True, "legal"
+
+    if status in ("banned", "not_legal"):
+        return False, f"{card.get('name', 'Card')} is {status} in {fmt}"
+
+    if status == "restricted":
+        return False, f"{card.get('name', 'Card')} is restricted in {fmt}"
+
+    return False, f"{card.get('name', 'Card')} legality unknown in {fmt}"
+
 def is_legal_commander_card(card: Dict[str, Any]) -> tuple[bool, str]:
     """
     Deterministic Commander legality:
@@ -83,6 +103,10 @@ def is_legal_commander_card(card: Dict[str, Any]) -> tuple[bool, str]:
 
     if "can be your commander" in oracle_text:
         return True, "OK_TEXT_ALLOWS_COMMANDER"
+
+    ok, reason = is_legal_in_format(card, "commander")
+    if not ok:
+        return False, reason
 
     return False, "NOT_A_COMMANDER"
 

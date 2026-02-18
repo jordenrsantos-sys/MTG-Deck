@@ -10,6 +10,168 @@ import requests
 from tqdm import tqdm
 
 
+def extract_primitives(card_dict: dict) -> list[str]:
+    type_line_l = (card_dict.get("type_line") or "").lower()
+    text_l = (card_dict.get("oracle_text") or "").lower()
+    keywords = card_dict.get("keywords") or []
+
+    if isinstance(keywords, str):
+        keywords_l = [keywords.lower()]
+    else:
+        try:
+            keywords_l = [str(k).lower() for k in keywords]
+        except TypeError:
+            keywords_l = []
+
+    tags = set()
+
+    # Mana / economy
+    if "add {" in text_l:
+        tags.add("RAMP_MANA")
+
+    produced_mana = card_dict.get("produced_mana") or []
+    if produced_mana:
+        tags.add("RAMP_MANA")
+        tags.add("MANA_FIXING")
+
+    if "search your library for" in text_l and "land" in text_l:
+        if "onto the battlefield" in text_l:
+            tags.add("RAMP_LAND")
+        elif "into your hand" in text_l:
+            tags.add("TUTOR")
+
+    if "creature" in type_line_l and "add {" in text_l:
+        tags.add("MANA_DORK")
+
+    if "artifact" in type_line_l and "{t}:" in text_l and "add" in text_l:
+        tags.add("MANA_ROCK")
+
+    if "treasure token" in text_l or ("create" in text_l and "treasure" in text_l):
+        tags.add("TREASURE_PRODUCTION")
+
+    if "cost" in text_l and ("less to cast" in text_l or "costs {1} less" in text_l):
+        tags.add("COST_REDUCTION")
+
+    # Cards / selection
+    if "draw a card" in text_l or "draw two cards" in text_l or "draw x cards" in text_l:
+        tags.add("CARD_DRAW")
+
+    if "look at the top" in text_l or "scry" in text_l or "surveil" in text_l or ("discard" in text_l and "draw" in text_l):
+        tags.add("CARD_SELECTION")
+
+    if "search your library for" in text_l and ("put it into your hand" in text_l or "reveal it" in text_l):
+        tags.add("TUTOR")
+
+    # Interaction
+    if "counter target" in text_l:
+        tags.add("COUNTERSPELL")
+
+    if "destroy target" in text_l or "exile target" in text_l:
+        tags.add("REMOVAL_SINGLE")
+
+    if (
+        "destroy target artifact" in text_l
+        or "destroy target enchantment" in text_l
+        or "exile target artifact" in text_l
+        or "exile target enchantment" in text_l
+    ):
+        tags.add("REMOVAL_ARTIFACT_ENCHANTMENT")
+
+    if ("destroy all" in text_l or "exile all" in text_l) and (
+        "creatures" in text_l or "artifacts" in text_l or "enchantments" in text_l
+    ):
+        tags.add("BOARD_WIPE")
+
+    if "copy target" in text_l or "change the target" in text_l or "new targets" in text_l:
+        tags.add("STACK_INTERACTION")
+
+    # Protection / resilience
+    if "hexproof" in text_l or "indestructible" in text_l or "protection from" in text_l or "phase out" in text_l:
+        tags.add("PROTECTION")
+
+    if "return target" in text_l and "from your graveyard" in text_l:
+        tags.add("RECURSION")
+
+    if "exile all cards from target player's graveyard" in text_l or "exile target graveyard" in text_l:
+        tags.add("GRAVEYARD_HATE")
+
+    # Board development
+    if "create" in text_l and "token" in text_l:
+        tags.add("TOKEN_PRODUCTION")
+
+    if "sacrifice a" in text_l or "sacrifice another" in text_l:
+        tags.add("SAC_OUTLET")
+
+    if (
+        "whenever" in text_l
+        and "dies" in text_l
+        and ("each opponent loses" in text_l or "lose 1 life" in text_l)
+    ) or ("blood artist" in text_l):
+        tags.add("ARISTOCRAT_PAYOFF")
+
+    if "when" in text_l and "enters the battlefield" in text_l:
+        tags.add("ETB_VALUE")
+
+    if "double" in text_l and ("tokens" in text_l or "counters" in text_l or "triggered ability" in text_l):
+        tags.add("TRIGGER_DOUBLER")
+
+    # Counters / stats
+    if "+1/+1 counter" in text_l:
+        tags.add("COUNTER_SYNERGY")
+
+    if "proliferate" in text_l:
+        tags.add("PROLIFERATE")
+        tags.add("COUNTER_SYNERGY")
+
+    if "creatures you control get +" in text_l:
+        tags.add("PUMP_TEAM")
+
+    # Stax / denial
+    if "players can't" in text_l or "can't cast" in text_l or "can't draw" in text_l or "can't search" in text_l:
+        tags.add("STAX_RULES")
+
+    if "spells cost" in text_l and "more to cast" in text_l:
+        tags.add("TAX_EFFECT")
+
+    if "doesn't untap" in text_l or ("tap" in text_l and "doesn't untap" in text_l):
+        tags.add("TAP_DOWN")
+
+    if "destroy target land" in text_l or "sacrifice a land" in text_l or "each opponent discards" in text_l:
+        tags.add("RESOURCE_DENIAL")
+
+    # Life / damage
+    if "you gain" in text_l and "life" in text_l:
+        tags.add("LIFEGAIN")
+
+    if "each opponent loses" in text_l and "life" in text_l:
+        tags.add("DRAIN")
+
+    if "deals" in text_l and "damage" in text_l:
+        tags.add("DIRECT_DAMAGE")
+
+    # Combat
+    if any(
+        k in keywords_l
+        for k in [
+            "flying",
+            "menace",
+            "trample",
+            "first strike",
+            "double strike",
+            "deathtouch",
+            "vigilance",
+            "haste",
+        ]
+    ):
+        tags.add("EVASION")
+
+    if "until end of turn" in text_l and ("gets +" in text_l or "gains" in text_l):
+        tags.add("COMBAT_TRICK")
+
+    # CARD_ADVANTAGE is in vocabulary but not explicitly covered by v0 ruleset.
+    return sorted(tags)
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -77,6 +239,9 @@ def ingest_cards(con: sqlite3.Connection, snapshot_id: str, json_path: Path):
         lang = card.get("lang")
         name = card.get("name")
 
+        legalities_json = json.dumps(card.get("legalities") or {})
+        primitives_json = json.dumps(extract_primitives(card))
+
         raw_rows.append((
             snapshot_id,
             scry_id,
@@ -98,7 +263,8 @@ def ingest_cards(con: sqlite3.Connection, snapshot_id: str, json_path: Path):
             json.dumps(card.get("color_identity", [])),
             json.dumps(card.get("produced_mana", [])),
             json.dumps(card.get("keywords", [])),
-            json.dumps(card.get("legalities", {})),
+            legalities_json,
+            primitives_json,
         ))
 
     cur.execute("BEGIN;")
@@ -111,8 +277,8 @@ def ingest_cards(con: sqlite3.Connection, snapshot_id: str, json_path: Path):
     cur.executemany("""
         INSERT OR REPLACE INTO cards
         (snapshot_id, oracle_id, name, mana_cost, cmc, type_line, oracle_text,
-         colors, color_identity, produced_mana, keywords, legalities_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         colors, color_identity, produced_mana, keywords, legalities_json, primitives_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, norm_rows)
 
     con.commit()

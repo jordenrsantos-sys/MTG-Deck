@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS cards (
   produced_mana TEXT,
   keywords TEXT,
   legalities_json TEXT,
+  primitives_json TEXT,
   PRIMARY KEY (snapshot_id, oracle_id)
 );
 
