@@ -1,0 +1,185 @@
+{
+  "ruleset_version": "primitives_v0_20260217",
+  "rules": [
+    {
+      "rule_id": "PRIMV0_R0001",
+      "primitive_id": "RAMP",
+      "rule_type": "oracle_regex",
+      "pattern": "\\badd\\s+\\{[WUBRGCX0-9\\/]+\\}",
+      "weight": 1.0,
+      "priority": 120,
+      "notes": "Conservative direct mana production phrase.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0002",
+      "primitive_id": "RAMP",
+      "rule_type": "oracle_regex",
+      "pattern": "\\badd\\s+(one|two|three|four)\\s+mana\\b",
+      "weight": 1.0,
+      "priority": 121,
+      "notes": "Conservative spelled-out mana production phrase.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0003",
+      "primitive_id": "MANA_ROCK",
+      "rule_type": "type_line_regex",
+      "pattern": "\\bartifact\\b",
+      "weight": 0.8,
+      "priority": 40,
+      "notes": "Artifact type precondition for mana rocks.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0004",
+      "primitive_id": "MANA_ROCK",
+      "rule_type": "oracle_regex",
+      "pattern": "\\badd\\s+\\{[WUBRGCX0-9\\/]+\\}",
+      "weight": 1.0,
+      "priority": 90,
+      "notes": "Artifact that explicitly taps/acts for mana.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0005",
+      "primitive_id": "LAND_SEARCH",
+      "rule_type": "oracle_regex",
+      "pattern": "\\bsearch your library for (a|an|up to [^.,;]+) land card",
+      "weight": 1.0,
+      "priority": 100,
+      "notes": "Search effects explicitly fetching lands.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0006",
+      "primitive_id": "DRAW",
+      "rule_type": "oracle_regex",
+      "pattern": "\\bdraw (a|one|two|three|four|five|six|seven|eight|nine|ten) cards?\\b",
+      "weight": 1.0,
+      "priority": 100,
+      "notes": "Explicit card draw language.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0007",
+      "primitive_id": "TUTOR",
+      "rule_type": "oracle_regex",
+      "pattern": "\\bsearch your library for\\b",
+      "weight": 1.0,
+      "priority": 100,
+      "notes": "Conservative broad tutor hook.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0008",
+      "primitive_id": "RECURSION",
+      "rule_type": "oracle_regex",
+      "pattern": "\\breturn target [^.,;]* from your graveyard to (your hand|the battlefield|the top of your library)\\b",
+      "weight": 1.0,
+      "priority": 100,
+      "notes": "Targeted graveyard recursion phrase.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0009",
+      "primitive_id": "RECURSION",
+      "rule_type": "oracle_regex",
+      "pattern": "\\breturn [^.,;]* from your graveyard to your hand\\b",
+      "weight": 0.85,
+      "priority": 110,
+      "notes": "General graveyard to hand recursion phrase.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0010",
+      "primitive_id": "REMOVAL",
+      "rule_type": "oracle_regex",
+      "pattern": "\\bdestroy target\\b",
+      "weight": 1.0,
+      "priority": 100,
+      "notes": "Single-target destroy removal.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0011",
+      "primitive_id": "REMOVAL",
+      "rule_type": "oracle_regex",
+      "pattern": "\\bexile target\\b",
+      "weight": 1.0,
+      "priority": 101,
+      "notes": "Single-target exile removal.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0012",
+      "primitive_id": "BOARDWIPE",
+      "rule_type": "oracle_regex",
+      "pattern": "\\bdestroy all\\b",
+      "weight": 1.0,
+      "priority": 100,
+      "notes": "Global destroy sweeper.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0013",
+      "primitive_id": "BOARDWIPE",
+      "rule_type": "oracle_regex",
+      "pattern": "\\bexile all\\b",
+      "weight": 1.0,
+      "priority": 101,
+      "notes": "Global exile sweeper.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0014",
+      "primitive_id": "COUNTERSPELL",
+      "rule_type": "oracle_regex",
+      "pattern": "\\bcounter target spell\\b",
+      "weight": 1.0,
+      "priority": 100,
+      "notes": "Direct stack interaction phrase.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0015",
+      "primitive_id": "HEXPROOF_PROTECTION",
+      "rule_type": "oracle_regex",
+      "pattern": "\\b(hexproof|ward)\\b",
+      "weight": 1.0,
+      "priority": 100,
+      "notes": "Hexproof/ward shielding text.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0016",
+      "primitive_id": "INDESTRUCTIBLE_PROTECTION",
+      "rule_type": "oracle_regex",
+      "pattern": "\\bindestructible\\b",
+      "weight": 1.0,
+      "priority": 100,
+      "notes": "Indestructible protection text.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0017",
+      "primitive_id": "SAC_OUTLET",
+      "rule_type": "oracle_regex",
+      "pattern": "\\bsacrifice (a|an|another) (creature|artifact|permanent)\\b",
+      "weight": 1.0,
+      "priority": 100,
+      "notes": "Explicit sacrifice outlet wording.",
+      "enabled": 1
+    },
+    {
+      "rule_id": "PRIMV0_R0018",
+      "primitive_id": "TOKEN_PRODUCTION",
+      "rule_type": "oracle_regex",
+      "pattern": "\\bcreate [^.]{0,80} token\\b",
+      "weight": 1.0,
+      "priority": 100,
+      "notes": "Conservative token creation phrase.",
+      "enabled": 1
+    }
+  ]
+}

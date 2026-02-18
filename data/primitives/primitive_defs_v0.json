@@ -1,0 +1,96 @@
+{
+  "ruleset_version": "primitives_v0_20260217",
+  "primitives": [
+    {
+      "primitive_id": "RAMP",
+      "name": "Ramp",
+      "description": "Card advances mana development beyond normal land drop pacing.",
+      "category": "RESOURCE",
+      "is_engine_primitive": 1
+    },
+    {
+      "primitive_id": "MANA_ROCK",
+      "name": "Mana Rock",
+      "description": "Artifact-based repeatable mana acceleration source.",
+      "category": "RESOURCE",
+      "is_engine_primitive": 1
+    },
+    {
+      "primitive_id": "LAND_SEARCH",
+      "name": "Land Search",
+      "description": "Card searches library for one or more lands.",
+      "category": "RESOURCE",
+      "is_engine_primitive": 0
+    },
+    {
+      "primitive_id": "DRAW",
+      "name": "Draw",
+      "description": "Card causes controller to draw one or more cards.",
+      "category": "CARD_FLOW",
+      "is_engine_primitive": 1
+    },
+    {
+      "primitive_id": "TUTOR",
+      "name": "Tutor",
+      "description": "Card searches library for a specified card class and moves it.",
+      "category": "CARD_FLOW",
+      "is_engine_primitive": 0
+    },
+    {
+      "primitive_id": "RECURSION",
+      "name": "Recursion",
+      "description": "Card returns cards from graveyard to hand, battlefield, or library.",
+      "category": "CARD_FLOW",
+      "is_engine_primitive": 1
+    },
+    {
+      "primitive_id": "REMOVAL",
+      "name": "Removal",
+      "description": "Card destroys or exiles a target permanent or creature.",
+      "category": "INTERACTION",
+      "is_engine_primitive": 0
+    },
+    {
+      "primitive_id": "BOARDWIPE",
+      "name": "Board Wipe",
+      "description": "Card destroys or exiles broad sets of permanents.",
+      "category": "INTERACTION",
+      "is_engine_primitive": 0
+    },
+    {
+      "primitive_id": "COUNTERSPELL",
+      "name": "Counterspell",
+      "description": "Card counters target spell on the stack.",
+      "category": "INTERACTION",
+      "is_engine_primitive": 0
+    },
+    {
+      "primitive_id": "HEXPROOF_PROTECTION",
+      "name": "Hexproof Protection",
+      "description": "Card grants hexproof or ward-like shielding.",
+      "category": "PROTECTION",
+      "is_engine_primitive": 0
+    },
+    {
+      "primitive_id": "INDESTRUCTIBLE_PROTECTION",
+      "name": "Indestructible Protection",
+      "description": "Card grants indestructible protection effects.",
+      "category": "PROTECTION",
+      "is_engine_primitive": 0
+    },
+    {
+      "primitive_id": "SAC_OUTLET",
+      "name": "Sac Outlet",
+      "description": "Card repeatedly enables sacrificing permanents as cost/effect.",
+      "category": "ENGINE",
+      "is_engine_primitive": 1
+    },
+    {
+      "primitive_id": "TOKEN_PRODUCTION",
+      "name": "Token Production",
+      "description": "Card creates one or more tokens.",
+      "category": "ENGINE",
+      "is_engine_primitive": 1
+    }
+  ]
+}
