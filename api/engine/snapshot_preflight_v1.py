@@ -8,6 +8,7 @@ from typing import Any, Dict, Tuple
 from engine.db import DB_PATH as DEFAULT_DB_PATH
 from engine.db import connect as cards_db_connect
 from engine.db_tags import ensure_tag_tables
+from api.engine.constants import MIN_PRIMITIVE_COVERAGE, MIN_PRIMITIVE_TO_CARDS
 
 
 class SnapshotPreflightError(RuntimeError):
@@ -96,12 +97,18 @@ def _missing_runtime_versions_report(
             "card_tags_rows_snapshot_taxonomy_ruleset": 0,
             "card_tags_facets_nonempty_rows": 0,
             "primitive_to_cards_rows_snapshot_taxonomy": 0,
+            "cards_with_any_primitive_rows_snapshot_taxonomy_ruleset": 0,
             "commander_rows_snapshot_taxonomy_ruleset": 0,
             "commander_facets_nonempty_rows": 0,
         },
         "rates": {
             "facets_nonempty_rate_overall": 0.0,
             "facets_nonempty_rate_commander": None,
+            "cards_with_any_primitive_rate": 0.0,
+        },
+        "thresholds": {
+            "min_primitive_to_cards": MIN_PRIMITIVE_TO_CARDS,
+            "min_primitive_coverage": MIN_PRIMITIVE_COVERAGE,
         },
         "version_consistency": {
             "taxonomy_mismatch_rows_same_snapshot_ruleset": 0,
@@ -239,6 +246,24 @@ def run_snapshot_preflight(
                 )[0]
             )
 
+        cards_with_any_primitive_rows = int(
+            (
+                con.execute(
+                    """
+                    SELECT COUNT(1)
+                    FROM card_tags
+                    WHERE snapshot_id = ?
+                      AND taxonomy_version = ?
+                      AND ruleset_version = ?
+                      AND primitive_ids_json IS NOT NULL
+                      AND LENGTH(TRIM(primitive_ids_json)) > 2
+                    """,
+                    (snapshot_id_clean, taxonomy_version_clean, requested_ruleset_version),
+                ).fetchone()
+                or [0]
+            )[0]
+        )
+
         distinct_taxonomy_versions = int(
             (
                 con.execute(
@@ -306,11 +331,17 @@ def run_snapshot_preflight(
             if commander_rows > 0
             else None
         )
+        cards_with_any_primitive_rate = (
+            float(cards_with_any_primitive_rows) / float(card_tags_rows_selected)
+            if card_tags_rows_selected > 0
+            else 0.0
+        )
 
         counts = {
             "card_tags_rows_snapshot_taxonomy_ruleset": card_tags_rows_selected,
             "card_tags_facets_nonempty_rows": facets_nonempty_rows,
             "primitive_to_cards_rows_snapshot_taxonomy": primitive_to_cards_rows,
+            "cards_with_any_primitive_rows_snapshot_taxonomy_ruleset": cards_with_any_primitive_rows,
             "commander_rows_snapshot_taxonomy_ruleset": commander_rows,
             "commander_facets_nonempty_rows": commander_facets_nonempty_rows,
         }
@@ -321,6 +352,11 @@ def run_snapshot_preflight(
                 if isinstance(facets_nonempty_rate_commander, float)
                 else None
             ),
+            "cards_with_any_primitive_rate": round(cards_with_any_primitive_rate, 6),
+        }
+        thresholds = {
+            "min_primitive_to_cards": MIN_PRIMITIVE_TO_CARDS,
+            "min_primitive_coverage": MIN_PRIMITIVE_COVERAGE,
         }
 
         version_consistency = {
@@ -351,6 +387,16 @@ def run_snapshot_preflight(
             failures.append("primitive_to_cards table is missing")
         elif primitive_to_cards_rows <= 0:
             failures.append("primitive_to_cards rows missing for snapshot/taxonomy_version")
+        elif primitive_to_cards_rows < MIN_PRIMITIVE_TO_CARDS:
+            failures.append(
+                "primitive_to_cards rows below stale-compilation threshold "
+                f"({primitive_to_cards_rows} < {MIN_PRIMITIVE_TO_CARDS})"
+            )
+        if card_tags_rows_selected > 0 and cards_with_any_primitive_rate < MIN_PRIMITIVE_COVERAGE:
+            failures.append(
+                "cards_with_any_primitive_rate below stale-compilation threshold "
+                f"({cards_with_any_primitive_rate:.6f} < {MIN_PRIMITIVE_COVERAGE:.6f})"
+            )
         if taxonomy_mismatch_rows > 0:
             failures.append("snapshot contains mixed taxonomy_version rows")
         if ruleset_mismatch_rows > 0:
@@ -365,6 +411,7 @@ def run_snapshot_preflight(
             "commander_oracle_id": commander_oracle_id_clean,
             "counts": counts,
             "rates": rates,
+            "thresholds": thresholds,
             "version_consistency": version_consistency,
             "remediation_commands": remediation_commands,
         }

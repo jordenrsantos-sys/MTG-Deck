@@ -26,8 +26,10 @@ from api.engine.layers.pathways_v1 import run_pathways_v1
 from api.engine.layers.primitive_index_v1 import run_primitive_index_v1
 from api.engine.layers.proof_attempt_v1 import run_proof_attempt_v1
 from api.engine.layers.proof_scaffold_v1 import run_proof_scaffold_v1
+from api.engine.graph_expand_v1 import build_bipartite_graph_v1, expand_candidate_edges_v1
 from api.engine.snapshot_preflight_v1 import SnapshotPreflightError, run_snapshot_preflight
 from api.engine.layers.structural_v1 import run_structural_v1
+from api.engine.structural_snapshot_v1 import build_structural_snapshot_v1
 from api.engine.unknowns import add_unknown, sort_unknowns
 from api.engine.utils import stable_json_dumps, sha256_hex, strip_hash_fields
 from api.engine.validate_invariants_v1 import validate_invariants_v1
@@ -1253,6 +1255,26 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
         slot_ids_by_primitive = primitive_index_state["slot_ids_by_primitive"]
         primitive_index_totals = primitive_index_state["primitive_index_totals"]
 
+        required_primitives_v1 = sorted(
+            [primitive for primitive in effective_generic_minimums.keys() if isinstance(primitive, str)]
+        )
+        basic_name_set = {
+            name.strip().lower()
+            for name in SINGLETON_EXEMPT_NAMES
+            if isinstance(name, str) and name.strip() != ""
+        }
+        basic_land_slot_ids: List[str] = []
+        for entry in deck_cards_canonical_input_order:
+            if entry.get("status") != "PLAYABLE":
+                continue
+            slot_id = entry.get("slot_id")
+            resolved_name = entry.get("resolved_name")
+            if not isinstance(slot_id, str) or not isinstance(resolved_name, str):
+                continue
+            if resolved_name.strip().lower() in basic_name_set:
+                basic_land_slot_ids.append(slot_id)
+        basic_land_slot_ids = sorted(set(basic_land_slot_ids))
+
         structural_state = {
             "deck_cards_canonical_input_order": deck_cards_canonical_input_order,
             "commander_canonical_slot": commander_canonical_slot,
@@ -1263,11 +1285,49 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
 
         primitive_counts_by_scope = structural_state["primitive_counts_by_scope"]
         primitive_counts_by_scope_totals = structural_state["primitive_counts_by_scope_totals"]
-        structural_coverage = structural_state["structural_coverage"]
-        commander_dependency_signal = structural_state["commander_dependency_signal"]
-        dead_slot_ids = structural_state["dead_slot_ids"]
-        primitive_concentration_index = structural_state["primitive_concentration_index"]
-        structural_snapshot_v1 = structural_state["structural_snapshot_v1"]
+        structural_snapshot_v1 = build_structural_snapshot_v1(
+            snapshot_id=str(req.db_snapshot_id),
+            taxonomy_version=str(runtime_taxonomy_version),
+            ruleset_version=str(runtime_tag_ruleset_version),
+            profile_id=str(req.profile_id),
+            bracket_id=req.bracket_id if isinstance(req.bracket_id, str) else None,
+            commander_slot_id=str(commander_canonical_slot.get("slot_id") or "C0"),
+            deck_slot_ids=list(deck_cards_slot_ids_playable),
+            primitive_index_by_slot=primitive_index_by_slot,
+            required_primitives=required_primitives_v1,
+            basic_land_slot_ids=basic_land_slot_ids,
+        )
+
+        graph_expand_bounds_v1 = {
+            "MAX_PRIMS_PER_SLOT": int(GRAPH_EXPAND_V1_MAX_PRIMS_PER_SLOT),
+            "MAX_SLOTS_PER_PRIM": int(GRAPH_EXPAND_V1_MAX_SLOTS_PER_PRIM),
+            "MAX_CARD_CARD_EDGES_TOTAL": int(GRAPH_EXPAND_V1_MAX_CARD_CARD_EDGES_TOTAL),
+        }
+        graph_expand_bipartite_v1 = build_bipartite_graph_v1(
+            deck_slot_ids=list(deck_cards_slot_ids_playable),
+            primitive_index_by_slot=primitive_index_by_slot,
+        )
+        graph_expand_candidates_v1 = expand_candidate_edges_v1(
+            graph=graph_expand_bipartite_v1,
+            bounds=graph_expand_bounds_v1,
+        )
+        graph_expand_candidate_edges_v1 = (
+            graph_expand_candidates_v1.get("candidate_edges")
+            if isinstance(graph_expand_candidates_v1.get("candidate_edges"), list)
+            else []
+        )
+        graph_expand_candidate_stats_v1 = (
+            graph_expand_candidates_v1.get("stats")
+            if isinstance(graph_expand_candidates_v1.get("stats"), dict)
+            else {}
+        )
+
+        graph_v1 = {
+            "bipartite": graph_expand_bipartite_v1,
+            "candidate_edges": graph_expand_candidate_edges_v1,
+            "bounds": graph_expand_bounds_v1,
+            "stats": graph_expand_candidate_stats_v1,
+        }
 
         graph_state = {
             "req": req,
@@ -1982,7 +2042,6 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "patch_hash_v1": patch_hash_v1 if patch_hash_v1 is not None else "null",
             "primitive_index_totals": primitive_index_totals,
             "structural_snapshot_v1": structural_snapshot_v1,
-            "primitive_concentration_index": primitive_concentration_index,
         }
         fingerprint_json_v1 = stable_json_dumps(fingerprint_payload_v1)
         build_hash_v1 = sha256_hex(fingerprint_json_v1)
@@ -2183,11 +2242,8 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "graph_totals": graph_totals,
                 "primitive_counts_by_scope": primitive_counts_by_scope,
                 "primitive_counts_by_scope_totals": primitive_counts_by_scope_totals,
-                "structural_coverage": structural_coverage,
-                "commander_dependency_signal": commander_dependency_signal,
-                "dead_slot_ids": dead_slot_ids,
-                "primitive_concentration_index": primitive_concentration_index,
                 "structural_snapshot_v1": structural_snapshot_v1,
+                "graph_v1": graph_v1,
                 "unknowns_canonical": unknowns_canonical,
                 "unknowns_canonical_total": len(unknowns_canonical),
                 "primitive_counts": primitive_counts,
@@ -2203,7 +2259,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                     "has_rules_topic_selection_trace": bool((trace_v1 or {}).get("rules_topic_selection")),
                     "has_proof_scaffolds": bool(len(combo_proof_scaffolds_v0)),
                     "has_primitive_index": bool(primitive_index_by_slot),
-                    "has_structural_reporting": bool(structural_coverage or structural_snapshot_v1),
+                    "has_structural_reporting": bool(structural_snapshot_v1),
                     "has_graph": bool(graph_edges or graph_components or graph_typed_edges_total is not None),
                     "has_motifs": bool(motifs),
                     "has_disruption": bool(DISRUPTION_LAYER_VERSION or disruption_totals),

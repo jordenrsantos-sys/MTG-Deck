@@ -227,14 +227,55 @@ def _build_estimated_score_state_v2(
     primitive_frequency: Dict[str, int],
     commander_overlap_ratio: float,
 ) -> Dict[str, Any]:
+    required_primitives_v1 = sorted([key for key in GENERIC_MINIMUMS.keys() if isinstance(key, str)])
+    present_primitives_v1 = sorted(
+        [
+            primitive
+            for primitive, count in primitive_frequency.items()
+            if isinstance(primitive, str) and int(count) > 0
+        ]
+    )
+    missing_primitives_v1 = sorted(
+        [primitive for primitive in required_primitives_v1 if primitive not in set(present_primitives_v1)]
+    )
+
+    primitive_counts_by_id = {
+        primitive: int(primitive_frequency[primitive])
+        for primitive in sorted(
+            [key for key, value in primitive_frequency.items() if isinstance(key, str) and int(value) > 0]
+        )
+    }
+    top_primitives = [
+        {"primitive_id": primitive, "count": count}
+        for primitive, count in sorted(
+            primitive_counts_by_id.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    ]
+
+    structural_snapshot_v1 = {
+        "snapshot_id": "estimated",
+        "taxonomy_version": "estimated",
+        "ruleset_version": "estimated",
+        "profile_id": "estimated",
+        "bracket_id": None,
+        "required_primitives_v1": required_primitives_v1,
+        "present_primitives_v1": present_primitives_v1,
+        "missing_primitives_v1": missing_primitives_v1,
+        "primitive_counts_by_id": primitive_counts_by_id,
+        "primitive_concentration_index_v1": _estimate_primitive_concentration(primitive_frequency),
+        "dead_slot_ids_v1": [],
+        "commander_dependency_signal_v1": _round_metric(commander_overlap_ratio),
+        "structural_health_summary_v1": {
+            "missing_required_count": len(missing_primitives_v1),
+            "dead_slot_count": 0,
+            "top_primitives": top_primitives,
+        },
+    }
+
     return {
         "result": {
-            "structural_coverage": {"required_primitives_v0": []},
-            "primitive_concentration_index": _estimate_primitive_concentration(primitive_frequency),
-            "commander_dependency_signal": {
-                "overlap_ratio": _round_metric(commander_overlap_ratio),
-            },
-            "dead_slot_ids": [],
+            "structural_snapshot_v1": structural_snapshot_v1,
             "combo_candidates_v0_total": 0,
             "motifs": [],
         }
@@ -505,7 +546,12 @@ def _estimate_commander_overlap_ratio(
 def _extract_dead_card_names(build_output: Dict[str, Any]) -> List[str]:
     result = build_output.get("result") if isinstance(build_output, dict) else {}
     result = result if isinstance(result, dict) else {}
-    dead_slot_ids = set([sid for sid in (result.get("dead_slot_ids") or []) if isinstance(sid, str)])
+    structural_snapshot_v1 = (
+        result.get("structural_snapshot_v1") if isinstance(result.get("structural_snapshot_v1"), dict) else {}
+    )
+    dead_slot_ids_v1 = set(
+        [sid for sid in (structural_snapshot_v1.get("dead_slot_ids_v1") or []) if isinstance(sid, str)]
+    )
     canonical = result.get("deck_cards_canonical_input_order") if isinstance(result.get("deck_cards_canonical_input_order"), list) else []
 
     dead_names: List[str] = []
@@ -513,7 +559,7 @@ def _extract_dead_card_names(build_output: Dict[str, Any]) -> List[str]:
         if not isinstance(entry, dict):
             continue
         slot_id = entry.get("slot_id")
-        if not isinstance(slot_id, str) or slot_id not in dead_slot_ids:
+        if not isinstance(slot_id, str) or slot_id not in dead_slot_ids_v1:
             continue
         if entry.get("status") != "PLAYABLE":
             continue
@@ -546,15 +592,19 @@ def _evaluate_deck_state_v0_1(
         )
         result = build_output.get("result") if isinstance(build_output, dict) else {}
         result = result if isinstance(result, dict) else {}
-        dead_slot_ids = result.get("dead_slot_ids") if isinstance(result.get("dead_slot_ids"), list) else []
-        dead_slot_ids_count = len(dead_slot_ids)
-        concentration = float(result.get("primitive_concentration_index") or 0.0)
-        commander_dependency_signal = (
-            result.get("commander_dependency_signal")
-            if isinstance(result.get("commander_dependency_signal"), dict)
+        structural_snapshot_v1 = (
+            result.get("structural_snapshot_v1")
+            if isinstance(result.get("structural_snapshot_v1"), dict)
             else {}
         )
-        commander_overlap_ratio = float(commander_dependency_signal.get("overlap_ratio") or 0.0)
+        dead_slot_ids_v1 = (
+            structural_snapshot_v1.get("dead_slot_ids_v1")
+            if isinstance(structural_snapshot_v1.get("dead_slot_ids_v1"), list)
+            else []
+        )
+        dead_slots_count_v1 = len([sid for sid in dead_slot_ids_v1 if isinstance(sid, str)])
+        concentration_v1 = float(structural_snapshot_v1.get("primitive_concentration_index_v1") or 0.0)
+        commander_overlap_ratio_v1 = float(structural_snapshot_v1.get("commander_dependency_signal_v1") or 0.0)
         score_obj = score_deck_v0(build_output)
         need_data = _need_counts(deck_cards=deck_cards, catalog=card_catalog)
         score_obj_v2 = score_deck_v2(
@@ -578,10 +628,10 @@ def _evaluate_deck_state_v0_1(
             "score_v0": score_obj,
             "score_v2": score_obj_v2,
             "total_score_v2": float(score_obj_v2.get("total_score_v2") or 0.0),
-            "dead_slot_ids_count": dead_slot_ids_count,
+            "dead_slots_count_v1": dead_slots_count_v1,
             "dead_card_names": _extract_dead_card_names(build_output),
-            "primitive_concentration_index": concentration,
-            "commander_overlap_ratio": commander_overlap_ratio,
+            "primitive_concentration_index_v1": concentration_v1,
+            "commander_overlap_ratio_v1": commander_overlap_ratio_v1,
             "engine_density_score": float(score_components_v2.get("engine_density_score") or 0.0),
             "build_output": build_output,
             "build_hash_v1": build_output.get("build_hash_v1") if isinstance(build_output, dict) else None,
@@ -632,10 +682,10 @@ def _evaluate_deck_state_v0_1(
         "score_v0": score_obj,
         "score_v2": score_obj_v2,
         "total_score_v2": float(score_obj_v2.get("total_score_v2") or 0.0),
-        "dead_slot_ids_count": len(dead_card_names),
+        "dead_slots_count_v1": len(dead_card_names),
         "dead_card_names": dead_card_names,
-        "primitive_concentration_index": _estimate_primitive_concentration(primitive_frequency),
-        "commander_overlap_ratio": commander_overlap_ratio,
+        "primitive_concentration_index_v1": _estimate_primitive_concentration(primitive_frequency),
+        "commander_overlap_ratio_v1": commander_overlap_ratio,
         "engine_density_score": float(score_components_v2.get("engine_density_score") or 0.0),
         "build_output": None,
         "build_hash_v1": None,
@@ -827,13 +877,13 @@ def _is_metrics_improvement(candidate: Dict[str, Any], baseline: Dict[str, Any])
         return False
 
     candidate_secondary = (
-        int(candidate.get("dead_slot_ids_count") or 0),
-        float(candidate.get("commander_overlap_ratio") or 0.0),
+        int(candidate.get("dead_slots_count_v1") or 0),
+        float(candidate.get("commander_overlap_ratio_v1") or 0.0),
         -float(candidate.get("engine_density_score") or 0.0),
     )
     baseline_secondary = (
-        int(baseline.get("dead_slot_ids_count") or 0),
-        float(baseline.get("commander_overlap_ratio") or 0.0),
+        int(baseline.get("dead_slots_count_v1") or 0),
+        float(baseline.get("commander_overlap_ratio_v1") or 0.0),
         -float(baseline.get("engine_density_score") or 0.0),
     )
     return candidate_secondary < baseline_secondary
@@ -1665,6 +1715,11 @@ def generate_deck_completion_v0(
     final_needs = final_result.get("needs") if isinstance(final_result.get("needs"), list) else []
     status = "OK" if is_exact_target and is_status_ok else "ERROR"
 
+    build_report_payload = dict(final_build) if isinstance(final_build, dict) else {}
+    structural_snapshot_v1 = final_result.get("structural_snapshot_v1") if isinstance(final_result, dict) else None
+    if isinstance(structural_snapshot_v1, dict):
+        build_report_payload["structural_snapshot_v1"] = structural_snapshot_v1
+
     why_these_cards = _stable_unique_preserve_order(deck_cards[:25])
     structural_gaps_remaining = [
         str(item.get("primitive"))
@@ -1709,7 +1764,7 @@ def generate_deck_completion_v0(
             "commander": commander_name,
             "cards": deck_cards,
         },
-        "build_report": final_build,
+        "build_report": build_report_payload,
         "iterations": iterations,
         "explanation": {
             "plan_summary": explanation_summary,

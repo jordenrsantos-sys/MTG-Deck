@@ -85,6 +85,7 @@ def build_manifest(
     taxonomy_version: str,
     pack_folder: Path,
     file_names: Iterable[str],
+    generated_at: str | None = None,
 ) -> PackManifest:
     file_entries: List[ManifestFileHash] = []
     for file_name in sorted(set([name for name in file_names if isinstance(name, str) and name.strip() != ""])):
@@ -99,9 +100,11 @@ def build_manifest(
             )
         )
 
+    generated_at_value = generated_at.strip() if isinstance(generated_at, str) and generated_at.strip() != "" else utc_now_iso()
+
     return PackManifest(
         taxonomy_version=taxonomy_version,
-        generated_at=utc_now_iso(),
+        generated_at=generated_at_value,
         files=tuple(file_entries),
     )
 

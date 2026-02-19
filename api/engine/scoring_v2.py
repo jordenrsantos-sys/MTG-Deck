@@ -42,17 +42,17 @@ def _to_str_set(value: Any) -> set[str]:
     return out
 
 
-def _required_structural_completion(structural_coverage: Dict[str, Any]) -> float:
-    required = structural_coverage.get("required_primitives_v0")
-    required = required if isinstance(required, list) else []
-    required_total = len(required)
+def _required_structural_completion(structural_snapshot_v1: Dict[str, Any]) -> float:
+    required_primitives_v1 = structural_snapshot_v1.get("required_primitives_v1")
+    required_primitives_v1 = required_primitives_v1 if isinstance(required_primitives_v1, list) else []
+    missing_primitives_v1 = structural_snapshot_v1.get("missing_primitives_v1")
+    missing_primitives_v1 = missing_primitives_v1 if isinstance(missing_primitives_v1, list) else []
+
+    required_total = len(required_primitives_v1)
     if required_total <= 0:
         return 0.0
-    required_met = sum(
-        1
-        for row in required
-        if isinstance(row, dict) and row.get("meets_minimum") is True
-    )
+
+    required_met = max(required_total - len(missing_primitives_v1), 0)
     return _clamp(float(required_met) / float(required_total))
 
 
@@ -70,7 +70,7 @@ def _targets_completion(category_counts: Dict[str, Any], targets: Dict[str, Any]
     return _clamp(float(met) / float(len(_BUCKETS_V2)))
 
 
-def _cohesion_score(primitive_frequency: Dict[str, Any], primitive_concentration_index: float) -> float:
+def _cohesion_score(primitive_frequency: Dict[str, Any], primitive_concentration_index_v1: float) -> float:
     freq_map: Dict[str, int] = {
         key: int(value)
         for key, value in primitive_frequency.items()
@@ -88,7 +88,7 @@ def _cohesion_score(primitive_frequency: Dict[str, Any], primitive_concentration
     top3_share = float(sum(counts_desc[:3])) / float(total)
 
     base = _clamp((0.45 * dominant_share) + (0.55 * top3_share) + 0.1)
-    overconcentration_penalty = _clamp((float(primitive_concentration_index) - 0.3) / 0.4)
+    overconcentration_penalty = _clamp((float(primitive_concentration_index_v1) - 0.3) / 0.4)
 
     return _clamp(base - (0.35 * overconcentration_penalty))
 
@@ -162,13 +162,14 @@ def _winpath_presence_score(result: Dict[str, Any], engine_density_score: float)
 
 
 def _vulnerability_penalty(result: Dict[str, Any]) -> tuple[float, float, float]:
-    commander_dependency_signal = result.get("commander_dependency_signal")
-    commander_dependency_signal = commander_dependency_signal if isinstance(commander_dependency_signal, dict) else {}
-    overlap_ratio = float(commander_dependency_signal.get("overlap_ratio") or 0.0)
+    structural_snapshot_v1 = result.get("structural_snapshot_v1")
+    structural_snapshot_v1 = structural_snapshot_v1 if isinstance(structural_snapshot_v1, dict) else {}
 
-    dead_slot_ids = result.get("dead_slot_ids")
-    dead_slot_ids = dead_slot_ids if isinstance(dead_slot_ids, list) else []
-    dead_slot_ratio = _clamp(float(len(dead_slot_ids)) / 12.0)
+    overlap_ratio = float(structural_snapshot_v1.get("commander_dependency_signal_v1") or 0.0)
+
+    dead_slot_ids_v1 = structural_snapshot_v1.get("dead_slot_ids_v1")
+    dead_slot_ids_v1 = dead_slot_ids_v1 if isinstance(dead_slot_ids_v1, list) else []
+    dead_slot_ratio = _clamp(float(len(dead_slot_ids_v1)) / 12.0)
 
     penalty = _clamp((0.7 * overlap_ratio) + (0.3 * dead_slot_ratio))
     return penalty, overlap_ratio, dead_slot_ratio
@@ -185,7 +186,7 @@ def score_deck_v2(state: dict, context: dict) -> dict:
     context_obj = context if isinstance(context, dict) else {}
 
     result = _as_dict(state_obj.get("result"))
-    structural_coverage = _as_dict(result.get("structural_coverage"))
+    structural_snapshot_v1 = _as_dict(result.get("structural_snapshot_v1"))
 
     category_counts = _as_dict(context_obj.get("category_counts"))
     targets = _as_dict(context_obj.get("targets"))
@@ -201,14 +202,14 @@ def score_deck_v2(state: dict, context: dict) -> dict:
     commander_primitives_set = _to_str_set(context_obj.get("commander_primitives"))
     anchor_primitives_set = _to_str_set(context_obj.get("anchor_primitives"))
 
-    structural_required_score = _required_structural_completion(structural_coverage)
+    structural_required_score = _required_structural_completion(structural_snapshot_v1)
     targets_score = _targets_completion(category_counts=category_counts, targets=targets)
     structural_completion_score = _clamp((0.7 * structural_required_score) + (0.3 * targets_score))
 
-    primitive_concentration_index = float(result.get("primitive_concentration_index") or 0.0)
+    primitive_concentration_index_v1 = float(structural_snapshot_v1.get("primitive_concentration_index_v1") or 0.0)
     cohesion_score = _cohesion_score(
         primitive_frequency=primitive_frequency,
-        primitive_concentration_index=primitive_concentration_index,
+        primitive_concentration_index_v1=primitive_concentration_index_v1,
     )
 
     commander_alignment_score = _overlap_ratio(deck_primitive_set=deck_primitive_set, reference_set=commander_primitives_set)
@@ -246,7 +247,7 @@ def score_deck_v2(state: dict, context: dict) -> dict:
             "vulnerability_penalty": _round_metric(vulnerability_penalty),
             "commander_overlap_ratio": _round_metric(commander_overlap_ratio),
             "dead_slot_ratio": _round_metric(dead_slot_ratio),
-            "primitive_concentration_index": _round_metric(primitive_concentration_index),
+            "primitive_concentration_index_v1": _round_metric(primitive_concentration_index_v1),
             "structural_required_primitives_score": _round_metric(structural_required_score),
             "targets_completion_score": _round_metric(targets_score),
         },

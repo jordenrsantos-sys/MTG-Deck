@@ -10,7 +10,7 @@ _REQUIRED_TOP_LEVEL_KEYS = (
 _REQUIRED_RESULT_KEYS = (
     "deck_cards_canonical_input_order",
     "primitive_index_by_slot",
-    "structural_coverage",
+    "structural_snapshot_v1",
     "graph_nodes",
     "motifs",
     "disruption_totals",

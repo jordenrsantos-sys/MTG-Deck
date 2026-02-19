@@ -146,26 +146,28 @@ def _panel_decklist(deck_payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _panel_structural_health(result_payload: Dict[str, Any]) -> Dict[str, Any]:
-    structural_coverage = result_payload.get("structural_coverage")
-    commander_dependency_signal = result_payload.get("commander_dependency_signal")
-    primitive_concentration_index = result_payload.get("primitive_concentration_index")
-    dead_slot_ids = result_payload.get("dead_slot_ids")
+    structural_snapshot_v1 = result_payload.get("structural_snapshot_v1")
+    if not isinstance(structural_snapshot_v1, dict):
+        return _missing_panel("missing field result.structural_snapshot_v1")
 
-    if not isinstance(structural_coverage, dict):
-        return _missing_panel("missing field result.structural_coverage")
-    if not isinstance(commander_dependency_signal, dict):
-        return _missing_panel("missing field result.commander_dependency_signal")
-    if not _is_number(primitive_concentration_index):
-        return _missing_panel("missing field result.primitive_concentration_index")
-    if not isinstance(dead_slot_ids, list):
-        return _missing_panel("missing field result.dead_slot_ids")
+    required_primitives_v1 = structural_snapshot_v1.get("required_primitives_v1")
+    required_primitives_v1 = required_primitives_v1 if isinstance(required_primitives_v1, list) else []
+    present_primitives_v1 = structural_snapshot_v1.get("present_primitives_v1")
+    present_primitives_v1 = present_primitives_v1 if isinstance(present_primitives_v1, list) else []
+    missing_primitives_v1 = structural_snapshot_v1.get("missing_primitives_v1")
+    missing_primitives_v1 = missing_primitives_v1 if isinstance(missing_primitives_v1, list) else []
+    dead_slot_ids_v1 = structural_snapshot_v1.get("dead_slot_ids_v1")
+    dead_slot_ids_v1 = dead_slot_ids_v1 if isinstance(dead_slot_ids_v1, list) else []
 
     return {
         "available": True,
-        "structural_coverage": structural_coverage,
-        "commander_dependency_signal": commander_dependency_signal,
-        "primitive_concentration_index": primitive_concentration_index,
-        "dead_slot_ids_count": len(dead_slot_ids),
+        "structural_snapshot_v1": structural_snapshot_v1,
+        "required_primitives_count": len(required_primitives_v1),
+        "present_primitives_count": len(present_primitives_v1),
+        "missing_primitives_count": len(missing_primitives_v1),
+        "dead_slot_ids_count": len(dead_slot_ids_v1),
+        "primitive_concentration_index_v1": structural_snapshot_v1.get("primitive_concentration_index_v1"),
+        "commander_dependency_signal_v1": structural_snapshot_v1.get("commander_dependency_signal_v1"),
     }
 
 

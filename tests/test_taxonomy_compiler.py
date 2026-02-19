@@ -321,8 +321,35 @@ class SnapshotCompilerTests(unittest.TestCase):
                     taxonomy_pack_folder=str(pack_dir),
                 )
 
-        self.assertEqual(summary["card_tags_written"], 0)
+        self.assertEqual(summary["card_tags_written"], 1)
         self.assertEqual(summary["unknowns_written"], 1)
+
+        tag_row = self.con.execute(
+            "SELECT primitive_ids_json, facets_json, evidence_json FROM card_tags WHERE snapshot_id = ?",
+            (snapshot_id,),
+        ).fetchone()
+        self.assertIsNotNone(tag_row)
+        self.assertEqual(json.loads(tag_row["primitive_ids_json"]), [])
+        self.assertEqual(
+            json.loads(tag_row["facets_json"]),
+            {
+                "commander_eligible": ["false"],
+                "is_creature": ["false"],
+                "is_legendary": ["false"],
+                "is_legendary_creature": ["false"],
+            },
+        )
+        self.assertEqual(
+            json.loads(tag_row["evidence_json"]),
+            [
+                {
+                    "field": "oracle_text",
+                    "rule_id": "R_UNKNOWN",
+                    "snippet": "Draw a card",
+                    "span": [0, 11],
+                }
+            ],
+        )
 
         unknown_row = self.con.execute(
             "SELECT reason, rule_id FROM unknowns_queue WHERE snapshot_id = ?",

@@ -155,16 +155,25 @@ def _validate_package(
     try:
         output = run_build_pipeline(req=req, conn=None, repo_root_path=None)
         result = output.get("result") or {}
-        dead_slot_ids = result.get("dead_slot_ids") or []
+        structural_snapshot_v1 = (
+            result.get("structural_snapshot_v1")
+            if isinstance(result.get("structural_snapshot_v1"), dict)
+            else {}
+        )
+        dead_slot_ids_v1 = (
+            structural_snapshot_v1.get("dead_slot_ids_v1")
+            if isinstance(structural_snapshot_v1.get("dead_slot_ids_v1"), list)
+            else []
+        )
         status_value = output.get("status")
         validation_status = "ERROR" if status_value == "ERROR" else "OK"
         return {
             "status": validation_status,
             "build_hash_v1": output.get("build_hash_v1"),
             "key_signals": {
-                "commander_dependency_signal": result.get("commander_dependency_signal"),
-                "primitive_concentration_index": result.get("primitive_concentration_index"),
-                "dead_slot_ids_count": len(dead_slot_ids),
+                "commander_dependency_signal_v1": structural_snapshot_v1.get("commander_dependency_signal_v1"),
+                "primitive_concentration_index_v1": structural_snapshot_v1.get("primitive_concentration_index_v1"),
+                "dead_slots_count_v1": len(dead_slot_ids_v1),
             },
         }
     except Exception:
@@ -172,9 +181,9 @@ def _validate_package(
             "status": "ERROR",
             "build_hash_v1": None,
             "key_signals": {
-                "commander_dependency_signal": None,
-                "primitive_concentration_index": None,
-                "dead_slot_ids_count": 0,
+                "commander_dependency_signal_v1": None,
+                "primitive_concentration_index_v1": None,
+                "dead_slots_count_v1": 0,
             },
         }
 

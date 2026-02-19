@@ -292,17 +292,21 @@ def _extract_signal_bundle(run_obj: Dict[str, Any]) -> Dict[str, Any]:
     build_payload = _extract_build_payload(response)
     result = build_payload.get("result") if isinstance(build_payload.get("result"), dict) else {}
 
-    commander_dependency_signal = (
-        result.get("commander_dependency_signal")
-        if isinstance(result.get("commander_dependency_signal"), dict)
+    structural_snapshot_v1 = (
+        result.get("structural_snapshot_v1")
+        if isinstance(result.get("structural_snapshot_v1"), dict)
         else {}
     )
-    dead_slot_ids = result.get("dead_slot_ids") if isinstance(result.get("dead_slot_ids"), list) else []
+    dead_slot_ids_v1 = (
+        structural_snapshot_v1.get("dead_slot_ids_v1")
+        if isinstance(structural_snapshot_v1.get("dead_slot_ids_v1"), list)
+        else []
+    )
 
     return {
-        "commander_dependency_signal": commander_dependency_signal,
-        "primitive_concentration_index": result.get("primitive_concentration_index"),
-        "dead_slot_ids_count": len(dead_slot_ids),
+        "commander_dependency_signal_v1": structural_snapshot_v1.get("commander_dependency_signal_v1"),
+        "primitive_concentration_index_v1": structural_snapshot_v1.get("primitive_concentration_index_v1"),
+        "dead_slots_count_v1": len(dead_slot_ids_v1),
         "graph_nodes_total": result.get("graph_nodes_total"),
         "graph_edges_total": result.get("graph_edges_total"),
         "combo_candidates_v0_total": result.get("combo_candidates_v0_total"),

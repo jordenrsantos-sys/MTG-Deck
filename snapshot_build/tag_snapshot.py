@@ -400,7 +400,6 @@ def _build_card_rows(
 
         if card_unknowns:
             unknown_rows.extend(card_unknowns)
-            continue
 
         tag_rows.append(
             {

@@ -109,6 +109,16 @@ COMBO_SKELETON_BFS_NODE_CAP = 60
 MAX_TRIANGLES = 20
 MAX_4CYCLES = 20
 
+# --- Snapshot preflight stale-compilation thresholds ---
+# NOTE: Keep as constants for now; profile-driven overrides can be layered later.
+MIN_PRIMITIVE_TO_CARDS = 10000
+MIN_PRIMITIVE_COVERAGE = 0.20
+
+# --- Deterministic graph expansion v1 bounds ---
+GRAPH_EXPAND_V1_MAX_PRIMS_PER_SLOT = 24
+GRAPH_EXPAND_V1_MAX_SLOTS_PER_PRIM = 80
+GRAPH_EXPAND_V1_MAX_CARD_CARD_EDGES_TOTAL = 5000
+
 # --- Typed Edge Rules (closed-world) ---
 TYPED_EDGE_RULES_V0 = [
     {
