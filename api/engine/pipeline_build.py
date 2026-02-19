@@ -308,6 +308,17 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
     _ = repo_root_path
     from api.main import BuildResponse
 
+    def _ui_result_envelope(extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "ui_contract_version": UI_CONTRACT_VERSION,
+            "available_panels_v1": {},
+            "ui_index_v1": {},
+        }
+        if isinstance(extra, dict):
+            for key, value in extra.items():
+                payload[key] = value
+        return payload
+
     def _execute():
         # 1) Snapshot gating
         if not snapshot_exists(req.db_snapshot_id):
@@ -327,7 +338,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                         "message": "Snapshot ID not found in local DB.",
                     }
                 ],
-                result={},
+                result=_ui_result_envelope(),
             )
 
         # 2) Resolve commander (Commander format requires it)
@@ -370,11 +381,13 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                         "rates": {},
                     }
                 ],
-                result={
-                    "snapshot_id": req.db_snapshot_id,
-                    "taxonomy_version": runtime_taxonomy_version,
-                    "ruleset_version": runtime_ruleset_version,
-                },
+                result=_ui_result_envelope(
+                    {
+                        "snapshot_id": req.db_snapshot_id,
+                        "taxonomy_version": runtime_taxonomy_version,
+                        "ruleset_version": runtime_ruleset_version,
+                    }
+                ),
             )
 
         if req.format == "commander":
@@ -394,7 +407,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                             "message": "format=commander requires a commander name.",
                         }
                     ],
-                    result={},
+                    result=_ui_result_envelope(),
                 )
 
             commander_resolved = find_card_by_name(req.db_snapshot_id, req.commander)
@@ -420,7 +433,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                             ),
                         }
                     ],
-                    result={},
+                    result=_ui_result_envelope(),
                 )
 
             commander_oracle_id = commander_resolved.get("oracle_id")
@@ -446,12 +459,14 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                     bracket_id=req.bracket_id,
                     status="TAGS_NOT_COMPILED",
                     unknowns=[preflight_unknown],
-                    result={
-                        "snapshot_id": req.db_snapshot_id,
-                        "taxonomy_version": preflight_unknown.get("taxonomy_version"),
-                        "ruleset_version": preflight_unknown.get("ruleset_version"),
-                        "snapshot_preflight_v1": preflight_unknown,
-                    },
+                    result=_ui_result_envelope(
+                        {
+                            "snapshot_id": req.db_snapshot_id,
+                            "taxonomy_version": preflight_unknown.get("taxonomy_version"),
+                            "ruleset_version": preflight_unknown.get("ruleset_version"),
+                            "snapshot_preflight_v1": preflight_unknown,
+                        }
+                    ),
                 )
 
             # 2b) Commander legality check (only AFTER we found the card)
@@ -468,11 +483,13 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                     bracket_id=req.bracket_id,
                     status="COMMANDER_ELIGIBILITY_UNKNOWN",
                     unknowns=[exc.to_unknown()],
-                    result={
-                        "snapshot_id": req.db_snapshot_id,
-                        "taxonomy_version": commander_resolved.get("taxonomy_version"),
-                        "oracle_id": commander_resolved.get("oracle_id"),
-                    },
+                    result=_ui_result_envelope(
+                        {
+                            "snapshot_id": req.db_snapshot_id,
+                            "taxonomy_version": commander_resolved.get("taxonomy_version"),
+                            "oracle_id": commander_resolved.get("oracle_id"),
+                        }
+                    ),
                 )
             if not legal:
                 return BuildResponse(
@@ -497,7 +514,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                             ),
                         }
                     ],
-                    result={},
+                    result=_ui_result_envelope(),
                 )
 
             ok, status = get_format_legality(commander_resolved, req.format)
@@ -520,7 +537,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                             "suggestions": [],
                         }
                     ],
-                    result={},
+                    result=_ui_result_envelope(),
                 )
 
         # 3) Resolve seed cards
@@ -973,10 +990,12 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                             "missing_oracle_ids": list(exc.missing_oracle_ids),
                         }
                     ],
-                    result={
-                        "snapshot_id": req.db_snapshot_id,
-                        "taxonomy_version": runtime_taxonomy_version,
-                    },
+                    result=_ui_result_envelope(
+                        {
+                            "snapshot_id": req.db_snapshot_id,
+                            "taxonomy_version": runtime_taxonomy_version,
+                        }
+                    ),
                 )
 
         runtime_tag_ruleset_versions = sorted_unique(
@@ -1005,10 +1024,12 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                         "ruleset_versions": runtime_tag_ruleset_versions,
                     }
                 ],
-                result={
-                    "snapshot_id": req.db_snapshot_id,
-                    "taxonomy_version": runtime_taxonomy_version,
-                },
+                result=_ui_result_envelope(
+                    {
+                        "snapshot_id": req.db_snapshot_id,
+                        "taxonomy_version": runtime_taxonomy_version,
+                    }
+                ),
             )
         if (
             len(runtime_tag_ruleset_versions) == 1
@@ -1034,11 +1055,13 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                         "ruleset_version_loaded": runtime_tag_ruleset_versions[0],
                     }
                 ],
-                result={
-                    "snapshot_id": req.db_snapshot_id,
-                    "taxonomy_version": runtime_taxonomy_version,
-                    "ruleset_version": runtime_ruleset_version,
-                },
+                result=_ui_result_envelope(
+                    {
+                        "snapshot_id": req.db_snapshot_id,
+                        "taxonomy_version": runtime_taxonomy_version,
+                        "ruleset_version": runtime_ruleset_version,
+                    }
+                ),
             )
         runtime_tag_ruleset_version = runtime_ruleset_version
 
@@ -1690,14 +1713,55 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "proof_attempt_layer_version_v1": PROOF_ATTEMPT_LAYER_VERSION_V3,
             "proof_scaffolds_hash_v2": proof_scaffolds_hash_v2,
         }
-        proof_attempt_state = run_proof_attempt_v1(proof_attempt_state)
+        proof_attempt_layer_name = "proof_attempt_v1"
+        proof_attempt_layer_skipped_for_oracle_text = ENGINE_ALLOW_RUNTIME_ORACLE_TEXT is not True
+        if proof_attempt_layer_skipped_for_oracle_text:
+            add_unknown(
+                unknowns,
+                code="LAYER_SKIPPED_ORACLE_TEXT_REQUIRED",
+                input_value=proof_attempt_layer_name,
+                message=(
+                    f"Layer {proof_attempt_layer_name} skipped because tag-only runtime forbids runtime oracle parsing."
+                ),
+                reason="ENGINE_ALLOW_RUNTIME_ORACLE_TEXT=False",
+                suggestions=[],
+            )
+            combo_proof_attempts_v0 = []
+            proof_attempt_hash_stable = True
+            proof_attempts_total_matches_scaffolds = len(combo_proof_scaffolds_v0) == 0
 
-        combo_proof_attempts_v0 = proof_attempt_state["combo_proof_attempts_v0"]
-        proof_attempt_hash_stable = proof_attempt_state["proof_attempt_hash_stable"]
-        proof_attempts_total_matches_scaffolds = proof_attempt_state["proof_attempts_total_matches_scaffolds"]
-        proof_attempts_hash_v1 = proof_attempt_state["proof_attempts_hash_v1"]
-        proof_attempts_hash_v2 = proof_attempt_state["proof_attempts_hash_v2"]
-        proof_attempts_hash_v3 = proof_attempt_state["proof_attempts_hash_v3"]
+            proof_attempt_skip_payload_v1 = {
+                "proof_scaffolds_hash_v2": proof_scaffolds_hash_v2,
+                "layer": proof_attempt_layer_name,
+                "skip_code": "LAYER_SKIPPED_ORACLE_TEXT_REQUIRED",
+            }
+            proof_attempts_hash_v1 = sha256_hex(stable_json_dumps(proof_attempt_skip_payload_v1))
+            proof_attempts_hash_v2 = sha256_hex(
+                stable_json_dumps(
+                    {
+                        "proof_attempts_hash_v1": proof_attempts_hash_v1,
+                        "skip_code": "LAYER_SKIPPED_ORACLE_TEXT_REQUIRED",
+                    }
+                )
+            )
+            proof_attempts_hash_v3 = sha256_hex(
+                stable_json_dumps(
+                    {
+                        "proof_attempts_hash_v1": proof_attempts_hash_v1,
+                        "proof_attempts_hash_v2": proof_attempts_hash_v2,
+                        "skip_code": "LAYER_SKIPPED_ORACLE_TEXT_REQUIRED",
+                    }
+                )
+            )
+        else:
+            proof_attempt_state = run_proof_attempt_v1(proof_attempt_state)
+
+            combo_proof_attempts_v0 = proof_attempt_state["combo_proof_attempts_v0"]
+            proof_attempt_hash_stable = proof_attempt_state["proof_attempt_hash_stable"]
+            proof_attempts_total_matches_scaffolds = proof_attempt_state["proof_attempts_total_matches_scaffolds"]
+            proof_attempts_hash_v1 = proof_attempt_state["proof_attempts_hash_v1"]
+            proof_attempts_hash_v2 = proof_attempt_state["proof_attempts_hash_v2"]
+            proof_attempts_hash_v3 = proof_attempt_state["proof_attempts_hash_v3"]
 
         nonplayable_by_code: Dict[str, int] = {}
         duplicate_exclusions = []
@@ -2175,6 +2239,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "proof_attempt_layer_version": PROOF_ATTEMPT_LAYER_VERSION_V3,
                 "combo_proof_attempts_v0": combo_proof_attempts_v0,
                 "combo_proof_attempts_v0_total": len(combo_proof_attempts_v0),
+                "proof_attempt_layer_skipped_for_oracle_text": proof_attempt_layer_skipped_for_oracle_text,
                 "proof_attempts_hash_v1": proof_attempts_hash_v1,
                 "proof_attempts_hash_v2": proof_attempts_hash_v2,
                 "proof_attempts_hash_v3": proof_attempts_hash_v3,
@@ -2258,6 +2323,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                     "has_rules_db": bool(RULES_DB_AVAILABLE),
                     "has_rules_topic_selection_trace": bool((trace_v1 or {}).get("rules_topic_selection")),
                     "has_proof_scaffolds": bool(len(combo_proof_scaffolds_v0)),
+                    "has_proof_attempts": bool(len(combo_proof_attempts_v0)),
                     "has_primitive_index": bool(primitive_index_by_slot),
                     "has_structural_reporting": bool(structural_snapshot_v1),
                     "has_graph": bool(graph_edges or graph_components or graph_typed_edges_total is not None),
