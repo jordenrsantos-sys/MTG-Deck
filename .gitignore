@@ -1,15 +1,46 @@
-# Python
+# --- Python bytecode / caches ---
 __pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.py[cod]
+*.pyc.*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# Virtual env
+# --- Virtual environments ---
 venv/
+.venv/
+env/
+ENV/
 
-# Database
+# --- Node ---
+node_modules/
+
+# --- Secrets / env files ---
+.env
+.env.*
+!.env.example
+
+# --- Local databases / backups ---
 *.sqlite
+*.sqlite3
+*.db
+*.bak
 
-# OS
+# --- Local data dumps / generated exports ---
+*.jsonl
+*.ndjson
+dumps/
+exports/
+taxonomy/packs/
+
+# --- IDE / OS ---
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
