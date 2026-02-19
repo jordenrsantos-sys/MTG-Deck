@@ -11,6 +11,7 @@ from engine.db import (
     suggest_card_names,
     is_legal_commander_card,
 )
+from engine.db_tags import TagSnapshotMissingError, bulk_get_card_tags, ensure_tag_tables
 from engine.game_changers import detect_game_changers, bracket_floor_from_count
 
 from api.engine.constants import *
@@ -327,6 +328,34 @@ def apply_primitive_overrides(
 
 def is_ci_compatible(commander: dict, card: dict) -> bool:
     return set(card.get("color_identity") or []).issubset(set(commander.get("color_identity") or []))
+
+
+def resolve_runtime_taxonomy_version(snapshot_id: str, requested: Any) -> str | None:
+    if isinstance(requested, str):
+        requested_clean = requested.strip()
+        if requested_clean != "":
+            return requested_clean
+
+    try:
+        with cards_db_connect() as con:
+            ensure_tag_tables(con)
+            row = con.execute(
+                """
+                SELECT taxonomy_version
+                FROM card_tags
+                WHERE snapshot_id = ?
+                GROUP BY taxonomy_version
+                ORDER BY taxonomy_version DESC
+                LIMIT 1
+                """,
+                (snapshot_id,),
+            ).fetchone()
+            if row and isinstance(row[0], str) and row[0].strip() != "":
+                return row[0]
+    except Exception:
+        return None
+
+    return None
 
 def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> dict:
     _ = conn
@@ -859,6 +888,146 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             seen_counts[name] = count + 1
 
         playable_cards_resolved = new_playable
+
+        runtime_taxonomy_version = resolve_runtime_taxonomy_version(
+            snapshot_id=req.db_snapshot_id,
+            requested=getattr(req, "taxonomy_version", None),
+        )
+        if not isinstance(runtime_taxonomy_version, str) or runtime_taxonomy_version == "":
+            return BuildResponse(
+                engine_version=ENGINE_VERSION,
+                ruleset_version=RULESET_VERSION,
+                bracket_definition_version=BRACKET_DEFINITION_VERSION,
+                game_changers_version=GAME_CHANGERS_VERSION,
+                db_snapshot_id=req.db_snapshot_id,
+                profile_id=req.profile_id,
+                bracket_id=req.bracket_id,
+                status="TAGS_NOT_COMPILED",
+                unknowns=[
+                    {
+                        "code": "TAGS_NOT_COMPILED",
+                        "snapshot_id": req.db_snapshot_id,
+                        "taxonomy_version": getattr(req, "taxonomy_version", None),
+                        "message": "Tags not compiled for snapshot/taxonomy_version. Run snapshot_build.tag_snapshot.",
+                    }
+                ],
+                result={
+                    "snapshot_id": req.db_snapshot_id,
+                    "taxonomy_version": getattr(req, "taxonomy_version", None),
+                },
+            )
+
+        tag_oracle_ids = sorted_unique(
+            [
+                *(
+                    [commander_resolved.get("oracle_id")]
+                    if commander_resolved is not None
+                    else []
+                ),
+                *[
+                    oracle_id
+                    for oracle_queue in resolved_oracle_id_queues.values()
+                    for oracle_id in oracle_queue
+                ],
+            ]
+        )
+
+        compiled_tags_by_oracle: Dict[str, Dict[str, Any]] = {}
+        if tag_oracle_ids:
+            try:
+                with cards_db_connect() as con:
+                    ensure_tag_tables(con)
+                    compiled_tags_by_oracle = bulk_get_card_tags(
+                        conn=con,
+                        oracle_ids=tag_oracle_ids,
+                        snapshot_id=req.db_snapshot_id,
+                        taxonomy_version=runtime_taxonomy_version,
+                    )
+            except TagSnapshotMissingError as exc:
+                return BuildResponse(
+                    engine_version=ENGINE_VERSION,
+                    ruleset_version=RULESET_VERSION,
+                    bracket_definition_version=BRACKET_DEFINITION_VERSION,
+                    game_changers_version=GAME_CHANGERS_VERSION,
+                    db_snapshot_id=req.db_snapshot_id,
+                    profile_id=req.profile_id,
+                    bracket_id=req.bracket_id,
+                    status="TAGS_NOT_COMPILED",
+                    unknowns=[
+                        {
+                            "code": "TAGS_NOT_COMPILED",
+                            "snapshot_id": req.db_snapshot_id,
+                            "taxonomy_version": runtime_taxonomy_version,
+                            "message": "Tags not compiled for snapshot/taxonomy_version. Run snapshot_build.tag_snapshot.",
+                            "reason": str(exc),
+                            "missing_oracle_ids": list(exc.missing_oracle_ids),
+                        }
+                    ],
+                    result={
+                        "snapshot_id": req.db_snapshot_id,
+                        "taxonomy_version": runtime_taxonomy_version,
+                    },
+                )
+
+        runtime_tag_ruleset_versions = sorted_unique(
+            [
+                tags.get("ruleset_version")
+                for tags in compiled_tags_by_oracle.values()
+                if isinstance(tags, dict)
+            ]
+        )
+        if len(runtime_tag_ruleset_versions) > 1:
+            return BuildResponse(
+                engine_version=ENGINE_VERSION,
+                ruleset_version=RULESET_VERSION,
+                bracket_definition_version=BRACKET_DEFINITION_VERSION,
+                game_changers_version=GAME_CHANGERS_VERSION,
+                db_snapshot_id=req.db_snapshot_id,
+                profile_id=req.profile_id,
+                bracket_id=req.bracket_id,
+                status="TAGS_INCONSISTENT",
+                unknowns=[
+                    {
+                        "code": "TAGS_INCONSISTENT",
+                        "snapshot_id": req.db_snapshot_id,
+                        "taxonomy_version": runtime_taxonomy_version,
+                        "message": "Multiple ruleset_version values found in card_tags for this snapshot/taxonomy_version.",
+                        "ruleset_versions": runtime_tag_ruleset_versions,
+                    }
+                ],
+                result={
+                    "snapshot_id": req.db_snapshot_id,
+                    "taxonomy_version": runtime_taxonomy_version,
+                },
+            )
+        runtime_tag_ruleset_version = runtime_tag_ruleset_versions[0] if runtime_tag_ruleset_versions else None
+
+        def _compiled_primitives_for_oracle(oracle_id: Any) -> List[str]:
+            if not isinstance(oracle_id, str):
+                return []
+            payload = compiled_tags_by_oracle.get(oracle_id)
+            if not isinstance(payload, dict):
+                return []
+            value = payload.get("primitive_ids")
+            return [p for p in value if isinstance(p, str)] if isinstance(value, list) else []
+
+        if commander_resolved is not None:
+            commander_primitives = _compiled_primitives_for_oracle(commander_resolved.get("oracle_id"))
+            commander_resolved["primitives"] = commander_primitives
+            commander_resolved["primitives_json"] = stable_json_dumps(commander_primitives)
+
+        for card in resolved_cards:
+            card_primitives = _compiled_primitives_for_oracle(card.get("oracle_id"))
+            card["primitives"] = card_primitives
+            card["primitives_json"] = stable_json_dumps(card_primitives)
+
+        resolved_card_primitives_queues = {
+            name: [
+                _compiled_primitives_for_oracle(oracle_id)
+                for oracle_id in oracle_queue
+            ]
+            for name, oracle_queue in resolved_oracle_id_queues.items()
+        }
 
         loaded_overrides_version = OVERRIDES_OBJ.get("overrides_version") if isinstance(OVERRIDES_OBJ, dict) else None
         overrides_scope_db_snapshot_id = (
@@ -1469,6 +1638,8 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "commander": req.commander,
                 "cards_input_total": len(req.cards),
                 "db_snapshot_id": req.db_snapshot_id,
+                "taxonomy_version": runtime_taxonomy_version,
+                "taxonomy_ruleset_version": runtime_tag_ruleset_version,
                 "profile_id": req.profile_id,
                 "bracket_id": req.bracket_id,
                 "format": req.format,
@@ -1504,6 +1675,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
 
         request_payload_for_hash = {
             "db_snapshot_id": req.db_snapshot_id,
+            "taxonomy_version": runtime_taxonomy_version,
             "profile_id": req.profile_id,
             "bracket_id": req.bracket_id,
             "format": req.format,
@@ -1669,6 +1841,8 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "ruleset_version": RULESET_VERSION,
             "bracket_definition_version": BRACKET_DEFINITION_VERSION,
             "game_changers_version": GAME_CHANGERS_VERSION,
+            "taxonomy_version": runtime_taxonomy_version,
+            "taxonomy_ruleset_version": runtime_tag_ruleset_version,
             "canonical_layer_version": CANONICAL_LAYER_VERSION,
             "primitive_index_version": PRIMITIVE_INDEX_VERSION,
             "structural_reporting_version": STRUCTURAL_REPORTING_VERSION,
@@ -1730,6 +1904,8 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "ruleset_version": RULESET_VERSION,
             "bracket_definition_version": BRACKET_DEFINITION_VERSION,
             "game_changers_version": GAME_CHANGERS_VERSION,
+            "taxonomy_version": runtime_taxonomy_version,
+            "taxonomy_ruleset_version": runtime_tag_ruleset_version,
             "canonical_layer_version": CANONICAL_LAYER_VERSION,
             "primitive_index_version": PRIMITIVE_INDEX_VERSION,
             "structural_reporting_version": STRUCTURAL_REPORTING_VERSION,
@@ -1762,6 +1938,8 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
 
         repro_v1 = {
             "db_snapshot_id": req.db_snapshot_id,
+            "taxonomy_version": runtime_taxonomy_version,
+            "taxonomy_ruleset_version": runtime_tag_ruleset_version,
             "ruleset_id": RULESET_ID_DEFAULT,
             "game_changers_version": GAME_CHANGERS_VERSION,
             "overrides_version": OVERRIDES_VERSION if OVERRIDES_AVAILABLE else "none",
@@ -1802,6 +1980,10 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             unknowns=unknowns,
             result={
                 "format": req.format,
+                "snapshot_id": req.db_snapshot_id,
+                "taxonomy_version": runtime_taxonomy_version,
+                "taxonomy_ruleset_version": runtime_tag_ruleset_version,
+                "ruleset_version": RULESET_VERSION,
                 "commander": req.commander,
                 "commander_resolved": commander_resolved,
                 "cards_input": req.cards,

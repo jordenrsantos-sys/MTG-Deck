@@ -28,6 +28,7 @@ class BuildRequest(BaseModel):
     db_snapshot_id: str = Field(..., description="Required snapshot ID")
     profile_id: str = Field(..., description="Profile ID")
     bracket_id: str = Field(..., description="Bracket definition ID")
+    taxonomy_version: Optional[str] = Field(default=None, description="Compiled taxonomy version to use at runtime")
 
     format: str = "commander"
     commander: Optional[str] = None

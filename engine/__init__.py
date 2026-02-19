@@ -5,6 +5,7 @@ __all__ = [
     "canonical",
     "cards_db",
     "db",
+    "db_tags",
     "determinism",
     "game_changers",
     "rules_db",
