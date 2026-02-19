@@ -1,10 +1,54 @@
 import json
 from typing import Any, Dict, List
 
-from api.engine.constants import GAME_CHANGERS_SET, SINGLETON_EXEMPT_NAMES
+from api.engine.constants import GAME_CHANGERS_SET, SINGLETON_EXEMPT_NAMES, TagsNotCompiledError
 from api.engine.utils import normalize_primitives_source, sorted_unique
+from api.engine.version_resolve_v1 import resolve_runtime_taxonomy_version
 from engine.db import connect as cards_db_connect, is_legal_in_format
 from engine.game_changers import bracket_floor_from_count, detect_game_changers
+
+
+def _ensure_runtime_primitive_index(con, snapshot_id: str, taxonomy_version: str | None) -> str:
+    taxonomy = taxonomy_version if isinstance(taxonomy_version, str) and taxonomy_version != "" else None
+    if taxonomy is None:
+        raise TagsNotCompiledError(
+            snapshot_id=snapshot_id,
+            taxonomy_version=taxonomy,
+            reason=(
+                "No taxonomy_version resolved from card_tags for candidate retrieval. "
+                "Run snapshot_build.tag_snapshot and snapshot_build.index_build."
+            ),
+        )
+
+    table_exists_row = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='primitive_to_cards' LIMIT 1"
+    ).fetchone()
+    if table_exists_row is None:
+        raise TagsNotCompiledError(
+            snapshot_id=snapshot_id,
+            taxonomy_version=taxonomy,
+            reason=(
+                "primitive_to_cards table is missing. "
+                "Run snapshot_build.tag_snapshot and snapshot_build.index_build."
+            ),
+        )
+
+    row = con.execute(
+        "SELECT COUNT(1) FROM primitive_to_cards WHERE snapshot_id = ? AND taxonomy_version = ?",
+        (snapshot_id, taxonomy),
+    ).fetchone()
+    row_count = int(row[0]) if row else 0
+    if row_count <= 0:
+        raise TagsNotCompiledError(
+            snapshot_id=snapshot_id,
+            taxonomy_version=taxonomy,
+            reason=(
+                "primitive_to_cards has no rows for snapshot/taxonomy_version. "
+                "Run snapshot_build.tag_snapshot and snapshot_build.index_build."
+            ),
+        )
+
+    return taxonomy
 
 
 def normalize_color_identity(value: Any) -> List[str]:
@@ -79,33 +123,72 @@ def build_card_row(row: Dict[str, Any]) -> Dict[str, Any]:
 def query_candidate_rows(snapshot_id: str, primitives_needed: List[str], limit: int = 4000) -> List[Dict[str, Any]]:
     primitives_needed_sorted = sorted_unique([p for p in primitives_needed if isinstance(p, str)])
 
-    if primitives_needed_sorted:
-        predicate = " OR ".join(["LOWER(primitives_json) LIKE LOWER(?)"] * len(primitives_needed_sorted))
-        params: List[Any] = [snapshot_id]
-        params.extend([f'%"{primitive}"%' for primitive in primitives_needed_sorted])
-        params.append(int(limit))
-        query = (
-            "SELECT name, oracle_id, mana_cost, type_line, color_identity, legalities_json, primitives_json "
-            "FROM cards "
-            "WHERE snapshot_id = ? AND (" + predicate + ") "
-            "ORDER BY name ASC "
-            "LIMIT ?"
+    with cards_db_connect() as con:
+        taxonomy_version = resolve_runtime_taxonomy_version(
+            snapshot_id=snapshot_id,
+            requested=None,
+            db=con,
         )
-    else:
-        params = [snapshot_id, int(limit)]
-        query = (
-            "SELECT name, oracle_id, mana_cost, type_line, color_identity, legalities_json, primitives_json "
-            "FROM cards "
-            "WHERE snapshot_id = ? "
-            "ORDER BY name ASC "
-            "LIMIT ?"
+        taxonomy_version = _ensure_runtime_primitive_index(
+            con=con,
+            snapshot_id=snapshot_id,
+            taxonomy_version=taxonomy_version,
         )
 
-    try:
-        with cards_db_connect() as con:
-            rows = con.execute(query, params).fetchall()
-    except Exception:
-        return []
+        if primitives_needed_sorted:
+            placeholders = ",".join(["?"] * len(primitives_needed_sorted))
+            rows = con.execute(
+                f"""
+                SELECT DISTINCT
+                  c.name,
+                  c.oracle_id,
+                  c.mana_cost,
+                  c.type_line,
+                  c.color_identity,
+                  c.legalities_json,
+                  t.primitive_ids_json AS primitives_json
+                FROM primitive_to_cards p
+                JOIN cards c
+                  ON c.snapshot_id = p.snapshot_id
+                 AND c.oracle_id = p.oracle_id
+                LEFT JOIN card_tags t
+                  ON t.snapshot_id = p.snapshot_id
+                 AND t.taxonomy_version = p.taxonomy_version
+                 AND t.oracle_id = p.oracle_id
+                WHERE p.snapshot_id = ?
+                  AND p.taxonomy_version = ?
+                  AND p.primitive_id IN ({placeholders})
+                ORDER BY c.name ASC
+                LIMIT ?
+                """,
+                (snapshot_id, taxonomy_version, *primitives_needed_sorted, int(limit)),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                """
+                SELECT DISTINCT
+                  c.name,
+                  c.oracle_id,
+                  c.mana_cost,
+                  c.type_line,
+                  c.color_identity,
+                  c.legalities_json,
+                  t.primitive_ids_json AS primitives_json
+                FROM primitive_to_cards p
+                JOIN cards c
+                  ON c.snapshot_id = p.snapshot_id
+                 AND c.oracle_id = p.oracle_id
+                LEFT JOIN card_tags t
+                  ON t.snapshot_id = p.snapshot_id
+                 AND t.taxonomy_version = p.taxonomy_version
+                 AND t.oracle_id = p.oracle_id
+                WHERE p.snapshot_id = ?
+                  AND p.taxonomy_version = ?
+                ORDER BY c.name ASC
+                LIMIT ?
+                """,
+                (snapshot_id, taxonomy_version, int(limit)),
+            ).fetchall()
 
     out: List[Dict[str, Any]] = []
     seen_names: set[str] = set()

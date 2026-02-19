@@ -193,6 +193,24 @@ def _normalize_text(value: Any) -> str:
     return " ".join(value.split()).strip()
 
 
+def _baseline_facets_v1(type_line: str, oracle_text: str) -> Dict[str, str]:
+    type_line_lc = str(type_line or "").lower()
+    oracle_text_lc = str(oracle_text or "").lower()
+
+    is_legendary = "legendary" in type_line_lc
+    is_creature = "creature" in type_line_lc
+    is_legendary_creature = is_legendary and is_creature
+    has_commander_clause = "can be your commander" in oracle_text_lc
+    commander_eligible = is_legendary_creature or has_commander_clause
+
+    return {
+        "is_legendary": "true" if is_legendary else "false",
+        "is_creature": "true" if is_creature else "false",
+        "is_legendary_creature": "true" if is_legendary_creature else "false",
+        "commander_eligible": "true" if commander_eligible else "false",
+    }
+
+
 def _match_rule_on_text(rule: CompiledRule, text: str) -> Tuple[bool, int, int, str]:
     if text == "":
         return (False, -1, -1, "")
@@ -375,6 +393,8 @@ def _build_card_rows(
             key: sorted(list(values))
             for key, values in sorted(facets_temp.items(), key=lambda item: item[0])
         }
+        for facet_key, facet_value in sorted(_baseline_facets_v1(type_line=type_line, oracle_text=oracle_text).items()):
+            facets_final[facet_key] = [facet_value]
         primitive_ids = sorted(list(primitive_ids_set))
         equiv_class_ids = _derive_equiv_class_ids(primitive_ids=primitive_ids, facets=facets_final)
 

@@ -1,8 +1,10 @@
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
+from api.engine.constants import TagsNotCompiledError
 from api.engine.pipeline_build import run_build_pipeline
 from api.engine.utils import normalize_primitives_source, sorted_unique
+from api.engine.version_resolve_v1 import resolve_runtime_taxonomy_version
 from engine.db import connect as cards_db_connect
 
 
@@ -10,21 +12,87 @@ def _round_metric(value: float) -> float:
     return float(f"{value:.6f}")
 
 
+def _ensure_runtime_primitive_index(con, snapshot_id: str, taxonomy_version: str | None) -> str:
+    taxonomy = taxonomy_version if isinstance(taxonomy_version, str) and taxonomy_version != "" else None
+    if taxonomy is None:
+        raise TagsNotCompiledError(
+            snapshot_id=snapshot_id,
+            taxonomy_version=taxonomy,
+            reason=(
+                "No taxonomy_version resolved from card_tags for package candidate retrieval. "
+                "Run snapshot_build.tag_snapshot and snapshot_build.index_build."
+            ),
+        )
+
+    table_exists_row = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='primitive_to_cards' LIMIT 1"
+    ).fetchone()
+    if table_exists_row is None:
+        raise TagsNotCompiledError(
+            snapshot_id=snapshot_id,
+            taxonomy_version=taxonomy,
+            reason=(
+                "primitive_to_cards table is missing. "
+                "Run snapshot_build.tag_snapshot and snapshot_build.index_build."
+            ),
+        )
+
+    row = con.execute(
+        "SELECT COUNT(1) FROM primitive_to_cards WHERE snapshot_id = ? AND taxonomy_version = ?",
+        (snapshot_id, taxonomy),
+    ).fetchone()
+    row_count = int(row[0]) if row else 0
+    if row_count <= 0:
+        raise TagsNotCompiledError(
+            snapshot_id=snapshot_id,
+            taxonomy_version=taxonomy,
+            reason=(
+                "primitive_to_cards has no rows for snapshot/taxonomy_version. "
+                "Run snapshot_build.tag_snapshot and snapshot_build.index_build."
+            ),
+        )
+
+    return taxonomy
+
+
 def _query_cards_for_primitive(snapshot_id: str, primitive: str, limit: int = 64) -> List[Dict[str, Any]]:
-    pattern = f'%"{primitive}"%'
+    primitive_clean = primitive.strip() if isinstance(primitive, str) else ""
+    if primitive_clean == "":
+        return []
+
     rows: List[Dict[str, Any]] = []
-    try:
-        with cards_db_connect() as con:
-            db_rows = con.execute(
-                "SELECT name, primitives_json "
-                "FROM cards "
-                "WHERE snapshot_id = ? AND LOWER(primitives_json) LIKE LOWER(?) "
-                "ORDER BY name ASC "
-                "LIMIT ?",
-                (snapshot_id, pattern, int(limit)),
-            ).fetchall()
-    except Exception:
-        return rows
+    with cards_db_connect() as con:
+        taxonomy_version = resolve_runtime_taxonomy_version(
+            snapshot_id=snapshot_id,
+            requested=None,
+            db=con,
+        )
+        taxonomy_version = _ensure_runtime_primitive_index(
+            con=con,
+            snapshot_id=snapshot_id,
+            taxonomy_version=taxonomy_version,
+        )
+        db_rows = con.execute(
+            """
+            SELECT DISTINCT
+              c.name,
+              t.primitive_ids_json AS primitives_json
+            FROM primitive_to_cards p
+            JOIN cards c
+              ON c.snapshot_id = p.snapshot_id
+             AND c.oracle_id = p.oracle_id
+            LEFT JOIN card_tags t
+              ON t.snapshot_id = p.snapshot_id
+             AND t.taxonomy_version = p.taxonomy_version
+             AND t.oracle_id = p.oracle_id
+            WHERE p.snapshot_id = ?
+              AND p.taxonomy_version = ?
+              AND p.primitive_id = ?
+            ORDER BY c.name ASC
+            LIMIT ?
+            """,
+            (snapshot_id, taxonomy_version, primitive_clean, int(limit)),
+        ).fetchall()
 
     for row in db_rows:
         row_dict = dict(row)

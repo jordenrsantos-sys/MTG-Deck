@@ -10,6 +10,7 @@ from engine.db import (
     find_card_by_name,
     suggest_card_names,
     is_legal_commander_card,
+    CommanderEligibilityUnknownError,
 )
 from engine.db_tags import TagSnapshotMissingError, bulk_get_card_tags, ensure_tag_tables
 from engine.game_changers import detect_game_changers, bracket_floor_from_count
@@ -25,10 +26,12 @@ from api.engine.layers.pathways_v1 import run_pathways_v1
 from api.engine.layers.primitive_index_v1 import run_primitive_index_v1
 from api.engine.layers.proof_attempt_v1 import run_proof_attempt_v1
 from api.engine.layers.proof_scaffold_v1 import run_proof_scaffold_v1
+from api.engine.snapshot_preflight_v1 import SnapshotPreflightError, run_snapshot_preflight
 from api.engine.layers.structural_v1 import run_structural_v1
 from api.engine.unknowns import add_unknown, sort_unknowns
 from api.engine.utils import stable_json_dumps, sha256_hex, strip_hash_fields
 from api.engine.validate_invariants_v1 import validate_invariants_v1
+from api.engine.version_resolve_v1 import resolve_runtime_ruleset_version, resolve_runtime_taxonomy_version
 
 
 def is_singleton_exempt(card_name: str, resolved: dict | None) -> bool:
@@ -52,45 +55,13 @@ def sorted_unique(seq):
     return sorted(set(x for x in seq if x is not None))
 
 
-def normalize_oracle_text_excerpt(oracle_text: Any, max_chars: int = 240) -> str | None:
-    if not isinstance(oracle_text, str):
-        return None
-    normalized = " ".join(oracle_text.split()).strip()
-    if normalized == "":
-        return None
-    return normalized[:max_chars]
-
-
 def lookup_cards_by_oracle_id(snapshot_id: str, oracle_ids: List[str]) -> Dict[str, Dict[str, Any]]:
-    lookup: Dict[str, Dict[str, Any]] = {}
-    oracle_ids_unique = sorted_unique([oid for oid in oracle_ids if isinstance(oid, str) and oid != ""])
-    if not oracle_ids_unique:
-        return lookup
-
-    placeholders = ",".join(["?"] * len(oracle_ids_unique))
-    query = (
-        "SELECT oracle_id, name, type_line, mana_cost, oracle_text "
-        f"FROM cards WHERE snapshot_id = ? AND oracle_id IN ({placeholders})"
+    _ = snapshot_id
+    _ = oracle_ids
+    assert_runtime_no_oracle_text(
+        "pipeline_build.lookup_cards_by_oracle_id attempted forbidden runtime oracle_text access"
     )
-    try:
-        with cards_db_connect() as con:
-            rows = con.execute(query, [snapshot_id, *oracle_ids_unique]).fetchall()
-    except Exception:
-        return lookup
-
-    for row in rows:
-        row_dict = dict(row)
-        oracle_id = row_dict.get("oracle_id")
-        if not isinstance(oracle_id, str):
-            continue
-        lookup[oracle_id] = {
-            "name": row_dict.get("name") if isinstance(row_dict.get("name"), str) else None,
-            "type_line": row_dict.get("type_line") if isinstance(row_dict.get("type_line"), str) else None,
-            "mana_cost": row_dict.get("mana_cost") if isinstance(row_dict.get("mana_cost"), str) else None,
-            "oracle_text": row_dict.get("oracle_text") if isinstance(row_dict.get("oracle_text"), str) else None,
-        }
-
-    return lookup
+    return {}
 
 
 def normalize_primitives_source(value: Any) -> List[str]:
@@ -330,33 +301,6 @@ def is_ci_compatible(commander: dict, card: dict) -> bool:
     return set(card.get("color_identity") or []).issubset(set(commander.get("color_identity") or []))
 
 
-def resolve_runtime_taxonomy_version(snapshot_id: str, requested: Any) -> str | None:
-    if isinstance(requested, str):
-        requested_clean = requested.strip()
-        if requested_clean != "":
-            return requested_clean
-
-    try:
-        with cards_db_connect() as con:
-            ensure_tag_tables(con)
-            row = con.execute(
-                """
-                SELECT taxonomy_version
-                FROM card_tags
-                WHERE snapshot_id = ?
-                GROUP BY taxonomy_version
-                ORDER BY taxonomy_version DESC
-                LIMIT 1
-                """,
-                (snapshot_id,),
-            ).fetchone()
-            if row and isinstance(row[0], str) and row[0].strip() != "":
-                return row[0]
-    except Exception:
-        return None
-
-    return None
-
 def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> dict:
     _ = conn
     _ = repo_root_path
@@ -387,6 +331,49 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
         # 2) Resolve commander (Commander format requires it)
         commander_resolved = None
         commander_oracle_id = None
+        runtime_taxonomy_version = resolve_runtime_taxonomy_version(
+            snapshot_id=req.db_snapshot_id,
+            requested=getattr(req, "taxonomy_version", None),
+        )
+        runtime_ruleset_version = resolve_runtime_ruleset_version(
+            snapshot_id=req.db_snapshot_id,
+            taxonomy_version=runtime_taxonomy_version,
+            requested=getattr(req, "ruleset_version", None),
+        )
+
+        if (
+            not isinstance(runtime_taxonomy_version, str)
+            or runtime_taxonomy_version == ""
+            or not isinstance(runtime_ruleset_version, str)
+            or runtime_ruleset_version == ""
+        ):
+            return BuildResponse(
+                engine_version=ENGINE_VERSION,
+                ruleset_version=RULESET_VERSION,
+                bracket_definition_version=BRACKET_DEFINITION_VERSION,
+                game_changers_version=GAME_CHANGERS_VERSION,
+                db_snapshot_id=req.db_snapshot_id,
+                profile_id=req.profile_id,
+                bracket_id=req.bracket_id,
+                status="TAGS_NOT_COMPILED",
+                unknowns=[
+                    {
+                        "code": "TAGS_NOT_COMPILED",
+                        "snapshot_id": req.db_snapshot_id,
+                        "taxonomy_version": runtime_taxonomy_version,
+                        "ruleset_version": runtime_ruleset_version,
+                        "reason": "MISSING_RUNTIME_VERSIONS",
+                        "message": "Runtime snapshot/taxonomy/ruleset versions are required for deterministic preflight.",
+                        "counts": {},
+                        "rates": {},
+                    }
+                ],
+                result={
+                    "snapshot_id": req.db_snapshot_id,
+                    "taxonomy_version": runtime_taxonomy_version,
+                    "ruleset_version": runtime_ruleset_version,
+                },
+            )
 
         if req.format == "commander":
             if not req.commander:
@@ -434,8 +421,57 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                     result={},
                 )
 
+            commander_oracle_id = commander_resolved.get("oracle_id")
+
+            try:
+                with cards_db_connect() as preflight_con:
+                    _ = run_snapshot_preflight(
+                        db=preflight_con,
+                        db_snapshot_id=req.db_snapshot_id,
+                        taxonomy_version=runtime_taxonomy_version,
+                        ruleset_version=runtime_ruleset_version,
+                        commander_oracle_id=commander_oracle_id,
+                    )
+            except SnapshotPreflightError as exc:
+                preflight_unknown = exc.to_unknown()
+                return BuildResponse(
+                    engine_version=ENGINE_VERSION,
+                    ruleset_version=RULESET_VERSION,
+                    bracket_definition_version=BRACKET_DEFINITION_VERSION,
+                    game_changers_version=GAME_CHANGERS_VERSION,
+                    db_snapshot_id=req.db_snapshot_id,
+                    profile_id=req.profile_id,
+                    bracket_id=req.bracket_id,
+                    status="TAGS_NOT_COMPILED",
+                    unknowns=[preflight_unknown],
+                    result={
+                        "snapshot_id": req.db_snapshot_id,
+                        "taxonomy_version": preflight_unknown.get("taxonomy_version"),
+                        "ruleset_version": preflight_unknown.get("ruleset_version"),
+                        "snapshot_preflight_v1": preflight_unknown,
+                    },
+                )
+
             # 2b) Commander legality check (only AFTER we found the card)
-            legal, reason = is_legal_commander_card(commander_resolved)
+            try:
+                legal, reason = is_legal_commander_card(commander_resolved)
+            except CommanderEligibilityUnknownError as exc:
+                return BuildResponse(
+                    engine_version=ENGINE_VERSION,
+                    ruleset_version=RULESET_VERSION,
+                    bracket_definition_version=BRACKET_DEFINITION_VERSION,
+                    game_changers_version=GAME_CHANGERS_VERSION,
+                    db_snapshot_id=req.db_snapshot_id,
+                    profile_id=req.profile_id,
+                    bracket_id=req.bracket_id,
+                    status="COMMANDER_ELIGIBILITY_UNKNOWN",
+                    unknowns=[exc.to_unknown()],
+                    result={
+                        "snapshot_id": req.db_snapshot_id,
+                        "taxonomy_version": commander_resolved.get("taxonomy_version"),
+                        "oracle_id": commander_resolved.get("oracle_id"),
+                    },
+                )
             if not legal:
                 return BuildResponse(
                     engine_version=ENGINE_VERSION,
@@ -451,8 +487,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                             "code": "ILLEGAL_COMMANDER",
                             "input": req.commander,
                             "message": (
-                                "Card is not a legal Commander (must be Legendary Creature/Legend "
-                                "Creature or explicitly allowed by oracle text)."
+                                "Card is not a legal Commander based on compiled commander-eligibility facets."
                             ),
                             "reason": reason,
                             "suggestions": suggest_card_names(
@@ -485,8 +520,6 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                     ],
                     result={},
                 )
-
-            commander_oracle_id = commander_resolved.get("oracle_id")
 
         # 3) Resolve seed cards
         unknowns: List[Dict[str, Any]] = []
@@ -889,34 +922,6 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
 
         playable_cards_resolved = new_playable
 
-        runtime_taxonomy_version = resolve_runtime_taxonomy_version(
-            snapshot_id=req.db_snapshot_id,
-            requested=getattr(req, "taxonomy_version", None),
-        )
-        if not isinstance(runtime_taxonomy_version, str) or runtime_taxonomy_version == "":
-            return BuildResponse(
-                engine_version=ENGINE_VERSION,
-                ruleset_version=RULESET_VERSION,
-                bracket_definition_version=BRACKET_DEFINITION_VERSION,
-                game_changers_version=GAME_CHANGERS_VERSION,
-                db_snapshot_id=req.db_snapshot_id,
-                profile_id=req.profile_id,
-                bracket_id=req.bracket_id,
-                status="TAGS_NOT_COMPILED",
-                unknowns=[
-                    {
-                        "code": "TAGS_NOT_COMPILED",
-                        "snapshot_id": req.db_snapshot_id,
-                        "taxonomy_version": getattr(req, "taxonomy_version", None),
-                        "message": "Tags not compiled for snapshot/taxonomy_version. Run snapshot_build.tag_snapshot.",
-                    }
-                ],
-                result={
-                    "snapshot_id": req.db_snapshot_id,
-                    "taxonomy_version": getattr(req, "taxonomy_version", None),
-                },
-            )
-
         tag_oracle_ids = sorted_unique(
             [
                 *(
@@ -958,7 +963,10 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                             "code": "TAGS_NOT_COMPILED",
                             "snapshot_id": req.db_snapshot_id,
                             "taxonomy_version": runtime_taxonomy_version,
-                            "message": "Tags not compiled for snapshot/taxonomy_version. Run snapshot_build.tag_snapshot.",
+                            "message": (
+                                "Tags/index not compiled for snapshot/taxonomy_version. "
+                                "Run snapshot_build.tag_snapshot then snapshot_build.index_build."
+                            ),
                             "reason": str(exc),
                             "missing_oracle_ids": list(exc.missing_oracle_ids),
                         }
@@ -1000,7 +1008,56 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                     "taxonomy_version": runtime_taxonomy_version,
                 },
             )
-        runtime_tag_ruleset_version = runtime_tag_ruleset_versions[0] if runtime_tag_ruleset_versions else None
+        if (
+            len(runtime_tag_ruleset_versions) == 1
+            and isinstance(runtime_ruleset_version, str)
+            and runtime_tag_ruleset_versions[0] != runtime_ruleset_version
+        ):
+            return BuildResponse(
+                engine_version=ENGINE_VERSION,
+                ruleset_version=RULESET_VERSION,
+                bracket_definition_version=BRACKET_DEFINITION_VERSION,
+                game_changers_version=GAME_CHANGERS_VERSION,
+                db_snapshot_id=req.db_snapshot_id,
+                profile_id=req.profile_id,
+                bracket_id=req.bracket_id,
+                status="TAGS_INCONSISTENT",
+                unknowns=[
+                    {
+                        "code": "TAGS_INCONSISTENT",
+                        "snapshot_id": req.db_snapshot_id,
+                        "taxonomy_version": runtime_taxonomy_version,
+                        "message": "Resolved runtime ruleset_version does not match loaded card_tags ruleset_version.",
+                        "ruleset_version_expected": runtime_ruleset_version,
+                        "ruleset_version_loaded": runtime_tag_ruleset_versions[0],
+                    }
+                ],
+                result={
+                    "snapshot_id": req.db_snapshot_id,
+                    "taxonomy_version": runtime_taxonomy_version,
+                    "ruleset_version": runtime_ruleset_version,
+                },
+            )
+        runtime_tag_ruleset_version = runtime_ruleset_version
+
+        def lookup_snapshot_evidence_by_oracle_id(oracle_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+            out: Dict[str, Dict[str, Any]] = {}
+            oracle_ids_clean = sorted_unique([oid for oid in oracle_ids if isinstance(oid, str) and oid != ""])
+            for oracle_id in oracle_ids_clean:
+                payload = compiled_tags_by_oracle.get(oracle_id)
+                if not isinstance(payload, dict):
+                    out[oracle_id] = {}
+                    continue
+                evidence_payload = payload.get("evidence")
+                if isinstance(evidence_payload, dict):
+                    out[oracle_id] = evidence_payload
+                elif isinstance(evidence_payload, list):
+                    out[oracle_id] = {
+                        "matches": [item for item in evidence_payload if isinstance(item, dict)]
+                    }
+                else:
+                    out[oracle_id] = {}
+            return out
 
         def _compiled_primitives_for_oracle(oracle_id: Any) -> List[str]:
             if not isinstance(oracle_id, str):
@@ -1561,17 +1618,16 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "combo_proof_scaffolds_v0": combo_proof_scaffolds_v0,
             "slot_by_id": slot_by_id,
             "commander_canonical_slot": commander_canonical_slot,
-            "db_snapshot_id": req.db_snapshot_id,
             "sorted_unique": sorted_unique,
             "slot_sort_key": slot_sort_key,
-            "normalize_oracle_text_excerpt": normalize_oracle_text_excerpt,
-            "lookup_cards_by_oracle_id": lookup_cards_by_oracle_id,
+            "lookup_snapshot_evidence_by_oracle_id": lookup_snapshot_evidence_by_oracle_id,
+            "assert_runtime_no_oracle_text": assert_runtime_no_oracle_text,
             "add_unknown": add_unknown,
             "unknowns": unknowns,
             "strip_hash_fields": strip_hash_fields,
             "stable_json_dumps": stable_json_dumps,
             "sha256_hex": sha256_hex,
-            "proof_attempt_layer_version_v1": PROOF_ATTEMPT_LAYER_VERSION_V1,
+            "proof_attempt_layer_version_v1": PROOF_ATTEMPT_LAYER_VERSION_V3,
             "proof_scaffolds_hash_v2": proof_scaffolds_hash_v2,
         }
         proof_attempt_state = run_proof_attempt_v1(proof_attempt_state)
@@ -1994,7 +2050,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "canonical_layer_version": CANONICAL_LAYER_VERSION,
                 "primitive_index_version": PRIMITIVE_INDEX_VERSION,
                 "structural_reporting_version": STRUCTURAL_REPORTING_VERSION,
-                "build_pipeline_stage": PROOF_ATTEMPT_BUILD_PIPELINE_STAGE_V2,
+                "build_pipeline_stage": PROOF_ATTEMPT_BUILD_PIPELINE_STAGE_V3,
                 "graph_layer_version": GRAPH_LAYER_VERSION,
                 "graph_ruleset_version": GRAPH_RULESET_VERSION,
                 "graph_fingerprint_version": GRAPH_FINGERPRINT_VERSION,
@@ -2057,7 +2113,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "proof_scaffold_rules_policy_version": PROOF_SCAFFOLD_RULES_POLICY_VERSION,
                 "combo_proof_scaffolds_v0": combo_proof_scaffolds_v0,
                 "combo_proof_scaffolds_v0_total": len(combo_proof_scaffolds_v0),
-                "proof_attempt_layer_version": PROOF_ATTEMPT_LAYER_VERSION_V2,
+                "proof_attempt_layer_version": PROOF_ATTEMPT_LAYER_VERSION_V3,
                 "combo_proof_attempts_v0": combo_proof_attempts_v0,
                 "combo_proof_attempts_v0_total": len(combo_proof_attempts_v0),
                 "proof_attempts_hash_v1": proof_attempts_hash_v1,

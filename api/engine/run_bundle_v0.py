@@ -428,7 +428,9 @@ def _panel_proofs(result_payload: Dict[str, Any]) -> Dict[str, Any]:
     for attempt in attempts:
         if not isinstance(attempt, dict):
             continue
-        anchors = attempt.get("oracle_anchors_v2")
+        anchors = attempt.get("snapshot_evidence_anchors_v3")
+        if not isinstance(anchors, dict):
+            anchors = attempt.get("oracle_anchors_v2")
         if not isinstance(anchors, dict):
             anchors = attempt.get("oracle_anchors_v1")
         if not isinstance(anchors, dict):

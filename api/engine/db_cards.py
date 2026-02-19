@@ -1,6 +1,51 @@
 from typing import Any, Dict, List
 
+from api.engine.constants import assert_runtime_no_oracle_text
+
 from engine.db import connect as cards_db_connect, find_card_by_name
+
+
+_DEFAULT_CARD_LOOKUP_FIELDS = [
+    "oracle_id",
+    "name",
+    "type_line",
+    "mana_cost",
+    "cmc",
+    "colors",
+    "color_identity",
+]
+
+_ALLOWED_CARD_LOOKUP_FIELDS = {
+    "oracle_id",
+    "name",
+    "type_line",
+    "mana_cost",
+    "cmc",
+    "colors",
+    "color_identity",
+    "produced_mana",
+    "keywords",
+    "legalities_json",
+    "primitives_json",
+}
+
+
+def _normalize_requested_fields(requested_fields: List[str] | None) -> List[str]:
+    if requested_fields is None:
+        requested = list(_DEFAULT_CARD_LOOKUP_FIELDS)
+    else:
+        requested = [field for field in requested_fields if isinstance(field, str) and field != ""]
+
+    requested_set = set(requested)
+    if "oracle_text" in requested_set:
+        assert_runtime_no_oracle_text(
+            "db_cards.lookup_cards_by_oracle_ids requested forbidden field oracle_text"
+        )
+
+    safe_fields = [field for field in requested if field in _ALLOWED_CARD_LOOKUP_FIELDS]
+    if "oracle_id" not in safe_fields:
+        safe_fields.insert(0, "oracle_id")
+    return safe_fields
 
 
 def get_format_legality(card: dict, fmt: str) -> tuple[bool, str]:
@@ -28,15 +73,21 @@ def resolve_deck_cards_by_inputs(conn, snapshot_id: str, inputs: List[str]) -> L
     return resolved
 
 
-def lookup_cards_by_oracle_ids(conn, snapshot_id: str, oracle_ids: set[str]) -> Dict[str, Dict[str, Any]]:
+def lookup_cards_by_oracle_ids(
+    conn,
+    snapshot_id: str,
+    oracle_ids: set[str],
+    requested_fields: List[str] | None = None,
+) -> Dict[str, Dict[str, Any]]:
     lookup: Dict[str, Dict[str, Any]] = {}
     oracle_ids_unique = sorted(set(oid for oid in oracle_ids if isinstance(oid, str) and oid != ""))
     if not oracle_ids_unique:
         return lookup
 
+    select_fields = _normalize_requested_fields(requested_fields=requested_fields)
     placeholders = ",".join(["?"] * len(oracle_ids_unique))
     query = (
-        "SELECT oracle_id, name, type_line, mana_cost, oracle_text "
+        f"SELECT {', '.join(select_fields)} "
         f"FROM cards WHERE snapshot_id = ? AND oracle_id IN ({placeholders})"
     )
 
@@ -55,10 +106,9 @@ def lookup_cards_by_oracle_ids(conn, snapshot_id: str, oracle_ids: set[str]) -> 
         if not isinstance(oracle_id, str):
             continue
         lookup[oracle_id] = {
-            "name": row_dict.get("name") if isinstance(row_dict.get("name"), str) else None,
-            "type_line": row_dict.get("type_line") if isinstance(row_dict.get("type_line"), str) else None,
-            "mana_cost": row_dict.get("mana_cost") if isinstance(row_dict.get("mana_cost"), str) else None,
-            "oracle_text": row_dict.get("oracle_text") if isinstance(row_dict.get("oracle_text"), str) else None,
+            field: row_dict.get(field)
+            for field in select_fields
+            if field in row_dict
         }
 
     return lookup

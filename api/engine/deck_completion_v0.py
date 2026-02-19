@@ -7,12 +7,22 @@ from api.engine.candidate_selection_v0 import (
     is_singleton_exempt_card,
     normalize_color_identity,
 )
-from api.engine.constants import BASIC_NAMES, GENERIC_MINIMUMS
+from api.engine.constants import BASIC_NAMES, GENERIC_MINIMUMS, TagsNotCompiledError
 from api.engine.pipeline_build import run_build_pipeline
 from api.engine.scoring_v0 import score_deck_v0
 from api.engine.scoring_v2 import score_deck_v2
+from api.engine.snapshot_preflight_v1 import SnapshotPreflightError, run_snapshot_preflight
 from api.engine.utils import normalize_primitives_source, sorted_unique
-from engine.db import find_card_by_name, is_legal_commander_card, is_legal_in_format, list_snapshots
+from api.engine.version_resolve_v1 import resolve_runtime_ruleset_version, resolve_runtime_taxonomy_version
+from engine.db import (
+    DB_PATH as CARDS_DB_PATH,
+    CommanderEligibilityUnknownError,
+    connect as cards_db_connect,
+    find_card_by_name,
+    is_legal_commander_card,
+    is_legal_in_format,
+    list_snapshots,
+)
 from engine.game_changers import bracket_floor_from_count, detect_game_changers
 
 
@@ -923,7 +933,155 @@ def generate_deck_completion_v0(
             },
         }
 
-    commander_legal, _ = is_legal_commander_card(commander_card)
+    commander_oracle_id_for_preflight = (
+        commander_card.get("oracle_id")
+        if isinstance(commander_card.get("oracle_id"), str)
+        else None
+    )
+
+    with cards_db_connect() as runtime_con:
+        runtime_taxonomy_version = resolve_runtime_taxonomy_version(
+            snapshot_id=snapshot_id,
+            requested=None,
+            db=runtime_con,
+        )
+        runtime_ruleset_version = resolve_runtime_ruleset_version(
+            snapshot_id=snapshot_id,
+            taxonomy_version=runtime_taxonomy_version,
+            requested=None,
+            db=runtime_con,
+        )
+
+        if (
+            not isinstance(snapshot_id, str)
+            or snapshot_id.strip() == ""
+            or not isinstance(runtime_taxonomy_version, str)
+            or runtime_taxonomy_version == ""
+            or not isinstance(runtime_ruleset_version, str)
+            or runtime_ruleset_version == ""
+        ):
+            missing_versions_unknown = {
+                "code": "TAGS_NOT_COMPILED",
+                "snapshot_id": snapshot_id,
+                "taxonomy_version": runtime_taxonomy_version,
+                "ruleset_version": runtime_ruleset_version,
+                "reason": "MISSING_RUNTIME_VERSIONS",
+                "message": "Runtime snapshot/taxonomy/ruleset versions are required for deterministic preflight.",
+                "counts": {},
+                "rates": {},
+                "remediation_commands": [
+                    (
+                        "python -m snapshot_build.tag_snapshot "
+                        f"--db {str(CARDS_DB_PATH)} "
+                        f"--snapshot_id {snapshot_id if isinstance(snapshot_id, str) and snapshot_id.strip() else '<snapshot_id>'} "
+                        f"--taxonomy_pack {runtime_taxonomy_version if isinstance(runtime_taxonomy_version, str) and runtime_taxonomy_version.strip() else '<taxonomy_pack>'}"
+                    ),
+                    (
+                        "python -m snapshot_build.index_build "
+                        f"--db {str(CARDS_DB_PATH)} "
+                        f"--snapshot_id {snapshot_id if isinstance(snapshot_id, str) and snapshot_id.strip() else '<snapshot_id>'} "
+                        f"--taxonomy_pack {runtime_taxonomy_version if isinstance(runtime_taxonomy_version, str) and runtime_taxonomy_version.strip() else '<taxonomy_pack>'}"
+                    ),
+                ],
+            }
+            return {
+                "status": "TAGS_NOT_COMPILED",
+                "unknowns": [missing_versions_unknown],
+                "deck_complete_v0": {
+                    "inputs": {
+                        "commander": commander,
+                        "anchors": anchors,
+                        "profile_id": profile_id,
+                        "bracket_id": bracket_id,
+                        "max_iters": max_iters,
+                        "target_deck_size": target_deck_size,
+                        "seed_package": seed_package,
+                        "validate_each_iter": validate_each_iter,
+                        "db_snapshot_id": snapshot_id,
+                        "taxonomy_version": runtime_taxonomy_version,
+                        "ruleset_version": runtime_ruleset_version,
+                    },
+                    "final_deck": {"commander": commander_name, "cards": []},
+                    "build_report": {
+                        "snapshot_preflight_v1": missing_versions_unknown,
+                    },
+                    "iterations": [],
+                    "explanation": {
+                        "plan_summary": "Runtime snapshot/taxonomy/ruleset versions are required before deck completion.",
+                        "why_these_cards": [],
+                        "structural_gaps_remaining": ["TAGS_NOT_COMPILED"],
+                    },
+                },
+            }
+
+        try:
+            _ = run_snapshot_preflight(
+                db=runtime_con,
+                db_snapshot_id=snapshot_id,
+                taxonomy_version=runtime_taxonomy_version,
+                ruleset_version=runtime_ruleset_version,
+                commander_oracle_id=commander_oracle_id_for_preflight,
+            )
+        except SnapshotPreflightError as exc:
+            preflight_unknown = exc.to_unknown()
+            return {
+                "status": "TAGS_NOT_COMPILED",
+                "unknowns": [preflight_unknown],
+                "deck_complete_v0": {
+                    "inputs": {
+                        "commander": commander,
+                        "anchors": anchors,
+                        "profile_id": profile_id,
+                        "bracket_id": bracket_id,
+                        "max_iters": max_iters,
+                        "target_deck_size": target_deck_size,
+                        "seed_package": seed_package,
+                        "validate_each_iter": validate_each_iter,
+                        "db_snapshot_id": snapshot_id,
+                        "taxonomy_version": preflight_unknown.get("taxonomy_version"),
+                        "ruleset_version": preflight_unknown.get("ruleset_version"),
+                    },
+                    "final_deck": {"commander": commander_name, "cards": []},
+                    "build_report": {
+                        "snapshot_preflight_v1": preflight_unknown,
+                    },
+                    "iterations": [],
+                    "explanation": {
+                        "plan_summary": "Snapshot tags/index preflight failed for runtime deck completion.",
+                        "why_these_cards": [],
+                        "structural_gaps_remaining": ["TAGS_NOT_COMPILED"],
+                    },
+                },
+            }
+
+    try:
+        commander_legal, _ = is_legal_commander_card(commander_card)
+    except CommanderEligibilityUnknownError as exc:
+        return {
+            "status": "COMMANDER_ELIGIBILITY_UNKNOWN",
+            "unknowns": [exc.to_unknown()],
+            "deck_complete_v0": {
+                "inputs": {
+                    "commander": commander,
+                    "anchors": anchors,
+                    "profile_id": profile_id,
+                    "bracket_id": bracket_id,
+                    "max_iters": max_iters,
+                    "target_deck_size": target_deck_size,
+                    "seed_package": seed_package,
+                    "validate_each_iter": validate_each_iter,
+                },
+                "final_deck": {"commander": commander_name, "cards": []},
+                "build_report": {},
+                "iterations": [],
+                "explanation": {
+                    "plan_summary": "Commander eligibility facets are missing/ambiguous in compiled tags.",
+                    "why_these_cards": [],
+                    "structural_gaps_remaining": ["COMMANDER_ELIGIBILITY_UNKNOWN"],
+                },
+            },
+        }
+
     format_legal, _ = is_legal_in_format(commander_card, "commander")
     if (not commander_legal) or (not format_legal):
         return {
@@ -1074,6 +1232,40 @@ def generate_deck_completion_v0(
     iterations: List[Dict[str, Any]] = []
     iter_index = 0
 
+    def _tags_not_compiled_response(exc: TagsNotCompiledError) -> Dict[str, Any]:
+        return {
+            "status": "TAGS_NOT_COMPILED",
+            "unknowns": [exc.to_unknown()],
+            "deck_complete_v0": {
+                "inputs": {
+                    "commander": commander_name,
+                    "anchors": anchor_input,
+                    "profile_id": profile_id,
+                    "bracket_id": bracket_id,
+                    "max_iters": int(max_iters),
+                    "target_deck_size": int(target_deck_size),
+                    "seed_package": seed_package if isinstance(seed_package, dict) else None,
+                    "validate_each_iter": bool(validate_each_iter),
+                    "db_snapshot_id": snapshot_id,
+                    "refine": bool(refine),
+                    "max_refine_iters": int(max_refine_iters),
+                    "swap_batch_size": int(swap_batch_size),
+                    "validate_each_refine_iter": bool(validate_each_refine_iter),
+                },
+                "final_deck": {
+                    "commander": commander_name,
+                    "cards": list(deck_cards),
+                },
+                "build_report": {},
+                "iterations": list(iterations),
+                "explanation": {
+                    "plan_summary": "Runtime candidate retrieval requires compiled primitive indices.",
+                    "why_these_cards": [],
+                    "structural_gaps_remaining": ["TAGS_NOT_COMPILED"],
+                },
+            },
+        }
+
     gc_set = set()
     try:
         from api.engine.constants import GAME_CHANGERS_SET as _GC_SET
@@ -1089,16 +1281,19 @@ def generate_deck_completion_v0(
 
         missing_primitives = _missing_generic_primitives(primitive_frequency)
 
-        candidate_pool = get_candidate_pool_v0(
-            snapshot_id=snapshot_id,
-            primitives_needed=missing_primitives,
-            commander_name=commander_name,
-            commander_oracle_id=commander_oracle_id,
-            commander_ci=commander_ci,
-            format_name="commander",
-            bracket_id=bracket_id,
-            current_cards=deck_cards,
-        )
+        try:
+            candidate_pool = get_candidate_pool_v0(
+                snapshot_id=snapshot_id,
+                primitives_needed=missing_primitives,
+                commander_name=commander_name,
+                commander_oracle_id=commander_oracle_id,
+                commander_ci=commander_ci,
+                format_name="commander",
+                bracket_id=bracket_id,
+                current_cards=deck_cards,
+            )
+        except TagsNotCompiledError as exc:
+            return _tags_not_compiled_response(exc)
 
         ranked_candidates = _rank_candidates_for_builder_v1(
             candidate_pool=candidate_pool,
@@ -1222,16 +1417,19 @@ def generate_deck_completion_v0(
                 break
             continue
 
-        fallback_pool = get_candidate_pool_v0(
-            snapshot_id=snapshot_id,
-            primitives_needed=[],
-            commander_name=commander_name,
-            commander_oracle_id=commander_oracle_id,
-            commander_ci=commander_ci,
-            format_name="commander",
-            bracket_id=bracket_id,
-            current_cards=deck_cards,
-        )
+        try:
+            fallback_pool = get_candidate_pool_v0(
+                snapshot_id=snapshot_id,
+                primitives_needed=[],
+                commander_name=commander_name,
+                commander_oracle_id=commander_oracle_id,
+                commander_ci=commander_ci,
+                format_name="commander",
+                bracket_id=bracket_id,
+                current_cards=deck_cards,
+            )
+        except TagsNotCompiledError as exc:
+            return _tags_not_compiled_response(exc)
 
         ranked_fallback = _rank_candidates_for_builder_v1(
             candidate_pool=fallback_pool,
@@ -1350,16 +1548,19 @@ def generate_deck_completion_v0(
                         targets=targets,
                     )
 
-                    candidate_pool = get_candidate_pool_v0(
-                        snapshot_id=snapshot_id,
-                        primitives_needed=missing_without,
-                        commander_name=commander_name,
-                        commander_oracle_id=commander_oracle_id,
-                        commander_ci=commander_ci,
-                        format_name="commander",
-                        bracket_id=bracket_id,
-                        current_cards=deck_without_cut,
-                    )
+                    try:
+                        candidate_pool = get_candidate_pool_v0(
+                            snapshot_id=snapshot_id,
+                            primitives_needed=missing_without,
+                            commander_name=commander_name,
+                            commander_oracle_id=commander_oracle_id,
+                            commander_ci=commander_ci,
+                            format_name="commander",
+                            bracket_id=bracket_id,
+                            current_cards=deck_without_cut,
+                        )
+                    except TagsNotCompiledError as exc:
+                        return _tags_not_compiled_response(exc)
 
                     replacement_candidates = _rank_replacements_for_cut_v0_1(
                         candidate_pool=candidate_pool,

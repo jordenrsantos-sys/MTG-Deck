@@ -278,7 +278,15 @@ class SnapshotCompilerTests(unittest.TestCase):
         ).fetchone()
         self.assertIsNotNone(row)
         self.assertEqual(json.loads(row["primitive_ids_json"]), ["TOKEN_PRODUCTION"])
-        self.assertEqual(json.loads(row["facets_json"]), {})
+        self.assertEqual(
+            json.loads(row["facets_json"]),
+            {
+                "commander_eligible": ["false"],
+                "is_creature": ["false"],
+                "is_legendary": ["false"],
+                "is_legendary_creature": ["false"],
+            },
+        )
 
     def test_compile_snapshot_routes_unknown_match_without_primitive(self) -> None:
         snapshot_id = "snap_unknown"

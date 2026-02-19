@@ -40,15 +40,6 @@ def sorted_unique(seq: Any) -> List[Any]:
     return sorted(set(x for x in seq if x is not None))
 
 
-def normalize_oracle_text_excerpt(oracle_text: Any, max_chars: int = 240) -> str | None:
-    if not isinstance(oracle_text, str):
-        return None
-    normalized = " ".join(oracle_text.split()).strip()
-    if normalized == "":
-        return None
-    return normalized[:max_chars]
-
-
 def normalize_primitives_source(value: Any) -> List[str]:
     if value is None:
         return []

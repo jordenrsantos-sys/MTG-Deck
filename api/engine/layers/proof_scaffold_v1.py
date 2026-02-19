@@ -57,7 +57,7 @@ def run_proof_scaffold_v1(state: Dict[str, Any]) -> Dict[str, Any]:
         {
             "id": "T1_MAP_TO_RULES_TEXT",
             "done": False,
-            "text": "Map candidate nodes to actual rules text interactions (requires DB oracle_text access later).",
+            "text": "Map candidate nodes to compiled snapshot evidence + rules interactions (no runtime oracle text access).",
         },
         {
             "id": "T2_VALIDATE_TIMING",

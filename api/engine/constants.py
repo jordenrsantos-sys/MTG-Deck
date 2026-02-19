@@ -52,6 +52,57 @@ PROOF_ATTEMPT_LAYER_VERSION_V1 = "proof_attempt_v1_oracle_anchors"
 PROOF_ATTEMPT_BUILD_PIPELINE_STAGE_V1 = "PROOF_ATTEMPT_V1_ORACLE"
 PROOF_ATTEMPT_LAYER_VERSION_V2 = "proof_attempt_v2_oracle_anchors_plus_slot_links"
 PROOF_ATTEMPT_BUILD_PIPELINE_STAGE_V2 = "PROOF_ATTEMPT_V2_ORACLE"
+PROOF_ATTEMPT_LAYER_VERSION_V3 = "proof_attempt_v3_snapshot_evidence_only"
+PROOF_ATTEMPT_BUILD_PIPELINE_STAGE_V3 = "PROOF_ATTEMPT_V3_EVIDENCE"
+
+# --- Runtime oracle-text guard ---
+ENGINE_ALLOW_RUNTIME_ORACLE_TEXT = False
+
+
+class RuntimeOracleTextForbiddenError(RuntimeError):
+    code = "RUNTIME_ORACLE_TEXT_FORBIDDEN"
+
+    def __init__(self, reason: str):
+        self.reason = str(reason or "runtime oracle_text access attempted")
+        super().__init__(f"{self.code}: {self.reason}")
+
+    def to_unknown(self) -> Dict[str, Any]:
+        return {
+            "code": self.code,
+            "message": (
+                "Runtime oracle_text access is forbidden. "
+                "Move tagging/extraction to snapshot_build and read compiled tags from SQLite only."
+            ),
+            "reason": self.reason,
+        }
+
+
+def assert_runtime_no_oracle_text(reason: str) -> None:
+    if ENGINE_ALLOW_RUNTIME_ORACLE_TEXT:
+        return
+    raise RuntimeOracleTextForbiddenError(reason=reason)
+
+
+class TagsNotCompiledError(RuntimeError):
+    code = "TAGS_NOT_COMPILED"
+
+    def __init__(self, snapshot_id: str, taxonomy_version: str | None, reason: str):
+        self.snapshot_id = str(snapshot_id or "")
+        self.taxonomy_version = taxonomy_version if isinstance(taxonomy_version, str) and taxonomy_version else None
+        self.reason = str(reason or "Compiled tag indices are missing for runtime lookup.")
+        super().__init__(f"{self.code}: {self.reason}")
+
+    def to_unknown(self) -> Dict[str, Any]:
+        return {
+            "code": self.code,
+            "snapshot_id": self.snapshot_id,
+            "taxonomy_version": self.taxonomy_version,
+            "message": (
+                "Tags/index not compiled for snapshot/taxonomy_version. "
+                "Run snapshot_build.tag_snapshot then snapshot_build.index_build."
+            ),
+            "reason": self.reason,
+        }
 
 # --- Rules/Thresholds ---
 COMBO_SKELETON_BFS_NODE_CAP = 60

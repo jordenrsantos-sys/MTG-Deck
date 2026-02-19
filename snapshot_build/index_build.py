@@ -93,6 +93,15 @@ def rebuild_inverted_indices(
         for equiv_id in equiv_ids:
             equiv_rows.append((equiv_id, oracle_id, snapshot_id, taxonomy_version))
 
+    primitive_rows = sorted(
+        set(primitive_rows),
+        key=lambda row: (row[0], row[1], row[2], row[3]),
+    )
+    equiv_rows = sorted(
+        set(equiv_rows),
+        key=lambda row: (row[0], row[1], row[2], row[3]),
+    )
+
     if primitive_rows:
         con.executemany(
             """

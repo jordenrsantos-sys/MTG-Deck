@@ -1,21 +1,59 @@
 from typing import Any, Dict, List
 
 
+def _normalize_evidence_matches(value: Any) -> List[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    normalized: List[Dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        normalized.append(
+            {
+                "rule_id": item.get("rule_id") if isinstance(item.get("rule_id"), str) else None,
+                "field": item.get("field") if isinstance(item.get("field"), str) else None,
+                "match_mode": item.get("match_mode") if isinstance(item.get("match_mode"), str) else None,
+                "snippet": item.get("snippet") if isinstance(item.get("snippet"), str) else None,
+            }
+        )
+    return normalized
+
+
+def _missing_evidence_keys(payload: Dict[str, Any]) -> List[str]:
+    if not isinstance(payload, dict):
+        return ["matches"]
+
+    if not isinstance(payload.get("matches"), list):
+        return ["matches"]
+
+    matches = _normalize_evidence_matches(payload.get("matches"))
+    if not matches:
+        return ["matches"]
+
+    missing: set[str] = set()
+    if not any(isinstance(match.get("rule_id"), str) for match in matches):
+        missing.add("matches.rule_id")
+    if not any(isinstance(match.get("field"), str) for match in matches):
+        missing.add("matches.field")
+    if not any(isinstance(match.get("snippet"), str) for match in matches):
+        missing.add("matches.snippet")
+    return sorted(missing)
+
+
 def run_proof_attempt_v1(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Proof attempt layer (proof_attempt_v1).
-    Builds oracle anchors + deterministic excerpts and produces proof_attempts_hash_v2.
-    Must preserve exact output + ordering + hashing payloads.
+    Uses snapshot evidence from card_tags.evidence_json only; runtime oracle text access is forbidden.
     """
 
     combo_proof_scaffolds_v0 = state["combo_proof_scaffolds_v0"]
     slot_by_id = state["slot_by_id"]
     commander_canonical_slot = state["commander_canonical_slot"]
-    db_snapshot_id = state["db_snapshot_id"]
     sorted_unique = state["sorted_unique"]
     slot_sort_key = state["slot_sort_key"]
-    normalize_oracle_text_excerpt = state["normalize_oracle_text_excerpt"]
-    lookup_cards_by_oracle_id = state["lookup_cards_by_oracle_id"]
+    lookup_snapshot_evidence_by_oracle_id = state["lookup_snapshot_evidence_by_oracle_id"]
+    assert_runtime_no_oracle_text = state["assert_runtime_no_oracle_text"]
     add_unknown = state["add_unknown"]
     unknowns = state["unknowns"]
     strip_hash_fields = state["strip_hash_fields"]
@@ -24,12 +62,16 @@ def run_proof_attempt_v1(state: Dict[str, Any]) -> Dict[str, Any]:
     proof_attempt_layer_version_v1 = state["proof_attempt_layer_version_v1"]
     proof_scaffolds_hash_v2 = state["proof_scaffolds_hash_v2"]
 
+    assert_runtime_no_oracle_text(
+        "proof_attempt_v1 enforces snapshot evidence and forbids runtime oracle_text access"
+    )
+
     combo_proof_attempts_v0: List[Dict[str, Any]] = []
     proof_attempt_hash_stable = True
-    oracle_anchor_lookup_cache: Dict[str, Dict[str, Any] | None] = {}
-    missing_oracle_text_unknown_oracle_ids: set[str] = set()
+    evidence_lookup_cache: Dict[str, Dict[str, Any]] = {}
+    missing_snapshot_evidence_unknown_oracle_ids: set[str] = set()
     proof_gaps_template_v0 = [
-        {"id": "G0_MAP_TO_ORACLE_TEXT", "missing": True},
+        {"id": "G0_MAP_TO_SNAPSHOT_EVIDENCE", "missing": True},
         {"id": "G1_DEFINE_ACTION_SEQUENCE", "missing": True},
         {"id": "G2_SHOW_LOOP_CLOSURE", "missing": True},
         {"id": "G3_VALIDATE_COSTS", "missing": True},
@@ -80,136 +122,76 @@ def run_proof_attempt_v1(state: Dict[str, Any]) -> Dict[str, Any]:
         }
 
         candidate_slot_ids = [sid for sid in (scaffold.get("slot_ids") or []) if isinstance(sid, str)]
-        oracle_anchor_refs_slot_ids = list(candidate_slot_ids)
-        if "C0" in slot_by_id and "C0" not in oracle_anchor_refs_slot_ids:
-            oracle_anchor_refs_slot_ids.append("C0")
-        oracle_anchor_refs_slot_ids = sorted_unique(oracle_anchor_refs_slot_ids)
-        oracle_anchor_refs_slot_ids.sort(key=slot_sort_key)
+        slot_ids_for_anchor_refs_v2 = sorted_unique(candidate_slot_ids)
+        commander_oracle_id_v2 = (commander_canonical_slot or {}).get("resolved_oracle_id")
+        if (
+            "C0" in slot_by_id
+            and isinstance(commander_oracle_id_v2, str)
+            and "C0" not in slot_ids_for_anchor_refs_v2
+        ):
+            slot_ids_for_anchor_refs_v2.append("C0")
+        slot_ids_for_anchor_refs_v2.sort(key=slot_sort_key)
 
-        oracle_anchor_refs_by_slot = {}
-        involved_oracle_ids_raw: List[str] = []
-        for sid in oracle_anchor_refs_slot_ids:
-            resolved_oracle_id = (slot_by_id.get(sid) or {}).get("resolved_oracle_id")
-            resolved_oracle_id_value = resolved_oracle_id if isinstance(resolved_oracle_id, str) else None
-            oracle_anchor_refs_by_slot[sid] = resolved_oracle_id_value
-            if isinstance(resolved_oracle_id_value, str):
-                involved_oracle_ids_raw.append(resolved_oracle_id_value)
-
-        for oracle_id in (scaffold.get("card_oracle_ids") or []):
-            if isinstance(oracle_id, str):
-                involved_oracle_ids_raw.append(oracle_id)
-
-        commander_anchor_oracle_id = (commander_canonical_slot or {}).get("resolved_oracle_id")
-        if isinstance(commander_anchor_oracle_id, str):
-            involved_oracle_ids_raw.append(commander_anchor_oracle_id)
-
-        involved_oracle_ids_unique = sorted_unique(involved_oracle_ids_raw)
-        cache_misses = [oid for oid in involved_oracle_ids_unique if oid not in oracle_anchor_lookup_cache]
-        if cache_misses:
-            lookup_rows = lookup_cards_by_oracle_id(db_snapshot_id, cache_misses)
-            for oid in cache_misses:
-                oracle_anchor_lookup_cache[oid] = lookup_rows.get(oid)
-
-        oracle_anchor_cards = []
-        for oracle_id in involved_oracle_ids_unique:
-            row = oracle_anchor_lookup_cache.get(oracle_id)
-            row_name = row.get("name") if isinstance(row, dict) else None
-            row_type_line = row.get("type_line") if isinstance(row, dict) else None
-            row_mana_cost = row.get("mana_cost") if isinstance(row, dict) else None
-            row_oracle_text = row.get("oracle_text") if isinstance(row, dict) else None
-            oracle_text_excerpt = normalize_oracle_text_excerpt(row_oracle_text, max_chars=240)
-
-            if oracle_text_excerpt is None and oracle_id not in missing_oracle_text_unknown_oracle_ids:
-                add_unknown(
-                    unknowns,
-                    code="MISSING_ORACLE_TEXT",
-                    input_value=oracle_id,
-                    message="Card oracle text not found in local DB.",
-                    reason="Proof attempt oracle anchoring incomplete for this oracle_id.",
-                    suggestions=[],
-                )
-                missing_oracle_text_unknown_oracle_ids.add(oracle_id)
-
-            oracle_anchor_cards.append(
-                {
-                    "oracle_id": oracle_id,
-                    "name": row_name if isinstance(row_name, str) else None,
-                    "type_line": row_type_line if isinstance(row_type_line, str) else None,
-                    "mana_cost": row_mana_cost if isinstance(row_mana_cost, str) else None,
-                    "oracle_text_excerpt": oracle_text_excerpt,
-                    "source": "cards_db",
-                    "excerpt_policy": {
-                        "max_chars": 240,
-                        "method": "first_240_chars",
-                    },
-                }
-            )
-
-        attempt["oracle_anchors_v1"] = {
-            "cards": oracle_anchor_cards,
-            "cards_total": len(oracle_anchor_cards),
-            "oracle_ids_unique_total": len(involved_oracle_ids_unique),
-        }
-        attempt["oracle_anchor_refs_by_slot"] = oracle_anchor_refs_by_slot
-
-        candidate_oracle_ids_raw_v2 = [
+        oracle_ids_raw_v2 = [
             oracle_id
             for oracle_id in (scaffold.get("card_oracle_ids") or [])
             if isinstance(oracle_id, str) and oracle_id != ""
         ]
-        oracle_ids_raw_v2 = list(candidate_oracle_ids_raw_v2)
-        commander_oracle_id_v2 = (commander_canonical_slot or {}).get("resolved_oracle_id")
+        for slot_id in slot_ids_for_anchor_refs_v2:
+            slot_oracle_id = (slot_by_id.get(slot_id) or {}).get("resolved_oracle_id")
+            if isinstance(slot_oracle_id, str) and slot_oracle_id != "":
+                oracle_ids_raw_v2.append(slot_oracle_id)
         if isinstance(commander_oracle_id_v2, str) and commander_oracle_id_v2 != "":
             oracle_ids_raw_v2.append(commander_oracle_id_v2)
+
         oracle_ids_unique_sorted_v2 = sorted_unique([oid for oid in oracle_ids_raw_v2 if oid])
 
-        cache_misses_v2 = [oid for oid in oracle_ids_unique_sorted_v2 if oid not in oracle_anchor_lookup_cache]
+        cache_misses_v2 = [oid for oid in oracle_ids_unique_sorted_v2 if oid not in evidence_lookup_cache]
         if cache_misses_v2:
-            lookup_rows_v2 = lookup_cards_by_oracle_id(db_snapshot_id, cache_misses_v2)
+            lookup_rows_v2 = lookup_snapshot_evidence_by_oracle_id(cache_misses_v2)
             for oid in cache_misses_v2:
-                oracle_anchor_lookup_cache[oid] = lookup_rows_v2.get(oid)
+                payload = lookup_rows_v2.get(oid)
+                evidence_lookup_cache[oid] = payload if isinstance(payload, dict) else {}
 
         anchors_v2 = []
         for oracle_id in oracle_ids_unique_sorted_v2:
-            row_v2 = oracle_anchor_lookup_cache.get(oracle_id)
-            row_name_v2 = row_v2.get("name") if isinstance(row_v2, dict) else None
-            row_type_line_v2 = row_v2.get("type_line") if isinstance(row_v2, dict) else None
-            row_mana_cost_v2 = row_v2.get("mana_cost") if isinstance(row_v2, dict) else None
-            row_oracle_text_v2 = row_v2.get("oracle_text") if isinstance(row_v2, dict) else None
-            oracle_text_excerpt_v2 = normalize_oracle_text_excerpt(row_oracle_text_v2, max_chars=240)
+            evidence_payload = evidence_lookup_cache.get(oracle_id) if isinstance(evidence_lookup_cache.get(oracle_id), dict) else {}
+            matches = _normalize_evidence_matches(evidence_payload.get("matches"))
+            missing_keys = _missing_evidence_keys(evidence_payload)
 
-            if row_v2 is None and oracle_id not in missing_oracle_text_unknown_oracle_ids:
+            if missing_keys and oracle_id not in missing_snapshot_evidence_unknown_oracle_ids:
                 add_unknown(
                     unknowns,
-                    code="MISSING_ORACLE_TEXT",
+                    code="PROOF_NEEDS_SNAPSHOT_EVIDENCE",
                     input_value=oracle_id,
-                    message="Card oracle text not found in local DB.",
-                    reason="Proof attempt oracle anchoring incomplete for this oracle_id.",
+                    message="Snapshot evidence is missing for proof attempt claim construction.",
+                    reason=(
+                        "Proof attempt requires compiled card_tags.evidence_json and cannot use runtime oracle text."
+                    ),
                     suggestions=[],
                 )
-                missing_oracle_text_unknown_oracle_ids.add(oracle_id)
+                if unknowns and isinstance(unknowns[-1], dict):
+                    unknowns[-1]["oracle_id"] = oracle_id
+                    unknowns[-1]["missing_evidence_keys"] = list(missing_keys)
+                missing_snapshot_evidence_unknown_oracle_ids.add(oracle_id)
 
             anchors_v2.append(
                 {
                     "oracle_id": oracle_id,
-                    "name": row_name_v2 if isinstance(row_name_v2, str) else None,
-                    "type_line": row_type_line_v2 if isinstance(row_type_line_v2, str) else None,
-                    "mana_cost": row_mana_cost_v2 if isinstance(row_mana_cost_v2, str) else None,
-                    "oracle_text_excerpt": oracle_text_excerpt_v2,
-                    "source": "cards_db",
-                    "excerpt_policy": {
-                        "max_chars": 240,
-                        "method": "first_240_chars_whitespace_normalized",
-                    },
+                    "evidence_matches_total": len(matches),
+                    "evidence_matches": matches[:5],
+                    "missing_evidence_keys": list(missing_keys),
+                    "source": "card_tags.evidence_json",
                 }
             )
 
-        attempt["oracle_anchors_v2"] = {
+        attempt["snapshot_evidence_anchors_v3"] = {
             "cards": anchors_v2,
             "cards_total": len(anchors_v2),
             "oracle_ids_unique_total": len(oracle_ids_unique_sorted_v2),
             "oracle_ids_raw_total": len([x for x in oracle_ids_raw_v2 if x]),
             "oracle_ids_raw_including_duplicates": list(oracle_ids_raw_v2),
+            "source": "card_tags.evidence_json",
         }
 
         anchor_index_by_oracle_id_v2 = {
@@ -217,18 +199,6 @@ def run_proof_attempt_v1(state: Dict[str, Any]) -> Dict[str, Any]:
             for idx, row in enumerate(anchors_v2)
             if isinstance(row.get("oracle_id"), str)
         }
-        slot_ids_for_anchor_refs_v2 = sorted_unique([
-            sid for sid in (scaffold.get("slot_ids") or []) if isinstance(sid, str)
-        ])
-        if (
-            "C0" in slot_by_id
-            and isinstance(commander_oracle_id_v2, str)
-            and commander_oracle_id_v2 in oracle_ids_unique_sorted_v2
-            and "C0" not in slot_ids_for_anchor_refs_v2
-        ):
-            slot_ids_for_anchor_refs_v2.append("C0")
-        slot_ids_for_anchor_refs_v2.sort(key=slot_sort_key)
-
         oracle_anchor_refs_by_slot_v2 = {}
         slot_ids_by_oracle_id_v2_temp: Dict[str, List[str]] = {}
         for slot_id in slot_ids_for_anchor_refs_v2:
@@ -250,7 +220,6 @@ def run_proof_attempt_v1(state: Dict[str, Any]) -> Dict[str, Any]:
             oracle_id: sorted(slot_ids, key=slot_sort_key)
             for oracle_id, slot_ids in sorted(slot_ids_by_oracle_id_v2_temp.items(), key=lambda x: x[0])
         }
-
         attempt["oracle_anchor_refs_by_slot_v2"] = oracle_anchor_refs_by_slot_v2
         attempt["slot_ids_by_oracle_id_v2"] = slot_ids_by_oracle_id_v2
 

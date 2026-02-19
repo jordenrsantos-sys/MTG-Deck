@@ -1,5 +1,6 @@
 from typing import Any, Dict, List
 
+from api.engine.constants import TagsNotCompiledError
 from api.engine.constants import GENERIC_MINIMUMS
 from api.engine.layers.primitive_index_v1 import run_primitive_index_v1
 from api.engine.strategy_packages_v0 import build_completion_packages_v0_1
@@ -364,21 +365,41 @@ def generate_strategy_hypotheses_v0(
     bounded = hypotheses[:3]
     for idx, hypothesis in enumerate(bounded):
         hypothesis["hypothesis_id"] = f"H{idx}"
-        hypothesis["completion_packages_v0_1"] = build_completion_packages_v0_1(
-            snapshot_id=snapshot_id,
-            hypothesis=hypothesis,
-            primitive_frequency=primitive_frequency,
-            slot_ids_by_primitive=slot_ids_by_primitive,
-            primitive_index_by_slot=primitive_index_by_slot,
-            slot_name_by_id=slot_name_by_id,
-            max_packages_per_hypothesis=max_packages_per_hypothesis,
-            max_cards_per_package=max_cards_per_package,
-            validate_packages=validate_packages,
-            commander=commander,
-            anchor_cards_for_validation=resolved_anchor_names_for_validation,
-            profile_id=profile_id,
-            bracket_id=bracket_id,
-        )
+        try:
+            hypothesis["completion_packages_v0_1"] = build_completion_packages_v0_1(
+                snapshot_id=snapshot_id,
+                hypothesis=hypothesis,
+                primitive_frequency=primitive_frequency,
+                slot_ids_by_primitive=slot_ids_by_primitive,
+                primitive_index_by_slot=primitive_index_by_slot,
+                slot_name_by_id=slot_name_by_id,
+                max_packages_per_hypothesis=max_packages_per_hypothesis,
+                max_cards_per_package=max_cards_per_package,
+                validate_packages=validate_packages,
+                commander=commander,
+                anchor_cards_for_validation=resolved_anchor_names_for_validation,
+                profile_id=profile_id,
+                bracket_id=bracket_id,
+            )
+        except TagsNotCompiledError as exc:
+            unknown = exc.to_unknown()
+            return {
+                "status": "TAGS_NOT_COMPILED",
+                "db_snapshot_id": snapshot_id,
+                "profile_id": profile_id,
+                "bracket_id": bracket_id,
+                "commander": commander,
+                "anchor_cards": anchor_cards_unique_sorted,
+                "unknown_anchor_cards": sorted_unique(unknown_anchor_cards),
+                "primitive_frequency": {
+                    key: primitive_frequency[key] for key in sorted(primitive_frequency.keys())
+                },
+                "primitive_overlap_map": {
+                    key: primitive_overlap_map[key] for key in sorted(primitive_overlap_map.keys())
+                },
+                "strategy_hypotheses_v0": bounded,
+                "unknowns": [unknown],
+            }
 
     return {
         "db_snapshot_id": snapshot_id,
