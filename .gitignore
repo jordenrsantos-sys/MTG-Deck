@@ -18,6 +18,13 @@ ENV/
 
 # --- Node ---
 node_modules/
+ui_harness/node_modules/
+ui_harness/dist/
+ui_harness/*.tsbuildinfo
+ui_harness/vite.config.js
+ui_harness/vite.config.d.ts
+ui_harness/tmp_*.json
+tmp_*.json
 
 # --- Secrets / env files ---
 .env
