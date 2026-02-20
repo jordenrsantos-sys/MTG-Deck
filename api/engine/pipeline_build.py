@@ -16,12 +16,14 @@ from engine.db_tags import TagSnapshotMissingError, bulk_get_card_tags, ensure_t
 from engine.game_changers import detect_game_changers, bracket_floor_from_count
 
 from api.engine.constants import *
+from api.engine.dependency_signatures_v1 import load_dependency_signatures_v1
 from api.engine.layers.canonical_v1 import run_canonical_v1
 from api.engine.layers.combo_candidate_v0 import run_combo_candidate_v0
 from api.engine.layers.combo_skeleton_v0 import run_combo_skeleton_v0
 from api.engine.layers.counterfactual_stress_test_v1 import run_counterfactual_stress_test_v1
 from api.engine.layers.disruption_v1 import run_disruption_v1
 from api.engine.layers.disruption_surface_v1 import run_disruption_surface_v1
+from api.engine.layers.engine_requirement_detection_v1 import run_engine_requirement_detection_v1
 from api.engine.layers.graph_v3_typed import run_graph_v3_typed
 from api.engine.layers.graph_analytics_summary_v1 import run_graph_analytics_summary_v1
 from api.engine.layers.graph_pathways_summary_v1 import run_graph_pathways_summary_v1
@@ -140,6 +142,7 @@ def build_available_panels_v1(
     graph_pathways_summary_v1: Any = None,
     disruption_surface_v1: Any = None,
     vulnerability_index_v1: Any = None,
+    engine_requirement_detection_v1: Any = None,
     required_effects_coverage_v1: Any = None,
     redundancy_index_v1: Any = None,
     counterfactual_stress_test_v1: Any = None,
@@ -225,6 +228,12 @@ def build_available_panels_v1(
             and isinstance(vulnerability_index_v1, dict)
             and isinstance(vulnerability_index_v1.get("status"), str)
             and vulnerability_index_v1.get("status").strip() != ""
+        ),
+        "has_engine_requirement_detection_v1": (
+            is_present(engine_requirement_detection_v1)
+            and isinstance(engine_requirement_detection_v1, dict)
+            and isinstance(engine_requirement_detection_v1.get("status"), str)
+            and engine_requirement_detection_v1.get("status").strip() != ""
         ),
         "has_required_effects_coverage_v1": (
             is_present(required_effects_coverage_v1)
@@ -1522,6 +1531,18 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
         slot_ids_by_primitive = primitive_index_state["slot_ids_by_primitive"]
         primitive_index_totals = primitive_index_state["primitive_index_totals"]
 
+        dependency_signatures_payload = load_dependency_signatures_v1()
+        dependency_signatures_version = (
+            dependency_signatures_payload.get("version")
+            if isinstance(dependency_signatures_payload, dict)
+            else "dependency_signatures_v1"
+        )
+        engine_requirement_detection_v1 = run_engine_requirement_detection_v1(
+            primitive_index_by_slot=primitive_index_by_slot,
+            slot_ids_by_primitive=slot_ids_by_primitive,
+            commander_slot_id=(commander_canonical_slot or {}).get("slot_id"),
+        )
+
         required_effects_requirements_dict, required_effects_version = resolve_required_effects_v1(
             format=req.format,
             taxonomy_version=runtime_taxonomy_version,
@@ -2351,6 +2372,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "taxonomy_ruleset_version": runtime_tag_ruleset_version,
             "canonical_layer_version": CANONICAL_LAYER_VERSION,
             "primitive_index_version": PRIMITIVE_INDEX_VERSION,
+            "dependency_signatures_version": dependency_signatures_version,
             "required_effects_version": required_effects_version,
             "structural_reporting_version": STRUCTURAL_REPORTING_VERSION,
             "build_pipeline_stage": BUILD_PIPELINE_STAGE,
@@ -2648,6 +2670,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "graph_pathways_summary_v1": graph_pathways_summary_v1,
                 "disruption_surface_v1": disruption_surface_v1,
                 "vulnerability_index_v1": vulnerability_index_v1,
+                "engine_requirement_detection_v1": engine_requirement_detection_v1,
                 "required_effects_coverage_v1": required_effects_coverage_v1,
                 "redundancy_index_v1": redundancy_index_v1,
                 "counterfactual_stress_test_v1": counterfactual_stress_test_v1,
@@ -2701,6 +2724,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                     graph_pathways_summary_v1=graph_pathways_summary_v1,
                     disruption_surface_v1=disruption_surface_v1,
                     vulnerability_index_v1=vulnerability_index_v1,
+                    engine_requirement_detection_v1=engine_requirement_detection_v1,
                     required_effects_coverage_v1=required_effects_coverage_v1,
                     redundancy_index_v1=redundancy_index_v1,
                     counterfactual_stress_test_v1=counterfactual_stress_test_v1,

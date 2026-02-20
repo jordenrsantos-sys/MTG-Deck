@@ -1,0 +1,40 @@
+{
+  "version": "dependency_signatures_v1",
+  "signatures": {
+    "GRAVEYARD_DEPENDENT": {
+      "any_required_primitives": [
+        "CAST_FROM_GRAVEYARD",
+        "GRAVEYARD_SHUFFLE_BACK",
+        "TUTOR_TO_GRAVEYARD"
+      ]
+    },
+    "SAC_BASED": {
+      "any_required_primitives": [
+        "SAC_OUTLET_COSTED",
+        "SAC_OUTLET_FREE",
+        "SACRIFICE_FORCED"
+      ]
+    },
+    "LANDFALL_BASED": {
+      "any_required_primitives": [
+        "EXTRA_LAND_DROPS",
+        "LANDS_MATTER_PAYOFF",
+        "TUTOR_TO_BATTLEFIELD_LAND"
+      ]
+    },
+    "SPELL_DENSITY_BASED": {
+      "any_required_primitives": [
+        "FREE_SPELL_CONDITION",
+        "SPELL_COPY",
+        "SPELL_RECURSION_INSTANT_SORC"
+      ]
+    },
+    "TOKEN_BASED": {
+      "any_required_primitives": [
+        "REPLACEMENT_TOKEN_DOUBLER",
+        "TOKEN_PRODUCTION_CREATURE",
+        "TOKEN_PRODUCTION_NONCREATURE"
+      ]
+    }
+  }
+}

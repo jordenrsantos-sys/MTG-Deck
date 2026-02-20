@@ -23,6 +23,7 @@ _AVAILABLE_PANEL_KEYS = [
     "has_graph_pathways_summary_v1",
     "has_disruption_surface_v1",
     "has_vulnerability_index_v1",
+    "has_engine_requirement_detection_v1",
     "has_required_effects_coverage_v1",
     "has_redundancy_index_v1",
     "has_counterfactual_stress_test_v1",
@@ -80,6 +81,7 @@ class AvailablePanelsV1Tests(unittest.TestCase):
             typed_graph_invariants_v1={},
             profile_bracket_enforcement_v1={},
             vulnerability_index_v1={},
+            engine_requirement_detection_v1={},
             required_effects_coverage_v1={},
             redundancy_index_v1={},
             counterfactual_stress_test_v1={},
@@ -281,6 +283,33 @@ class AvailablePanelsV1Tests(unittest.TestCase):
                             ],
                         },
                         "notes": [],
+                    }
+                },
+            ),
+            (
+                "has_engine_requirement_detection_v1",
+                {
+                    "engine_requirement_detection_v1": {
+                        "version": "engine_requirement_detection_v1",
+                        "status": "WARN",
+                        "reason_code": None,
+                        "codes": [
+                            "ENGINE_REQ_MANA_HUNGRY_UNIMPLEMENTED",
+                            "ENGINE_REQ_PERMANENT_TYPE_UNIMPLEMENTED",
+                            "ENGINE_REQ_SHUFFLE_UNIMPLEMENTED",
+                        ],
+                        "unknowns": [],
+                        "engine_requirements_v1": {
+                            "GRAVEYARD_DEPENDENT": False,
+                            "SAC_BASED": True,
+                            "LANDFALL_BASED": False,
+                            "SPELL_DENSITY_BASED": True,
+                            "TOKEN_BASED": False,
+                            "commander_dependent": "UNKNOWN",
+                            "mana_hungry": False,
+                            "requires_shuffle": False,
+                            "requires_specific_permanent_type": [],
+                        },
                     }
                 },
             ),

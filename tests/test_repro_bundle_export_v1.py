@@ -12,6 +12,7 @@ _EXPECTED_FILE_PATHS = [
     "build_result.json",
     "rules/gc_limits_v1.json",
     "rules/bracket_rules_v2.json",
+    "rules/dependency_signatures_v1.json",
     "rules/two_card_combos_v1.json",
 ]
 
@@ -110,14 +111,17 @@ class ReproBundleExportV1Tests(unittest.TestCase):
 
         gc_limits_entry = by_path.get("rules/gc_limits_v1.json")
         bracket_rules_entry = by_path.get("rules/bracket_rules_v2.json")
+        dependency_signatures_entry = by_path.get("rules/dependency_signatures_v1.json")
         two_card_entry = by_path.get("rules/two_card_combos_v1.json")
 
         self.assertIsInstance(gc_limits_entry, dict)
         self.assertIsInstance(bracket_rules_entry, dict)
+        self.assertIsInstance(dependency_signatures_entry, dict)
         self.assertIsInstance(two_card_entry, dict)
 
         self.assertEqual((gc_limits_entry.get("json") or {}).get("version"), "gc_limits_v1")
         self.assertEqual((bracket_rules_entry.get("json") or {}).get("version"), "bracket_rules_v2")
+        self.assertEqual((dependency_signatures_entry.get("json") or {}).get("version"), "dependency_signatures_v1")
         self.assertEqual((two_card_entry.get("json") or {}).get("version"), "two_card_combos_v1")
 
 
@@ -192,6 +196,7 @@ class RunBundleV0ReproExportIntegrationTests(unittest.TestCase):
         self.assertIn("build_result.json", by_path)
         self.assertIn("rules/gc_limits_v1.json", by_path)
         self.assertIn("rules/bracket_rules_v2.json", by_path)
+        self.assertIn("rules/dependency_signatures_v1.json", by_path)
         self.assertIn("rules/two_card_combos_v1.json", by_path)
 
 

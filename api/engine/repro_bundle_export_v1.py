@@ -16,12 +16,14 @@ _REPRO_BUNDLE_FILE_ORDER: List[str] = [
     "build_result.json",
     "rules/gc_limits_v1.json",
     "rules/bracket_rules_v2.json",
+    "rules/dependency_signatures_v1.json",
     "rules/two_card_combos_v1.json",
 ]
 
 _RULE_FILE_SOURCE_BY_BUNDLE_PATH: Dict[str, Path] = {
     "rules/gc_limits_v1.json": Path(__file__).resolve().parent / "data" / "brackets" / "gc_limits_v1.json",
     "rules/bracket_rules_v2.json": Path(__file__).resolve().parent / "data" / "brackets" / "bracket_rules_v2.json",
+    "rules/dependency_signatures_v1.json": Path(__file__).resolve().parent / "data" / "sufficiency" / "dependency_signatures_v1.json",
     "rules/two_card_combos_v1.json": Path(__file__).resolve().parent / "data" / "combos" / "two_card_combos_v1.json",
 }
 
