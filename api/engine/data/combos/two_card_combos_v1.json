@@ -1,0 +1,24 @@
+{
+  "version": "two_card_combos_v1",
+  "mode": "pairs_only",
+  "pairs": [
+    {
+      "id": "TCC_0001",
+      "a": "combo piece a",
+      "b": "combo piece b",
+      "label": "Combo Piece A + Combo Piece B"
+    },
+    {
+      "id": "TCC_0002",
+      "a": "missing card a",
+      "b": "missing card b",
+      "label": "Missing Card A + Missing Card B"
+    },
+    {
+      "id": "TCC_0003",
+      "a": "omega piece a",
+      "b": "omega piece b",
+      "label": "Omega Piece A + Omega Piece B"
+    }
+  ]
+}

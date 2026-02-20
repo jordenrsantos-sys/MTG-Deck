@@ -9,6 +9,7 @@ from engine.game_changers import load_game_changers
 ENGINE_VERSION = "0.2.3"
 RULESET_VERSION = "ruleset_v0"
 BRACKET_DEFINITION_VERSION = "bracket_v0"
+PROFILE_DEFINITION_VERSION = "profile_defaults_v1_10"
 GAME_CHANGERS_VERSION = "gc_v0_userlist_2025-11-20"
 UI_CONTRACT_VERSION = "ui_contract_v1"
 

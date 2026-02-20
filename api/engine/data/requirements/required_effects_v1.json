@@ -1,0 +1,22 @@
+{
+  "version": "required_effects_v1",
+  "format_defaults": {
+    "commander": {
+      "MANA_RAMP_ARTIFACT_ROCK": {
+        "min": 10
+      },
+      "CARD_DRAW_BURST": {
+        "min": 10
+      },
+      "STACK_COUNTERSPELL": {
+        "min": 8
+      },
+      "TARGETED_REMOVAL_CREATURE": {
+        "min": 6
+      },
+      "BOARDWIPE_CREATURES": {
+        "min": 2
+      }
+    }
+  }
+}

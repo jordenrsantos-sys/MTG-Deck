@@ -1,5 +1,7 @@
 from typing import Any, Dict, List
 
+from api.engine.repro_bundle_export_v1 import build_repro_bundle_export_v1
+
 
 _LAYER_HASH_KEYS_V0 = [
     "graph_hash_v2",
@@ -547,6 +549,12 @@ def build_run_bundle_v0(stored_run: Dict[str, Any]) -> Dict[str, Any]:
         "refinement_trace": _panel_refinement_trace(deck_payload),
     }
 
+    build_payload_for_repro = build_report if build_report else response_payload
+    repro_bundle_export_v1 = build_repro_bundle_export_v1(
+        request_input=request_payload,
+        build_payload=build_payload_for_repro,
+    )
+
     return {
         "run_id": run_id,
         "endpoint": endpoint,
@@ -555,4 +563,5 @@ def build_run_bundle_v0(stored_run: Dict[str, Any]) -> Dict[str, Any]:
         "request": request_payload,
         "response": response_payload,
         "ui_panels": ui_panels,
+        "repro_bundle_export_v1": repro_bundle_export_v1,
     }

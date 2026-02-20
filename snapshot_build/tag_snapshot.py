@@ -13,6 +13,7 @@ from engine.determinism import sha256_hex, stable_json_dumps
 from taxonomy.loader import load
 from taxonomy.pack_manifest import sha256_file
 from taxonomy.schema import TaxonomyPack
+from taxonomy.taxonomy_pack_v1 import TAXONOMY_PACK_V1_VERSION
 
 from .index_build import build_indices as build_runtime_indices
 from .patch_apply import (
@@ -444,7 +445,90 @@ def _persist_rows(
     unknown_rows: List[UnknownQueueRow],
     patch_rows_applied: List[PatchAppliedRow],
 ) -> Dict[str, Any]:
+    def _read_snapshot_manifest_json(con: Any, target_snapshot_id: str) -> Dict[str, Any]:
+        try:
+            row = con.execute(
+                "SELECT manifest_json FROM snapshots WHERE snapshot_id = ? LIMIT 1",
+                (target_snapshot_id,),
+            ).fetchone()
+        except sqlite3.Error:
+            return {}
+
+        if row is None:
+            return {}
+
+        manifest_raw: Any = None
+        if isinstance(row, sqlite3.Row):
+            manifest_raw = row["manifest_json"] if "manifest_json" in row.keys() else None
+        elif isinstance(row, (tuple, list)) and len(row) > 0:
+            manifest_raw = row[0]
+
+        if isinstance(manifest_raw, dict):
+            return manifest_raw
+        if not isinstance(manifest_raw, str):
+            return {}
+
+        manifest_text = manifest_raw.strip()
+        if manifest_text == "":
+            return {}
+
+        try:
+            parsed = json.loads(manifest_text)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    def _resolve_taxonomy_pack_refs(pack: TaxonomyPack) -> tuple[str | None, str | None]:
+        pack_version = None
+        pack_sha256 = None
+
+        taxonomy_pack_payload = (
+            pack.other_sheets.get("taxonomy_pack_v1.json")
+            if isinstance(pack.other_sheets, dict)
+            else None
+        )
+        if isinstance(taxonomy_pack_payload, dict):
+            raw_version = taxonomy_pack_payload.get("version")
+            if isinstance(raw_version, str) and raw_version.strip() != "":
+                pack_version = raw_version.strip()
+
+        pack_file_path = pack.pack_folder / "taxonomy_pack_v1.json"
+        if pack_file_path.exists() and pack_file_path.is_file():
+            pack_sha256 = sha256_file(pack_file_path)
+            if pack_version is None:
+                pack_version = TAXONOMY_PACK_V1_VERSION
+
+        return pack_version, pack_sha256
+
+    def _write_snapshot_manifest_refs(con: Any, target_snapshot_id: str, pack: TaxonomyPack) -> Dict[str, Any]:
+        pack_version, pack_sha256 = _resolve_taxonomy_pack_refs(pack)
+
+        manifest_obj = _read_snapshot_manifest_json(con, target_snapshot_id)
+        next_manifest = dict(manifest_obj)
+        next_manifest["tags_compiled"] = True
+
+        if isinstance(pack_version, str) and pack_version != "":
+            next_manifest["taxonomy_pack_version"] = pack_version
+        if isinstance(pack_sha256, str) and pack_sha256 != "":
+            next_manifest["taxonomy_pack_sha256"] = pack_sha256
+
+        try:
+            con.execute(
+                "UPDATE snapshots SET manifest_json = ? WHERE snapshot_id = ?",
+                (stable_json_dumps(next_manifest), target_snapshot_id),
+            )
+        except sqlite3.Error:
+            return {}
+
+        out: Dict[str, Any] = {}
+        if isinstance(pack_version, str) and pack_version != "":
+            out["taxonomy_pack_version"] = pack_version
+        if isinstance(pack_sha256, str) and pack_sha256 != "":
+            out["taxonomy_pack_sha256"] = pack_sha256
+        return out
+
     taxonomy_version = taxonomy_pack.taxonomy_version
+    manifest_summary: Dict[str, Any] = {}
 
     with connect() as con:
         ensure_card_tags_table(con)
@@ -513,13 +597,22 @@ def _persist_rows(
             )
         patches_inserted = record_patch_rows(con=con, rows=patch_rows_with_meta)
 
+        manifest_summary = _write_snapshot_manifest_refs(
+            con=con,
+            target_snapshot_id=snapshot_id,
+            pack=taxonomy_pack,
+        )
+
         con.commit()
 
-    return {
+    summary = {
         "card_tags_written": len(tag_insert_rows),
         "unknowns_written": int(unknown_inserted),
         "patches_written": int(patches_inserted),
     }
+    if manifest_summary:
+        summary.update(manifest_summary)
+    return summary
 
 
 def compile_snapshot_tags(

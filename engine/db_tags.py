@@ -215,3 +215,34 @@ def bulk_get_card_tags(
         )
 
     return {oid: found[oid] for oid in oracle_ids_clean}
+
+
+def get_deck_tag_count(
+    primitive_index_by_slot: Dict[str, List[str]],
+    deck_slot_ids: List[str],
+    tag_id: str,
+) -> int:
+    if not isinstance(primitive_index_by_slot, dict):
+        return 0
+
+    tag_id_clean = tag_id.strip() if isinstance(tag_id, str) else ""
+    if tag_id_clean == "":
+        return 0
+
+    slot_ids_clean = sorted(
+        {
+            slot_id
+            for slot_id in deck_slot_ids
+            if isinstance(slot_id, str) and slot_id.strip() != ""
+        }
+    )
+
+    total = 0
+    for slot_id in slot_ids_clean:
+        primitive_ids = primitive_index_by_slot.get(slot_id)
+        if not isinstance(primitive_ids, list):
+            continue
+        if any(isinstance(primitive_id, str) and primitive_id == tag_id_clean for primitive_id in primitive_ids):
+            total += 1
+
+    return total

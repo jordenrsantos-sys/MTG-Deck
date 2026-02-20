@@ -4,7 +4,7 @@ import sqlite3
 import unittest
 from unittest.mock import patch
 
-from engine.db_tags import TagSnapshotMissingError, bulk_get_card_tags, ensure_tag_tables
+from engine.db_tags import TagSnapshotMissingError, bulk_get_card_tags, ensure_tag_tables, get_deck_tag_count
 from snapshot_build.tag_snapshot import get_tag_status, get_unknowns_report
 
 
@@ -114,6 +114,23 @@ class DbTagsRuntimeTests(unittest.TestCase):
         self.assertEqual(err.exception.snapshot_id, "snap-b")
         self.assertEqual(err.exception.taxonomy_version, "taxonomy_v1")
         self.assertIn("oid-missing", err.exception.missing_oracle_ids)
+
+    def test_get_deck_tag_count_counts_distinct_slots_with_tag(self) -> None:
+        primitive_index_by_slot = {
+            "S0": ["mass_land_denial", "RAMP_MANA"],
+            "S1": ["CARD_DRAW"],
+            "S2": ["mass_land_denial"],
+            "S3": "invalid",
+        }
+        deck_slot_ids = ["S2", "S0", "S0", "S1", "", "S3"]
+
+        count = get_deck_tag_count(
+            primitive_index_by_slot=primitive_index_by_slot,
+            deck_slot_ids=deck_slot_ids,
+            tag_id="mass_land_denial",
+        )
+
+        self.assertEqual(count, 2)
 
 
 class TagSnapshotReportingTests(unittest.TestCase):

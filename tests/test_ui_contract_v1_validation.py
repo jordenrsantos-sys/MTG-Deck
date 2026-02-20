@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+from tests.test_db_harness import TEST_SNAPSHOT_ID, create_temp_sqlite_db, set_env_db_path
 from api.engine.ui_contract_validator_v1 import validate_build_response_ui_contract_v1
 
 try:
@@ -22,9 +25,36 @@ except Exception as exc:  # pragma: no cover - environment-dependent dependency 
 
 
 class UIContractV1ValidationTests(unittest.TestCase):
-    SNAPSHOT_ID = "20260217_190902"
+    SNAPSHOT_ID = TEST_SNAPSHOT_ID
     LEGAL_COMMANDER = "Krenko, Mob Boss"
     ILLEGAL_COMMANDER = '"Ach! Hans, Run!"'
+
+    _tmp_dir_ctx: tempfile.TemporaryDirectory[str] | None = None
+    _db_env_ctx = None
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        if _IMPORT_ERROR is not None:
+            return
+
+        cls._tmp_dir_ctx = tempfile.TemporaryDirectory()
+        tmp_dir_path = Path(cls._tmp_dir_ctx.name)
+        db_path = create_temp_sqlite_db(tmp_dir=tmp_dir_path)
+        cls._db_env_ctx = set_env_db_path(db_path=db_path)
+        cls._db_env_ctx.__enter__()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        try:
+            if cls._db_env_ctx is not None:
+                cls._db_env_ctx.__exit__(None, None, None)
+                cls._db_env_ctx = None
+        finally:
+            if cls._tmp_dir_ctx is not None:
+                cls._tmp_dir_ctx.cleanup()
+                cls._tmp_dir_ctx = None
+            super().tearDownClass()
 
     def _post_build(self, commander: str, allow_runtime_oracle_text: bool) -> dict:
         if _IMPORT_ERROR is not None:

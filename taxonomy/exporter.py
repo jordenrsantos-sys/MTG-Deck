@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Tuple
 from xml.etree import ElementTree
 
 from .pack_manifest import build_manifest, stable_json_dumps, write_manifest
+from .taxonomy_pack_v1 import build_taxonomy_pack_v1
 
 
 MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -550,6 +551,18 @@ def export_workbook_to_pack(
     normalized_file_payloads: Dict[str, Any] = {}
     for file_name, records in file_payloads.items():
         normalized_file_payloads[file_name] = _merge_and_sort_records(records)
+
+    taxonomy_pack_v1_payload = build_taxonomy_pack_v1(
+        {
+            "taxonomy_source_id": workbook.name,
+            "tag_taxonomy_version": version,
+            "generator_version": EXPORTER_VERSION,
+            "rulespec_rules": normalized_file_payloads.get("rulespec_rules.json", []),
+            "rulespec_facets": normalized_file_payloads.get("rulespec_facets.json", []),
+            "primitives": normalized_file_payloads.get("primitives.json", []),
+        }
+    )
+    normalized_file_payloads["taxonomy_pack_v1.json"] = taxonomy_pack_v1_payload
 
     deterministic_created_at = _deterministic_iso_from_file_mtime(workbook)
     normalized_file_payloads["meta.json"] = {

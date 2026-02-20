@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import tempfile
@@ -13,6 +14,7 @@ from snapshot_build.tag_snapshot import compile_snapshot_tags
 from taxonomy.exporter import export_workbook_to_pack
 from taxonomy.loader import load
 from taxonomy.pack_manifest import build_manifest, stable_json_dumps, write_manifest
+from taxonomy.taxonomy_pack_v1 import TAXONOMY_PACK_V1_VERSION, build_taxonomy_pack_v1
 
 MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -90,13 +92,26 @@ def _write_taxonomy_pack(
     rulespec_rules: list[dict[str, object]],
     rulespec_facets: list[dict[str, object]] | None = None,
     qa_rules: list[dict[str, object]] | None = None,
+    primitives: list[dict[str, object]] | None = None,
 ) -> Path:
     pack_dir.mkdir(parents=True, exist_ok=True)
     payloads = {
         "rulespec_rules.json": rulespec_rules,
         "rulespec_facets.json": rulespec_facets or [],
         "qa_rules.json": qa_rules or [],
+        "primitives.json": primitives or [],
     }
+
+    payloads["taxonomy_pack_v1.json"] = build_taxonomy_pack_v1(
+        {
+            "taxonomy_source_id": taxonomy_version,
+            "tag_taxonomy_version": taxonomy_version,
+            "generator_version": "test_taxonomy_compiler",
+            "rulespec_rules": payloads["rulespec_rules.json"],
+            "rulespec_facets": payloads["rulespec_facets.json"],
+            "primitives": payloads["primitives.json"],
+        }
+    )
 
     for file_name, payload in payloads.items():
         (pack_dir / file_name).write_text(stable_json_dumps(payload), encoding="utf-8")
@@ -145,7 +160,22 @@ class TaxonomyExporterLoaderTests(unittest.TestCase):
             self.assertTrue((pack_dir / "rulespec_rules.json").exists())
             self.assertTrue((pack_dir / "rulespec_facets.json").exists())
             self.assertTrue((pack_dir / "qa_rules.json").exists())
+            self.assertTrue((pack_dir / "taxonomy_pack_v1.json").exists())
             self.assertTrue((pack_dir / "pack_manifest.json").exists())
+
+            taxonomy_pack_v1_obj = json.loads((pack_dir / "taxonomy_pack_v1.json").read_text(encoding="utf-8"))
+            self.assertEqual(taxonomy_pack_v1_obj.get("version"), TAXONOMY_PACK_V1_VERSION)
+            pack_hash = ((taxonomy_pack_v1_obj.get("hashes") or {}).get("pack_sha256"))
+            self.assertIsInstance(pack_hash, str)
+            self.assertNotEqual(pack_hash, "")
+
+            hash_input = dict(taxonomy_pack_v1_obj)
+            hash_input["hashes"] = dict(hash_input.get("hashes") or {})
+            hash_input["hashes"]["pack_sha256"] = ""
+            self.assertEqual(
+                pack_hash,
+                hashlib.sha256(stable_json_dumps(hash_input).encode("utf-8")).hexdigest(),
+            )
 
             manifest_obj = json.loads((pack_dir / "pack_manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest_obj.get("taxonomy_version"), "taxonomy_test_v1")
@@ -153,6 +183,7 @@ class TaxonomyExporterLoaderTests(unittest.TestCase):
             self.assertIn("rulespec_rules.json", manifest_files)
             self.assertIn("rulespec_facets.json", manifest_files)
             self.assertIn("qa_rules.json", manifest_files)
+            self.assertIn("taxonomy_pack_v1.json", manifest_files)
 
     def test_loader_rejects_manifest_hash_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -197,7 +228,8 @@ class SnapshotCompilerTests(unittest.TestCase):
               snapshot_id TEXT PRIMARY KEY,
               created_at TEXT,
               source TEXT,
-              scryfall_bulk_updated_at TEXT
+              scryfall_bulk_updated_at TEXT,
+              manifest_json TEXT
             )
             """
         )
@@ -226,8 +258,14 @@ class SnapshotCompilerTests(unittest.TestCase):
         oracle_text: str,
     ) -> None:
         self.con.execute(
-            "INSERT OR IGNORE INTO snapshots (snapshot_id, created_at, source, scryfall_bulk_updated_at) VALUES (?, ?, ?, ?)",
-            (snapshot_id, "2026-01-01T00:00:00+00:00", "unit-test", None),
+            "INSERT OR IGNORE INTO snapshots (snapshot_id, created_at, source, scryfall_bulk_updated_at, manifest_json) VALUES (?, ?, ?, ?, ?)",
+            (
+                snapshot_id,
+                "2026-01-01T00:00:00+00:00",
+                "unit-test",
+                None,
+                stable_json_dumps({"fixture": "snapshot_compiler_tests", "tags_compiled": 0}),
+            ),
         )
         self.con.execute(
             "INSERT INTO cards (oracle_id, name, type_line, oracle_text, snapshot_id) VALUES (?, ?, ?, ?, ?)",
@@ -287,6 +325,61 @@ class SnapshotCompilerTests(unittest.TestCase):
                 "is_legendary_creature": ["false"],
             },
         )
+
+    def test_compile_snapshot_writes_manifest_taxonomy_pack_refs(self) -> None:
+        snapshot_id = "snap_manifest_refs"
+        self._insert_card(
+            snapshot_id=snapshot_id,
+            oracle_id="oid-refs-1",
+            name="Goblin Rally",
+            type_line="Sorcery",
+            oracle_text="Create two 1/1 Goblin creature tokens.",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pack_dir = _write_taxonomy_pack(
+                pack_dir=Path(tmp) / "taxonomy_unit_v_refs",
+                taxonomy_version="taxonomy_unit_v_refs",
+                rulespec_rules=[
+                    {
+                        "rule_id": "R_TOKEN",
+                        "primitive_id": "TOKEN_PRODUCTION",
+                        "pattern": "create two 1/1 goblin creature tokens",
+                        "field": "oracle_text",
+                        "rule_type": "substring",
+                        "priority": 1,
+                    }
+                ],
+            )
+
+            taxonomy_pack_path = pack_dir / "taxonomy_pack_v1.json"
+            expected_pack_sha256 = hashlib.sha256(taxonomy_pack_path.read_bytes()).hexdigest()
+
+            with patch("snapshot_build.tag_snapshot.connect", return_value=self.con), patch(
+                "snapshot_build.tag_snapshot.snapshot_exists", return_value=True
+            ):
+                summary = compile_snapshot_tags(
+                    snapshot_id=snapshot_id,
+                    taxonomy_pack_folder=str(pack_dir),
+                )
+
+        self.assertEqual(summary.get("taxonomy_pack_version"), TAXONOMY_PACK_V1_VERSION)
+        self.assertEqual(summary.get("taxonomy_pack_sha256"), expected_pack_sha256)
+
+        manifest_row = self.con.execute(
+            "SELECT manifest_json FROM snapshots WHERE snapshot_id = ?",
+            (snapshot_id,),
+        ).fetchone()
+        self.assertIsNotNone(manifest_row)
+
+        manifest_json_text = manifest_row["manifest_json"]
+        self.assertIsInstance(manifest_json_text, str)
+
+        manifest_obj = json.loads(manifest_json_text)
+        self.assertEqual(manifest_obj.get("taxonomy_pack_version"), TAXONOMY_PACK_V1_VERSION)
+        self.assertEqual(manifest_obj.get("taxonomy_pack_sha256"), expected_pack_sha256)
+        self.assertIs(manifest_obj.get("tags_compiled"), True)
+        self.assertEqual(manifest_json_text, stable_json_dumps(manifest_obj))
 
     def test_compile_snapshot_routes_unknown_match_without_primitive(self) -> None:
         snapshot_id = "snap_unknown"

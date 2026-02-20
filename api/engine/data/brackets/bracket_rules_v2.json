@@ -1,0 +1,31 @@
+{
+  "version": "bracket_rules_v2",
+  "policy_enum": ["ALLOW", "DISALLOW", "TRACK_ONLY"],
+  "brackets": {
+    "B1": {
+      "mass_land_denial": "DISALLOW",
+      "extra_turn_chains": "DISALLOW",
+      "two_card_combos": "DISALLOW"
+    },
+    "B2": {
+      "mass_land_denial": "DISALLOW",
+      "extra_turn_chains": "DISALLOW",
+      "two_card_combos": "DISALLOW"
+    },
+    "B3": {
+      "mass_land_denial": "DISALLOW",
+      "extra_turn_chains": "DISALLOW",
+      "two_card_combos": "TRACK_ONLY"
+    },
+    "B4": {
+      "mass_land_denial": "ALLOW",
+      "extra_turn_chains": "ALLOW",
+      "two_card_combos": "ALLOW"
+    },
+    "B5": {
+      "mass_land_denial": "ALLOW",
+      "extra_turn_chains": "ALLOW",
+      "two_card_combos": "ALLOW"
+    }
+  }
+}

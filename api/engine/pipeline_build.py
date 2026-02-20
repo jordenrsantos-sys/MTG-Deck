@@ -1,12 +1,12 @@
 import os
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List
 
 from engine.db import (
     connect as cards_db_connect,
-    snapshot_exists,
     find_card_by_name,
     suggest_card_names,
     is_legal_commander_card,
@@ -19,17 +19,31 @@ from api.engine.constants import *
 from api.engine.layers.canonical_v1 import run_canonical_v1
 from api.engine.layers.combo_candidate_v0 import run_combo_candidate_v0
 from api.engine.layers.combo_skeleton_v0 import run_combo_skeleton_v0
+from api.engine.layers.counterfactual_stress_test_v1 import run_counterfactual_stress_test_v1
 from api.engine.layers.disruption_v1 import run_disruption_v1
+from api.engine.layers.disruption_surface_v1 import run_disruption_surface_v1
 from api.engine.layers.graph_v3_typed import run_graph_v3_typed
+from api.engine.layers.graph_analytics_summary_v1 import run_graph_analytics_summary_v1
+from api.engine.layers.graph_pathways_summary_v1 import run_graph_pathways_summary_v1
 from api.engine.layers.motif_v1 import run_motif_v1
 from api.engine.layers.pathways_v1 import run_pathways_v1
+from api.engine.layers.bracket_compliance_summary_v1 import run_bracket_compliance_summary_v1
+from api.engine.layers.profile_bracket_enforcement_v1 import run_profile_bracket_enforcement_v1
 from api.engine.layers.primitive_index_v1 import run_primitive_index_v1
 from api.engine.layers.proof_attempt_v1 import run_proof_attempt_v1
 from api.engine.layers.proof_scaffold_v1 import run_proof_scaffold_v1
+from api.engine.layers.required_effects_coverage_v1 import run_required_effects_coverage_v1
+from api.engine.layers.redundancy_index_v1 import run_redundancy_index_v1
+from api.engine.layers.snapshot_preflight_v1 import run_snapshot_preflight_v1
+from api.engine.layers.structural_scorecard_v1 import run_structural_scorecard_v1
+from api.engine.layers.structural_v1 import run_structural_v1
+from api.engine.layers.typed_graph_invariants_v1 import run_typed_graph_invariants_v1
+from api.engine.layers.vulnerability_index_v1 import run_vulnerability_index_v1
+from api.engine.required_effects_v1 import resolve_required_effects_v1
 from api.engine.graph_expand_v1 import build_bipartite_graph_v1, expand_candidate_edges_v1
 from api.engine.snapshot_preflight_v1 import SnapshotPreflightError, run_snapshot_preflight
-from api.engine.layers.structural_v1 import run_structural_v1
 from api.engine.structural_snapshot_v1 import build_structural_snapshot_v1
+from api.engine.two_card_combos import TWO_CARD_COMBOS_V1_VERSION
 from api.engine.unknowns import add_unknown, sort_unknowns
 from api.engine.utils import stable_json_dumps, sha256_hex, strip_hash_fields
 from api.engine.validate_invariants_v1 import validate_invariants_v1
@@ -55,6 +69,200 @@ def get_format_legality(card: dict, fmt: str) -> tuple[bool, str]:
 
 def sorted_unique(seq):
     return sorted(set(x for x in seq if x is not None))
+
+
+_VERSION_PROXY_STRING_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*_v\d+(?:[A-Za-z0-9_\-]*)$")
+
+
+def _is_version_string_proxy(value: str) -> bool:
+    token = value.strip()
+    if token == "":
+        return False
+    return _VERSION_PROXY_STRING_RE.fullmatch(token) is not None
+
+
+def is_present(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value != 0
+    if isinstance(value, str):
+        token = value.strip()
+        return token != "" and not _is_version_string_proxy(token)
+    if isinstance(value, dict):
+        return len(value) > 0
+    if isinstance(value, (list, tuple, set)):
+        return len(value) > 0
+    return True
+
+
+def build_available_panels_v1(
+    *,
+    deck_cards_canonical_input_order: Any = None,
+    unknowns_canonical: Any = None,
+    deck_cards_playable: Any = None,
+    deck_cards_nonplayable: Any = None,
+    deck_cards_unknown: Any = None,
+    rules_db_available_for_build: Any = None,
+    rules_topic_selection_trace: Any = None,
+    combo_proof_scaffolds_v0: Any = None,
+    combo_proof_attempts_v0: Any = None,
+    primitive_index_by_slot: Any = None,
+    structural_snapshot_v1: Any = None,
+    graph_v1: Any = None,
+    graph_nodes: Any = None,
+    graph_edges: Any = None,
+    graph_components: Any = None,
+    motifs: Any = None,
+    disruption_totals: Any = None,
+    disruption_articulation_nodes: Any = None,
+    disruption_bridge_edges: Any = None,
+    disruption_node_impact: Any = None,
+    disruption_commander_risk: Any = None,
+    pathways_totals: Any = None,
+    pathways_commander_distances: Any = None,
+    pathways_commander_reachable_slots: Any = None,
+    pathways_commander_unreachable_slots: Any = None,
+    pathways_hubs: Any = None,
+    pathways_commander_bridge_candidates: Any = None,
+    combo_skeleton_components: Any = None,
+    combo_skeleton_totals: Any = None,
+    combo_candidates_v0: Any = None,
+    patch_loop_v0: Any = None,
+    patch_error_v0: Any = None,
+    snapshot_preflight_v1: Any = None,
+    typed_graph_invariants_v1: Any = None,
+    profile_bracket_enforcement_v1: Any = None,
+    bracket_compliance_summary_v1: Any = None,
+    graph_analytics_summary_v1: Any = None,
+    graph_pathways_summary_v1: Any = None,
+    disruption_surface_v1: Any = None,
+    vulnerability_index_v1: Any = None,
+    required_effects_coverage_v1: Any = None,
+    redundancy_index_v1: Any = None,
+    counterfactual_stress_test_v1: Any = None,
+    structural_scorecard_v1: Any = None,
+) -> Dict[str, bool]:
+    has_deck_cards_summary = (
+        is_present(deck_cards_playable)
+        or is_present(deck_cards_nonplayable)
+        or is_present(deck_cards_unknown)
+    )
+    has_graph = (
+        is_present(graph_v1)
+        or is_present(graph_nodes)
+        or is_present(graph_edges)
+        or is_present(graph_components)
+    )
+    has_disruption = (
+        is_present(disruption_totals)
+        or is_present(disruption_articulation_nodes)
+        or is_present(disruption_bridge_edges)
+        or is_present(disruption_node_impact)
+        or is_present(disruption_commander_risk)
+    )
+    has_pathways = (
+        is_present(pathways_totals)
+        or is_present(pathways_commander_distances)
+        or is_present(pathways_commander_reachable_slots)
+        or is_present(pathways_commander_unreachable_slots)
+        or is_present(pathways_hubs)
+        or is_present(pathways_commander_bridge_candidates)
+    )
+    has_combo_skeleton = is_present(combo_skeleton_components) or is_present(combo_skeleton_totals)
+
+    return {
+        "has_canonical_slots": is_present(deck_cards_canonical_input_order),
+        "has_unknowns_canonical": is_present(unknowns_canonical),
+        "has_deck_cards_summary": has_deck_cards_summary,
+        "has_rules_db": is_present(rules_db_available_for_build),
+        "has_rules_topic_selection_trace": is_present(rules_topic_selection_trace),
+        "has_proof_scaffolds": is_present(combo_proof_scaffolds_v0),
+        "has_proof_attempts": is_present(combo_proof_attempts_v0),
+        "has_primitive_index": is_present(primitive_index_by_slot),
+        "has_structural_reporting": is_present(structural_snapshot_v1),
+        "has_graph": has_graph,
+        "has_typed_graph_invariants_v1": (
+            is_present(typed_graph_invariants_v1)
+            and isinstance(typed_graph_invariants_v1, dict)
+            and isinstance(typed_graph_invariants_v1.get("status"), str)
+            and typed_graph_invariants_v1.get("status").strip() != ""
+        ),
+        "has_profile_bracket_enforcement_v1": (
+            is_present(profile_bracket_enforcement_v1)
+            and isinstance(profile_bracket_enforcement_v1, dict)
+            and isinstance(profile_bracket_enforcement_v1.get("status"), str)
+            and profile_bracket_enforcement_v1.get("status").strip() != ""
+        ),
+        "has_bracket_compliance_summary_v1": (
+            is_present(bracket_compliance_summary_v1)
+            and isinstance(bracket_compliance_summary_v1, dict)
+            and isinstance(bracket_compliance_summary_v1.get("status"), str)
+            and bracket_compliance_summary_v1.get("status").strip() != ""
+        ),
+        "has_graph_analytics_summary_v1": (
+            is_present(graph_analytics_summary_v1)
+            and isinstance(graph_analytics_summary_v1, dict)
+            and isinstance(graph_analytics_summary_v1.get("status"), str)
+            and graph_analytics_summary_v1.get("status").strip() != ""
+        ),
+        "has_graph_pathways_summary_v1": (
+            is_present(graph_pathways_summary_v1)
+            and isinstance(graph_pathways_summary_v1, dict)
+            and isinstance(graph_pathways_summary_v1.get("status"), str)
+            and graph_pathways_summary_v1.get("status").strip() != ""
+        ),
+        "has_disruption_surface_v1": (
+            is_present(disruption_surface_v1)
+            and isinstance(disruption_surface_v1, dict)
+            and isinstance(disruption_surface_v1.get("status"), str)
+            and disruption_surface_v1.get("status").strip() != ""
+        ),
+        "has_vulnerability_index_v1": (
+            is_present(vulnerability_index_v1)
+            and isinstance(vulnerability_index_v1, dict)
+            and isinstance(vulnerability_index_v1.get("status"), str)
+            and vulnerability_index_v1.get("status").strip() != ""
+        ),
+        "has_required_effects_coverage_v1": (
+            is_present(required_effects_coverage_v1)
+            and isinstance(required_effects_coverage_v1, dict)
+            and isinstance(required_effects_coverage_v1.get("status"), str)
+            and required_effects_coverage_v1.get("status").strip() != ""
+        ),
+        "has_redundancy_index_v1": (
+            is_present(redundancy_index_v1)
+            and isinstance(redundancy_index_v1, dict)
+            and isinstance(redundancy_index_v1.get("status"), str)
+            and redundancy_index_v1.get("status").strip() != ""
+        ),
+        "has_counterfactual_stress_test_v1": (
+            is_present(counterfactual_stress_test_v1)
+            and isinstance(counterfactual_stress_test_v1, dict)
+            and isinstance(counterfactual_stress_test_v1.get("status"), str)
+            and counterfactual_stress_test_v1.get("status").strip() != ""
+        ),
+        "has_structural_scorecard_v1": (
+            is_present(structural_scorecard_v1)
+            and isinstance(structural_scorecard_v1, dict)
+            and isinstance(structural_scorecard_v1.get("status"), str)
+            and structural_scorecard_v1.get("status").strip() != ""
+        ),
+        "has_motifs": is_present(motifs),
+        "has_disruption": has_disruption,
+        "has_pathways": has_pathways,
+        "has_combo_skeleton": has_combo_skeleton,
+        "has_combo_candidates": is_present(combo_candidates_v0),
+        "has_patch_loop": is_present(patch_loop_v0) or is_present(patch_error_v0),
+        "has_snapshot_preflight_v1": (
+            is_present(snapshot_preflight_v1)
+            and isinstance(snapshot_preflight_v1, dict)
+            and isinstance(snapshot_preflight_v1.get("status"), str)
+            and snapshot_preflight_v1.get("status").strip() != ""
+        ),
+    }
 
 
 def lookup_cards_by_oracle_id(snapshot_id: str, oracle_ids: List[str]) -> Dict[str, Dict[str, Any]]:
@@ -308,20 +516,43 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
     _ = repo_root_path
     from api.main import BuildResponse
 
+    snapshot_preflight_payload_for_result: Dict[str, Any] | None = None
+
     def _ui_result_envelope(extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        has_snapshot_preflight_panel = (
+            is_present(snapshot_preflight_payload_for_result)
+            and isinstance(snapshot_preflight_payload_for_result, dict)
+            and isinstance(snapshot_preflight_payload_for_result.get("status"), str)
+            and snapshot_preflight_payload_for_result.get("status").strip() != ""
+        )
         payload: Dict[str, Any] = {
             "ui_contract_version": UI_CONTRACT_VERSION,
-            "available_panels_v1": {},
+            "available_panels_v1": {
+                "has_snapshot_preflight_v1": has_snapshot_preflight_panel,
+            },
             "ui_index_v1": {},
         }
+        if isinstance(snapshot_preflight_payload_for_result, dict):
+            payload["snapshot_preflight_v1"] = snapshot_preflight_payload_for_result
         if isinstance(extra, dict):
             for key, value in extra.items():
                 payload[key] = value
         return payload
 
     def _execute():
-        # 1) Snapshot gating
-        if not snapshot_exists(req.db_snapshot_id):
+        nonlocal snapshot_preflight_payload_for_result
+
+        with cards_db_connect() as preflight_con:
+            snapshot_preflight_payload_for_result = run_snapshot_preflight_v1(
+                db=preflight_con,
+                snapshot_id=req.db_snapshot_id,
+            )
+
+        if snapshot_preflight_payload_for_result.get("status") != "OK":
+            preflight_errors_raw = snapshot_preflight_payload_for_result.get("errors")
+            preflight_errors = preflight_errors_raw if isinstance(preflight_errors_raw, list) else []
+            first_preflight_error = preflight_errors[0] if preflight_errors and isinstance(preflight_errors[0], dict) else {}
+
             return BuildResponse(
                 engine_version=ENGINE_VERSION,
                 ruleset_version=RULESET_VERSION,
@@ -330,12 +561,21 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 db_snapshot_id=req.db_snapshot_id,
                 profile_id=req.profile_id,
                 bracket_id=req.bracket_id,
-                status="UNKNOWN_SNAPSHOT",
+                status="ERROR",
                 unknowns=[
                     {
-                        "code": "UNKNOWN_SNAPSHOT",
+                        "code": "SNAPSHOT_PREFLIGHT_ERROR",
                         "snapshot_id": req.db_snapshot_id,
-                        "message": "Snapshot ID not found in local DB.",
+                        "message": (
+                            first_preflight_error.get("message")
+                            if isinstance(first_preflight_error.get("message"), str)
+                            else "Snapshot preflight failed before pipeline execution."
+                        ),
+                        "reason": (
+                            first_preflight_error.get("code")
+                            if isinstance(first_preflight_error.get("code"), str)
+                            else "SNAPSHOT_PREFLIGHT_ERROR"
+                        ),
                     }
                 ],
                 result=_ui_result_envelope(),
@@ -1264,6 +1504,10 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
         commander_canonical_slot = canonical_state["commander_canonical_slot"]
         canonical_slots_all = canonical_state["canonical_slots_all"]
 
+        commander_for_profile_bracket = commander_canonical_slot.get("resolved_name")
+        if not isinstance(commander_for_profile_bracket, str) or commander_for_profile_bracket.strip() == "":
+            commander_for_profile_bracket = commander_name if isinstance(commander_name, str) else (req.commander or "")
+
         primitive_index_state = {
             "commander_resolved": commander_resolved,
             "primitive_overrides_by_oracle": primitive_overrides_by_oracle,
@@ -1277,6 +1521,36 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
         primitive_index_by_slot = primitive_index_state["primitive_index_by_slot"]
         slot_ids_by_primitive = primitive_index_state["slot_ids_by_primitive"]
         primitive_index_totals = primitive_index_state["primitive_index_totals"]
+
+        required_effects_requirements_dict, required_effects_version = resolve_required_effects_v1(
+            format=req.format,
+            taxonomy_version=runtime_taxonomy_version,
+        )
+        required_effects_coverage_v1 = run_required_effects_coverage_v1(
+            deck_slot_ids_playable=list(deck_cards_slot_ids_playable),
+            primitive_index_by_slot=primitive_index_by_slot,
+            format=req.format,
+            requirements_dict=required_effects_requirements_dict,
+            requirements_version=required_effects_version,
+        )
+        redundancy_index_v1 = run_redundancy_index_v1(
+            required_effects_coverage=required_effects_coverage_v1,
+            primitive_index_by_slot=primitive_index_by_slot,
+            deck_slot_ids_playable=list(deck_cards_slot_ids_playable),
+        )
+
+        profile_bracket_enforcement_v1 = run_profile_bracket_enforcement_v1(
+            deck_cards=list(deck_cards_playable),
+            commander=commander_for_profile_bracket,
+            profile_id=req.profile_id if isinstance(req.profile_id, str) else "",
+            bracket_id=req.bracket_id if isinstance(req.bracket_id, str) else "",
+            game_changers_version=GAME_CHANGERS_VERSION,
+            bracket_definition_version=BRACKET_DEFINITION_VERSION,
+            profile_definition_version=PROFILE_DEFINITION_VERSION,
+            primitive_index_by_slot=primitive_index_by_slot,
+            deck_slot_ids_playable=list(deck_cards_slot_ids_playable),
+        )
+        bracket_compliance_summary_v1 = run_bracket_compliance_summary_v1(profile_bracket_enforcement_v1)
 
         required_primitives_v1 = sorted(
             [primitive for primitive in effective_generic_minimums.keys() if isinstance(primitive, str)]
@@ -1351,6 +1625,46 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "bounds": graph_expand_bounds_v1,
             "stats": graph_expand_candidate_stats_v1,
         }
+        typed_graph_invariants_v1 = run_typed_graph_invariants_v1(graph_v1=graph_v1)
+        graph_analytics_summary_v1 = run_graph_analytics_summary_v1(
+            graph_v1=graph_v1,
+            primitive_index_by_slot=primitive_index_by_slot,
+            deck_slot_ids_playable=deck_cards_slot_ids_playable,
+            typed_graph_invariants=typed_graph_invariants_v1,
+        )
+        graph_pathways_summary_v1 = run_graph_pathways_summary_v1(
+            graph_v1=graph_v1,
+            deck_slot_ids_playable=deck_cards_slot_ids_playable,
+            typed_graph_invariants=typed_graph_invariants_v1,
+            commander_slot_id=(commander_canonical_slot or {}).get("slot_id"),
+        )
+        disruption_surface_v1 = run_disruption_surface_v1(
+            primitive_index_by_slot=primitive_index_by_slot,
+            deck_slot_ids_playable=deck_cards_slot_ids_playable,
+            pathways_summary=graph_pathways_summary_v1,
+            typed_graph_invariants=typed_graph_invariants_v1,
+        )
+        vulnerability_index_v1 = run_vulnerability_index_v1(
+            primitive_index_by_slot=primitive_index_by_slot,
+            deck_slot_ids_playable=deck_cards_slot_ids_playable,
+            structural_snapshot_v1=structural_snapshot_v1,
+        )
+        counterfactual_stress_test_v1 = run_counterfactual_stress_test_v1(
+            graph_v1=graph_v1,
+            primitive_index_by_slot=primitive_index_by_slot,
+            deck_slot_ids_playable=deck_cards_slot_ids_playable,
+            typed_graph_invariants=typed_graph_invariants_v1,
+            pathways=graph_pathways_summary_v1,
+            commander_slot_id=(commander_canonical_slot or {}).get("slot_id"),
+        )
+        structural_scorecard_v1 = run_structural_scorecard_v1(
+            bracket_compliance=bracket_compliance_summary_v1,
+            graph_analytics=graph_analytics_summary_v1,
+            disruption_surface=disruption_surface_v1,
+            vulnerability_index=vulnerability_index_v1,
+            structural_snapshot_v1=structural_snapshot_v1,
+            typed_graph_invariants=typed_graph_invariants_v1,
+        )
 
         graph_state = {
             "req": req,
@@ -2020,11 +2334,24 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "engine_version": ENGINE_VERSION,
             "ruleset_version": RULESET_VERSION,
             "bracket_definition_version": BRACKET_DEFINITION_VERSION,
+            "profile_definition_version": PROFILE_DEFINITION_VERSION,
             "game_changers_version": GAME_CHANGERS_VERSION,
+            "gc_limits_version": (
+                profile_bracket_enforcement_v1.get("gc_limits_version")
+                if isinstance(profile_bracket_enforcement_v1, dict)
+                else None
+            ),
+            "bracket_rules_version": (
+                profile_bracket_enforcement_v1.get("bracket_rules_version")
+                if isinstance(profile_bracket_enforcement_v1, dict)
+                else None
+            ),
+            "two_card_combos_version": TWO_CARD_COMBOS_V1_VERSION,
             "taxonomy_version": runtime_taxonomy_version,
             "taxonomy_ruleset_version": runtime_tag_ruleset_version,
             "canonical_layer_version": CANONICAL_LAYER_VERSION,
             "primitive_index_version": PRIMITIVE_INDEX_VERSION,
+            "required_effects_version": required_effects_version,
             "structural_reporting_version": STRUCTURAL_REPORTING_VERSION,
             "build_pipeline_stage": BUILD_PIPELINE_STAGE,
             "graph_layer_version": GRAPH_LAYER_VERSION,
@@ -2051,6 +2378,11 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "proof_scaffold_fingerprint_version": PROOF_SCAFFOLD_FINGERPRINT_VERSION,
             "build_fingerprint_version": "build_fingerprint_v1",
         }
+
+        if isinstance(bracket_compliance_summary_v1, dict):
+            summary_versions = bracket_compliance_summary_v1.get("versions")
+            if isinstance(summary_versions, dict):
+                summary_versions["two_card_combos_version"] = pipeline_versions.get("two_card_combos_version")
 
         canonical_slots_compact = [
             {
@@ -2309,6 +2641,18 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "primitive_counts_by_scope_totals": primitive_counts_by_scope_totals,
                 "structural_snapshot_v1": structural_snapshot_v1,
                 "graph_v1": graph_v1,
+                "typed_graph_invariants_v1": typed_graph_invariants_v1,
+                "profile_bracket_enforcement_v1": profile_bracket_enforcement_v1,
+                "bracket_compliance_summary_v1": bracket_compliance_summary_v1,
+                "graph_analytics_summary_v1": graph_analytics_summary_v1,
+                "graph_pathways_summary_v1": graph_pathways_summary_v1,
+                "disruption_surface_v1": disruption_surface_v1,
+                "vulnerability_index_v1": vulnerability_index_v1,
+                "required_effects_coverage_v1": required_effects_coverage_v1,
+                "redundancy_index_v1": redundancy_index_v1,
+                "counterfactual_stress_test_v1": counterfactual_stress_test_v1,
+                "structural_scorecard_v1": structural_scorecard_v1,
+                "snapshot_preflight_v1": snapshot_preflight_payload_for_result,
                 "unknowns_canonical": unknowns_canonical,
                 "unknowns_canonical_total": len(unknowns_canonical),
                 "primitive_counts": primitive_counts,
@@ -2316,24 +2660,52 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "display_title": f"{(req.commander or '')} — {req.format.upper()}",
                 "display_subtitle": f"Snapshot {req.db_snapshot_id} • Bracket {req.bracket_id} • {status}",
                 "ui_contract_version": UI_CONTRACT_VERSION,
-                "available_panels_v1": {
-                    "has_canonical_slots": True if deck_cards_canonical_input_order else False,
-                    "has_unknowns_canonical": True if unknowns_canonical else False,
-                    "has_deck_cards_summary": True if deck_cards_playable is not None else False,
-                    "has_rules_db": bool(RULES_DB_AVAILABLE),
-                    "has_rules_topic_selection_trace": bool((trace_v1 or {}).get("rules_topic_selection")),
-                    "has_proof_scaffolds": bool(len(combo_proof_scaffolds_v0)),
-                    "has_proof_attempts": bool(len(combo_proof_attempts_v0)),
-                    "has_primitive_index": bool(primitive_index_by_slot),
-                    "has_structural_reporting": bool(structural_snapshot_v1),
-                    "has_graph": bool(graph_edges or graph_components or graph_typed_edges_total is not None),
-                    "has_motifs": bool(motifs),
-                    "has_disruption": bool(DISRUPTION_LAYER_VERSION or disruption_totals),
-                    "has_pathways": bool(PATHWAYS_LAYER_VERSION or pathways_totals),
-                    "has_combo_skeleton": bool(COMBO_SKELETON_LAYER_VERSION or combo_skeleton_components),
-                    "has_combo_candidates": bool(len(combo_candidates_v0) or combo_candidates_v0),
-                    "has_patch_loop": bool(trace_v1 or repro_v1),
-                },
+                "available_panels_v1": build_available_panels_v1(
+                    deck_cards_canonical_input_order=deck_cards_canonical_input_order,
+                    unknowns_canonical=unknowns_canonical,
+                    deck_cards_playable=deck_cards_playable,
+                    deck_cards_nonplayable=deck_cards_nonplayable,
+                    deck_cards_unknown=unknown_cards,
+                    rules_db_available_for_build=rules_db_available_for_build,
+                    rules_topic_selection_trace=(trace_v1 or {}).get("rules_topic_selection"),
+                    combo_proof_scaffolds_v0=combo_proof_scaffolds_v0,
+                    combo_proof_attempts_v0=combo_proof_attempts_v0,
+                    primitive_index_by_slot=primitive_index_by_slot,
+                    structural_snapshot_v1=structural_snapshot_v1,
+                    graph_v1=graph_v1,
+                    graph_nodes=graph_nodes,
+                    graph_edges=graph_edges,
+                    graph_components=graph_components,
+                    motifs=motifs,
+                    disruption_totals=disruption_totals,
+                    disruption_articulation_nodes=disruption_articulation_nodes,
+                    disruption_bridge_edges=disruption_bridge_edges,
+                    disruption_node_impact=disruption_node_impact,
+                    disruption_commander_risk=disruption_commander_risk,
+                    pathways_totals=pathways_totals,
+                    pathways_commander_distances=pathways_commander_distances,
+                    pathways_commander_reachable_slots=pathways_commander_reachable_slots,
+                    pathways_commander_unreachable_slots=pathways_commander_unreachable_slots,
+                    pathways_hubs=pathways_hubs,
+                    pathways_commander_bridge_candidates=pathways_commander_bridge_candidates,
+                    combo_skeleton_components=combo_skeleton_components,
+                    combo_skeleton_totals=combo_skeleton_totals,
+                    combo_candidates_v0=combo_candidates_v0,
+                    patch_loop_v0=patch_loop_v0,
+                    patch_error_v0=patch_error_v0,
+                    snapshot_preflight_v1=snapshot_preflight_payload_for_result,
+                    typed_graph_invariants_v1=typed_graph_invariants_v1,
+                    profile_bracket_enforcement_v1=profile_bracket_enforcement_v1,
+                    bracket_compliance_summary_v1=bracket_compliance_summary_v1,
+                    graph_analytics_summary_v1=graph_analytics_summary_v1,
+                    graph_pathways_summary_v1=graph_pathways_summary_v1,
+                    disruption_surface_v1=disruption_surface_v1,
+                    vulnerability_index_v1=vulnerability_index_v1,
+                    required_effects_coverage_v1=required_effects_coverage_v1,
+                    redundancy_index_v1=redundancy_index_v1,
+                    counterfactual_stress_test_v1=counterfactual_stress_test_v1,
+                    structural_scorecard_v1=structural_scorecard_v1,
+                ),
                 "ui_index_v1": {
                     "primary_ids": {
                         "commander_slot_id": (commander_canonical_slot or {}).get("slot_id"),

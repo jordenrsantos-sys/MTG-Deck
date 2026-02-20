@@ -1,9 +1,29 @@
 import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 
-DB_PATH = Path(r"E:\mtg-engine\data\mtg.sqlite")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_DB_RELATIVE_PATH = Path("data") / "mtg.sqlite"
+DB_PATH = (REPO_ROOT / DEFAULT_DB_RELATIVE_PATH).resolve()
+
+
+def resolve_db_path() -> Path:
+    env_db_path = os.getenv("MTG_ENGINE_DB_PATH")
+    if isinstance(env_db_path, str) and env_db_path.strip() != "":
+        candidate = Path(env_db_path.strip()).expanduser()
+        if not candidate.is_absolute():
+            candidate = (REPO_ROOT / candidate).resolve()
+    else:
+        candidate = DB_PATH
+
+    if not candidate.is_file():
+        raise RuntimeError(
+            "MTG engine database file not found at "
+            f"'{candidate}'. Set MTG_ENGINE_DB_PATH or ensure ./data/mtg.sqlite exists."
+        )
+    return candidate
 
 
 class CommanderEligibilityUnknownError(RuntimeError):
@@ -181,7 +201,7 @@ def _extract_commander_eligibility_from_facets(facets: Dict[str, Any]) -> Tuple[
     return None, None, candidate_keys
 
 def connect() -> sqlite3.Connection:
-    con = sqlite3.connect(str(DB_PATH))
+    con = sqlite3.connect(str(resolve_db_path()))
     con.row_factory = sqlite3.Row
     return con
 

@@ -1,0 +1,10 @@
+{
+  "version": "gc_limits_v1",
+  "rules": {
+    "B1": {"min": 0, "max": 0},
+    "B2": {"min": 0, "max": 0},
+    "B3": {"min": 1, "max": 3}
+  },
+  "default_for_b_ge_4": {"min": null, "max": null},
+  "default_for_unknown": {"min": null, "max": null}
+}
