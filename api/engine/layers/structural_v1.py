@@ -3,7 +3,9 @@ from typing import Any, Dict, List
 
 def run_structural_v1(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Structural reporting layer (structural_v1).
+    Legacy structural reporting layer (structural_v1).
+    Deprecated: retained only for backward-compatibility diagnostics.
+    Runtime downstream consumers must use structural_snapshot_v1.
     Reporting only. Must preserve exact output + ordering.
     """
 

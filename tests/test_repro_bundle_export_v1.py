@@ -12,8 +12,15 @@ _EXPECTED_FILE_PATHS = [
     "build_result.json",
     "rules/gc_limits_v1.json",
     "rules/bracket_rules_v2.json",
+    "rules/bucket_substitutions_v1.json",
+    "rules/weight_rules_v1.json",
+    "rules/stress_models_v1.json",
+    "rules/profile_thresholds_v1.json",
     "rules/dependency_signatures_v1.json",
+    "rules/mulligan_assumptions_v1.json",
+    "rules/commander_spellbook_variants_v1.json",
     "rules/two_card_combos_v1.json",
+    "rules/two_card_combos_v2.json",
 ]
 
 
@@ -59,7 +66,8 @@ class ReproBundleExportV1Tests(unittest.TestCase):
                     "engine_version": "0.2.3",
                     "gc_limits_version": "gc_limits_v1",
                     "bracket_rules_version": "bracket_rules_v2",
-                    "two_card_combos_version": "two_card_combos_v1",
+                    "two_card_combos_version": "two_card_combos_v2",
+                    "spellbook_variants_version": "commander_spellbook_variants_v1",
                 },
                 "available_panels_v1": {
                     "has_snapshot_preflight_v1": True,
@@ -111,18 +119,39 @@ class ReproBundleExportV1Tests(unittest.TestCase):
 
         gc_limits_entry = by_path.get("rules/gc_limits_v1.json")
         bracket_rules_entry = by_path.get("rules/bracket_rules_v2.json")
+        bucket_substitutions_entry = by_path.get("rules/bucket_substitutions_v1.json")
+        weight_rules_entry = by_path.get("rules/weight_rules_v1.json")
+        stress_models_entry = by_path.get("rules/stress_models_v1.json")
+        profile_thresholds_entry = by_path.get("rules/profile_thresholds_v1.json")
         dependency_signatures_entry = by_path.get("rules/dependency_signatures_v1.json")
+        mulligan_assumptions_entry = by_path.get("rules/mulligan_assumptions_v1.json")
+        spellbook_variants_entry = by_path.get("rules/commander_spellbook_variants_v1.json")
         two_card_entry = by_path.get("rules/two_card_combos_v1.json")
+        two_card_v2_entry = by_path.get("rules/two_card_combos_v2.json")
 
         self.assertIsInstance(gc_limits_entry, dict)
         self.assertIsInstance(bracket_rules_entry, dict)
+        self.assertIsInstance(bucket_substitutions_entry, dict)
+        self.assertIsInstance(weight_rules_entry, dict)
+        self.assertIsInstance(stress_models_entry, dict)
+        self.assertIsInstance(profile_thresholds_entry, dict)
         self.assertIsInstance(dependency_signatures_entry, dict)
+        self.assertIsInstance(mulligan_assumptions_entry, dict)
+        self.assertIsInstance(spellbook_variants_entry, dict)
         self.assertIsInstance(two_card_entry, dict)
+        self.assertIsInstance(two_card_v2_entry, dict)
 
         self.assertEqual((gc_limits_entry.get("json") or {}).get("version"), "gc_limits_v1")
         self.assertEqual((bracket_rules_entry.get("json") or {}).get("version"), "bracket_rules_v2")
+        self.assertEqual((bucket_substitutions_entry.get("json") or {}).get("version"), "bucket_substitutions_v1")
+        self.assertEqual((weight_rules_entry.get("json") or {}).get("version"), "weight_rules_v1")
+        self.assertEqual((stress_models_entry.get("json") or {}).get("version"), "stress_models_v1")
+        self.assertEqual((profile_thresholds_entry.get("json") or {}).get("version"), "profile_thresholds_v1")
         self.assertEqual((dependency_signatures_entry.get("json") or {}).get("version"), "dependency_signatures_v1")
+        self.assertEqual((mulligan_assumptions_entry.get("json") or {}).get("version"), "mulligan_assumptions_v1")
+        self.assertEqual((spellbook_variants_entry.get("json") or {}).get("version"), "commander_spellbook_variants_v1")
         self.assertEqual((two_card_entry.get("json") or {}).get("version"), "two_card_combos_v1")
+        self.assertEqual((two_card_v2_entry.get("json") or {}).get("version"), "two_card_combos_v2")
 
 
 class RunBundleV0ReproExportIntegrationTests(unittest.TestCase):
@@ -155,7 +184,8 @@ class RunBundleV0ReproExportIntegrationTests(unittest.TestCase):
                     "engine_version": "0.2.3",
                     "gc_limits_version": "gc_limits_v1",
                     "bracket_rules_version": "bracket_rules_v2",
-                    "two_card_combos_version": "two_card_combos_v1",
+                    "two_card_combos_version": "two_card_combos_v2",
+                    "spellbook_variants_version": "commander_spellbook_variants_v1",
                 },
                 "snapshot_preflight_v1": {"status": "OK"},
                 "typed_graph_invariants_v1": {"status": "OK"},
@@ -196,8 +226,15 @@ class RunBundleV0ReproExportIntegrationTests(unittest.TestCase):
         self.assertIn("build_result.json", by_path)
         self.assertIn("rules/gc_limits_v1.json", by_path)
         self.assertIn("rules/bracket_rules_v2.json", by_path)
+        self.assertIn("rules/bucket_substitutions_v1.json", by_path)
+        self.assertIn("rules/weight_rules_v1.json", by_path)
+        self.assertIn("rules/stress_models_v1.json", by_path)
+        self.assertIn("rules/profile_thresholds_v1.json", by_path)
         self.assertIn("rules/dependency_signatures_v1.json", by_path)
+        self.assertIn("rules/mulligan_assumptions_v1.json", by_path)
+        self.assertIn("rules/commander_spellbook_variants_v1.json", by_path)
         self.assertIn("rules/two_card_combos_v1.json", by_path)
+        self.assertIn("rules/two_card_combos_v2.json", by_path)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,27 @@
+{
+  "version": "two_card_combos_v2",
+  "pairs": [
+    {
+      "a": "combo piece a",
+      "b": "combo piece b",
+      "variant_ids": [
+        "CSBVAR_0001",
+        "CSBVAR_0004"
+      ]
+    },
+    {
+      "a": "missing card a",
+      "b": "missing card b",
+      "variant_ids": [
+        "CSBVAR_0002"
+      ]
+    },
+    {
+      "a": "omega piece a",
+      "b": "omega piece b",
+      "variant_ids": [
+        "CSBVAR_0003"
+      ]
+    }
+  ]
+}

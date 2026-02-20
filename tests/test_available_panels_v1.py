@@ -24,6 +24,17 @@ _AVAILABLE_PANEL_KEYS = [
     "has_disruption_surface_v1",
     "has_vulnerability_index_v1",
     "has_engine_requirement_detection_v1",
+    "has_engine_coherence_v1",
+    "has_mulligan_model_v1",
+    "has_substitution_engine_v1",
+    "has_weight_multiplier_engine_v1",
+    "has_probability_math_core_v1",
+    "has_probability_checkpoint_layer_v1",
+    "has_stress_model_definition_v1",
+    "has_stress_transform_engine_v1",
+    "has_resilience_math_engine_v1",
+    "has_commander_reliability_model_v1",
+    "has_sufficiency_summary_v1",
     "has_required_effects_coverage_v1",
     "has_redundancy_index_v1",
     "has_counterfactual_stress_test_v1",
@@ -82,6 +93,17 @@ class AvailablePanelsV1Tests(unittest.TestCase):
             profile_bracket_enforcement_v1={},
             vulnerability_index_v1={},
             engine_requirement_detection_v1={},
+            engine_coherence_v1={},
+            mulligan_model_v1={},
+            substitution_engine_v1={},
+            weight_multiplier_engine_v1={},
+            probability_math_core_v1={},
+            probability_checkpoint_layer_v1={},
+            stress_model_definition_v1={},
+            stress_transform_engine_v1={},
+            resilience_math_engine_v1={},
+            commander_reliability_model_v1={},
+            sufficiency_summary_v1={},
             required_effects_coverage_v1={},
             redundancy_index_v1={},
             counterfactual_stress_test_v1={},
@@ -167,7 +189,7 @@ class AvailablePanelsV1Tests(unittest.TestCase):
                         "versions": {
                             "gc_limits_version": "gc_limits_v1",
                             "bracket_rules_version": "bracket_rules_v2",
-                            "two_card_combos_version": "two_card_combos_v1",
+                            "two_card_combos_version": "two_card_combos_v2",
                         },
                     }
                 },
@@ -309,6 +331,361 @@ class AvailablePanelsV1Tests(unittest.TestCase):
                             "mana_hungry": False,
                             "requires_shuffle": False,
                             "requires_specific_permanent_type": [],
+                        },
+                    }
+                },
+            ),
+            (
+                "has_engine_coherence_v1",
+                {
+                    "engine_coherence_v1": {
+                        "version": "engine_coherence_v1",
+                        "status": "WARN",
+                        "reason_code": None,
+                        "codes": ["DEAD_SLOTS_PRESENT"],
+                        "summary": {
+                            "playable_slots_total": 3,
+                            "non_dead_slots_total": 2,
+                            "dead_slots_total": 1,
+                            "dead_slot_ratio": 0.333333,
+                            "primitive_concentration_index": 1.0,
+                            "overlap_score": 0.0,
+                        },
+                        "dead_slots": [
+                            {
+                                "slot_id": "S2",
+                                "primitive_count": 0,
+                                "primitives": [],
+                            }
+                        ],
+                        "top_primitive_concentration": [
+                            {
+                                "primitive": "MANA_RAMP_ARTIFACT_ROCK",
+                                "slots_with_primitive": 2,
+                                "share": 1.0,
+                            }
+                        ],
+                    }
+                },
+            ),
+            (
+                "has_mulligan_model_v1",
+                {
+                    "mulligan_model_v1": {
+                        "version": "mulligan_model_v1",
+                        "status": "OK",
+                        "reason_code": None,
+                        "codes": [],
+                        "assumptions_version": "mulligan_assumptions_v1",
+                        "format": "commander",
+                        "default_policy": "NORMAL",
+                        "checkpoints": [7, 9, 10, 12],
+                        "policy_effective_n": [
+                            {
+                                "policy": "NORMAL",
+                                "effective_n_by_checkpoint": [
+                                    {"checkpoint": 7, "effective_n": 7.0},
+                                    {"checkpoint": 9, "effective_n": 9.0},
+                                    {"checkpoint": 10, "effective_n": 10.0},
+                                    {"checkpoint": 12, "effective_n": 12.0},
+                                ],
+                            }
+                        ],
+                    }
+                },
+            ),
+            (
+                "has_substitution_engine_v1",
+                {
+                    "substitution_engine_v1": {
+                        "version": "substitution_engine_v1",
+                        "status": "OK",
+                        "reason_code": None,
+                        "codes": [],
+                        "substitutions_version": "bucket_substitutions_v1",
+                        "format": "commander",
+                        "buckets": [
+                            {
+                                "bucket": "RAMP",
+                                "k_primary": 10,
+                                "effective_K": 12.5,
+                                "K_int": 12,
+                                "active_requirement_flags": ["LANDFALL_BASED"],
+                                "substitution_terms": [
+                                    {
+                                        "primitive": "EXTRA_LAND_DROPS",
+                                        "weight": 0.4,
+                                        "k_substitute": 5,
+                                        "contribution": 2.0,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                },
+            ),
+            (
+                "has_weight_multiplier_engine_v1",
+                {
+                    "weight_multiplier_engine_v1": {
+                        "version": "weight_multiplier_engine_v1",
+                        "status": "OK",
+                        "reason_code": None,
+                        "codes": [],
+                        "weight_rules_version": "weight_rules_v1",
+                        "format": "commander",
+                        "multipliers_by_bucket": [
+                            {
+                                "bucket": "RAMP",
+                                "multiplier": 1.12,
+                            }
+                        ],
+                        "applied_rules": [
+                            {
+                                "rule_id": "ramp_landfall_bonus",
+                                "target_bucket": "RAMP",
+                                "requirement_flag": "LANDFALL_BASED",
+                                "multiplier": 1.12,
+                            }
+                        ],
+                    }
+                },
+            ),
+            (
+                "has_probability_math_core_v1",
+                {
+                    "probability_math_core_v1": {
+                        "version": "probability_math_core_v1",
+                        "status": "OK",
+                        "reason_code": None,
+                        "codes": [],
+                        "math_backend": "int_comb",
+                        "available_functions": [
+                            "comb",
+                            "hypergeom_p_ge_1",
+                            "hypergeom_p_ge_x",
+                        ],
+                        "validated_buckets": 1,
+                    }
+                },
+            ),
+            (
+                "has_probability_checkpoint_layer_v1",
+                {
+                    "probability_checkpoint_layer_v1": {
+                        "version": "probability_checkpoint_layer_v1",
+                        "status": "OK",
+                        "reason_code": None,
+                        "codes": [],
+                        "format": "commander",
+                        "deck_size_N": 99,
+                        "default_policy": "NORMAL",
+                        "checkpoints": [7, 9, 10, 12],
+                        "checkpoint_draws": [
+                            {"checkpoint": 7, "effective_n": 7.0, "n_int": 7},
+                            {"checkpoint": 9, "effective_n": 9.0, "n_int": 9},
+                            {"checkpoint": 10, "effective_n": 10.0, "n_int": 10},
+                            {"checkpoint": 12, "effective_n": 12.0, "n_int": 12},
+                        ],
+                        "probabilities_by_bucket": [
+                            {
+                                "bucket": "RAMP",
+                                "effective_K": 12.5,
+                                "K_int": 12,
+                                "probabilities_by_checkpoint": [
+                                    {"checkpoint": 7, "effective_n": 7.0, "n_int": 7, "p_ge_1": 0.615148},
+                                    {"checkpoint": 9, "effective_n": 9.0, "n_int": 9, "p_ge_1": 0.72774},
+                                    {"checkpoint": 10, "effective_n": 10.0, "n_int": 10, "p_ge_1": 0.775732},
+                                    {"checkpoint": 12, "effective_n": 12.0, "n_int": 12, "p_ge_1": 0.851995},
+                                ],
+                            }
+                        ],
+                    }
+                },
+            ),
+            (
+                "has_stress_model_definition_v1",
+                {
+                    "stress_model_definition_v1": {
+                        "version": "stress_model_definition_v1",
+                        "status": "OK",
+                        "reason_code": None,
+                        "codes": [],
+                        "stress_models_version": "stress_models_v1",
+                        "format": "commander",
+                        "profile_id": "focused",
+                        "bracket_id": "B2",
+                        "request_override_model_id": None,
+                        "selected_model_id": "PUNISHING_POD_V0",
+                        "selection_source": "profile_bracket",
+                        "operators": [
+                            {
+                                "op": "BOARD_WIPE",
+                                "by_turn": 6,
+                                "surviving_engine_fraction": 0.6,
+                            },
+                            {
+                                "op": "GRAVEYARD_HATE_WINDOW",
+                                "turns": [4, 5, 6],
+                                "graveyard_penalty": 0.7,
+                            },
+                            {
+                                "op": "STAX_TAX",
+                                "by_turn": 4,
+                                "inflation_factor": 1.25,
+                            },
+                            {
+                                "op": "TARGETED_REMOVAL",
+                                "count": 2,
+                            },
+                        ],
+                    }
+                },
+            ),
+            (
+                "has_stress_transform_engine_v1",
+                {
+                    "stress_transform_engine_v1": {
+                        "version": "stress_transform_engine_v1",
+                        "status": "OK",
+                        "reason_code": None,
+                        "codes": [],
+                        "format": "commander",
+                        "deck_size_N": 99,
+                        "selected_model_id": "PUNISHING_POD_V0",
+                        "operators_applied": [
+                            {"op": "TARGETED_REMOVAL", "count": 2},
+                        ],
+                        "checkpoints": [7, 9, 10, 12],
+                        "checkpoint_draws": [
+                            {"checkpoint": 7, "effective_n": 7.0, "n_int": 7},
+                            {"checkpoint": 9, "effective_n": 9.0, "n_int": 9},
+                            {"checkpoint": 10, "effective_n": 10.0, "n_int": 10},
+                            {"checkpoint": 12, "effective_n": 12.0, "n_int": 12},
+                        ],
+                        "stress_adjusted_effective_K": [
+                            {
+                                "bucket": "RAMP",
+                                "effective_K_before": 12.5,
+                                "K_int_before": 12,
+                                "effective_K_after": 10.5,
+                                "K_int_after": 10,
+                            }
+                        ],
+                        "stress_adjusted_probabilities_by_bucket": [
+                            {
+                                "bucket": "RAMP",
+                                "effective_K_after": 10.5,
+                                "K_int_after": 10,
+                                "probabilities_by_checkpoint": [
+                                    {"checkpoint": 7, "effective_n": 7.0, "n_int": 7, "p_ge_1": 0.542398},
+                                    {"checkpoint": 9, "effective_n": 9.0, "n_int": 9, "p_ge_1": 0.651245},
+                                    {"checkpoint": 10, "effective_n": 10.0, "n_int": 10, "p_ge_1": 0.699663},
+                                    {"checkpoint": 12, "effective_n": 12.0, "n_int": 12, "p_ge_1": 0.778733},
+                                ],
+                            }
+                        ],
+                        "operator_impacts": [],
+                    }
+                },
+            ),
+            (
+                "has_resilience_math_engine_v1",
+                {
+                    "resilience_math_engine_v1": {
+                        "version": "resilience_math_engine_v1",
+                        "status": "WARN",
+                        "reason_code": None,
+                        "codes": ["RESILIENCE_COMMANDER_FRAGILITY_UNAVAILABLE"],
+                        "format": "commander",
+                        "checkpoints": [7, 9, 10, 12],
+                        "commander_dependency": "MED",
+                        "metrics": {
+                            "engine_continuity_after_removal": 0.81,
+                            "rebuild_after_wipe": 0.75,
+                            "graveyard_fragility_delta": 0.14,
+                            "commander_fragility_delta": None,
+                        },
+                        "bucket_metrics": [
+                            {
+                                "bucket": "RAMP",
+                                "baseline_effective_K": 12.5,
+                                "stress_effective_K": 10.5,
+                                "baseline_p_ge_1_mean": 0.742654,
+                                "stress_p_ge_1_mean": 0.66801,
+                                "stress_delta_p_ge_1_mean": 0.074644,
+                            }
+                        ],
+                    }
+                },
+            ),
+            (
+                "has_commander_reliability_model_v1",
+                {
+                    "commander_reliability_model_v1": {
+                        "version": "commander_reliability_model_v1",
+                        "status": "WARN",
+                        "reason_code": None,
+                        "codes": ["COMMANDER_RELIABILITY_PROTECTION_PROXY_UNAVAILABLE"],
+                        "commander_dependent": "HIGH",
+                        "checkpoint_mapping": {"t3": 9, "t4": 10, "t6": 12},
+                        "metrics": {
+                            "cast_reliability_t3": 0.5,
+                            "cast_reliability_t4": 0.6,
+                            "cast_reliability_t6": 0.8,
+                            "protection_coverage_proxy": None,
+                            "commander_fragility_delta": 0.15,
+                        },
+                        "notes": [
+                            "Commander dependency is HIGH while protection coverage proxy is unavailable.",
+                            "Protection coverage proxy unavailable from primitive index/playable slot inputs.",
+                        ],
+                    }
+                },
+            ),
+            (
+                "has_sufficiency_summary_v1",
+                {
+                    "sufficiency_summary_v1": {
+                        "version": "sufficiency_summary_v1",
+                        "status": "WARN",
+                        "reason_code": None,
+                        "codes": [
+                            "SUFFICIENCY_COMMANDER_PROTECTION_PROXY_UNAVAILABLE",
+                            "SUFFICIENCY_REQUIRED_EFFECTS_SOURCE_WARN",
+                        ],
+                        "failures": [],
+                        "warnings": [
+                            "SUFFICIENCY_COMMANDER_PROTECTION_PROXY_UNAVAILABLE",
+                            "SUFFICIENCY_REQUIRED_EFFECTS_SOURCE_WARN",
+                        ],
+                        "domain_verdicts": {
+                            "required_effects": {
+                                "status": "WARN",
+                                "codes": ["SUFFICIENCY_REQUIRED_EFFECTS_SOURCE_WARN"],
+                            },
+                            "baseline_prob": {"status": "PASS", "codes": []},
+                            "stress_prob": {"status": "PASS", "codes": []},
+                            "coherence": {"status": "PASS", "codes": []},
+                            "resilience": {"status": "PASS", "codes": []},
+                            "commander": {
+                                "status": "WARN",
+                                "codes": ["SUFFICIENCY_COMMANDER_PROTECTION_PROXY_UNAVAILABLE"],
+                            },
+                        },
+                        "thresholds_used": {
+                            "profile_thresholds_version": "profile_thresholds_v1",
+                            "calibration_snapshot_version": "calibration_snapshot_v1",
+                            "format": "commander",
+                            "requested_profile_id": "focused",
+                            "selected_profile_id": "focused",
+                            "selection_source": "profile",
+                            "domains": {},
+                        },
+                        "versions_used": {
+                            "sufficiency_summary_version": "sufficiency_summary_v1",
+                            "profile_thresholds_version": "profile_thresholds_v1",
+                            "calibration_snapshot_version": "calibration_snapshot_v1",
                         },
                     }
                 },
@@ -502,6 +879,300 @@ class AvailablePanelsV1Tests(unittest.TestCase):
                 },
                 "violations": [],
                 "unknowns": [],
+            },
+            "engine_coherence_v1": {
+                "version": "engine_coherence_v1",
+                "status": "OK",
+                "reason_code": None,
+                "codes": [],
+                "summary": {
+                    "playable_slots_total": 2,
+                    "non_dead_slots_total": 2,
+                    "dead_slots_total": 0,
+                    "dead_slot_ratio": 0.0,
+                    "primitive_concentration_index": 0.5,
+                    "overlap_score": 0.0,
+                },
+                "dead_slots": [],
+                "top_primitive_concentration": [
+                    {
+                        "primitive": "RAMP_MANA",
+                        "slots_with_primitive": 1,
+                        "share": 0.5,
+                    }
+                ],
+            },
+            "mulligan_model_v1": {
+                "version": "mulligan_model_v1",
+                "status": "OK",
+                "reason_code": None,
+                "codes": [],
+                "assumptions_version": "mulligan_assumptions_v1",
+                "format": "commander",
+                "default_policy": "NORMAL",
+                "checkpoints": [7, 9, 10, 12],
+                "policy_effective_n": [
+                    {
+                        "policy": "NORMAL",
+                        "effective_n_by_checkpoint": [
+                            {"checkpoint": 7, "effective_n": 7.0},
+                            {"checkpoint": 9, "effective_n": 9.0},
+                            {"checkpoint": 10, "effective_n": 10.0},
+                            {"checkpoint": 12, "effective_n": 12.0},
+                        ],
+                    }
+                ],
+            },
+            "substitution_engine_v1": {
+                "version": "substitution_engine_v1",
+                "status": "OK",
+                "reason_code": None,
+                "codes": [],
+                "substitutions_version": "bucket_substitutions_v1",
+                "format": "commander",
+                "buckets": [
+                    {
+                        "bucket": "RAMP",
+                        "k_primary": 10,
+                        "effective_K": 12.5,
+                        "K_int": 12,
+                        "active_requirement_flags": ["LANDFALL_BASED"],
+                        "substitution_terms": [
+                            {
+                                "primitive": "EXTRA_LAND_DROPS",
+                                "weight": 0.4,
+                                "k_substitute": 5,
+                                "contribution": 2.0,
+                            }
+                        ],
+                    }
+                ],
+            },
+            "weight_multiplier_engine_v1": {
+                "version": "weight_multiplier_engine_v1",
+                "status": "OK",
+                "reason_code": None,
+                "codes": [],
+                "weight_rules_version": "weight_rules_v1",
+                "format": "commander",
+                "multipliers_by_bucket": [
+                    {
+                        "bucket": "RAMP",
+                        "multiplier": 1.12,
+                    }
+                ],
+                "applied_rules": [
+                    {
+                        "rule_id": "ramp_landfall_bonus",
+                        "target_bucket": "RAMP",
+                        "requirement_flag": "LANDFALL_BASED",
+                        "multiplier": 1.12,
+                    }
+                ],
+            },
+            "probability_math_core_v1": {
+                "version": "probability_math_core_v1",
+                "status": "OK",
+                "reason_code": None,
+                "codes": [],
+                "math_backend": "int_comb",
+                "available_functions": [
+                    "comb",
+                    "hypergeom_p_ge_1",
+                    "hypergeom_p_ge_x",
+                ],
+                "validated_buckets": 1,
+            },
+            "probability_checkpoint_layer_v1": {
+                "version": "probability_checkpoint_layer_v1",
+                "status": "OK",
+                "reason_code": None,
+                "codes": [],
+                "format": "commander",
+                "deck_size_N": 99,
+                "default_policy": "NORMAL",
+                "checkpoints": [7, 9, 10, 12],
+                "checkpoint_draws": [
+                    {"checkpoint": 7, "effective_n": 7.0, "n_int": 7},
+                    {"checkpoint": 9, "effective_n": 9.0, "n_int": 9},
+                    {"checkpoint": 10, "effective_n": 10.0, "n_int": 10},
+                    {"checkpoint": 12, "effective_n": 12.0, "n_int": 12},
+                ],
+                "probabilities_by_bucket": [
+                    {
+                        "bucket": "RAMP",
+                        "effective_K": 12.5,
+                        "K_int": 12,
+                        "probabilities_by_checkpoint": [
+                            {"checkpoint": 7, "effective_n": 7.0, "n_int": 7, "p_ge_1": 0.615148},
+                            {"checkpoint": 9, "effective_n": 9.0, "n_int": 9, "p_ge_1": 0.72774},
+                            {"checkpoint": 10, "effective_n": 10.0, "n_int": 10, "p_ge_1": 0.775732},
+                            {"checkpoint": 12, "effective_n": 12.0, "n_int": 12, "p_ge_1": 0.851995},
+                        ],
+                    }
+                ],
+            },
+            "stress_model_definition_v1": {
+                "version": "stress_model_definition_v1",
+                "status": "OK",
+                "reason_code": None,
+                "codes": [],
+                "stress_models_version": "stress_models_v1",
+                "format": "commander",
+                "profile_id": "focused",
+                "bracket_id": "B2",
+                "request_override_model_id": None,
+                "selected_model_id": "PUNISHING_POD_V0",
+                "selection_source": "profile_bracket",
+                "operators": [
+                    {
+                        "op": "BOARD_WIPE",
+                        "by_turn": 6,
+                        "surviving_engine_fraction": 0.6,
+                    },
+                    {
+                        "op": "GRAVEYARD_HATE_WINDOW",
+                        "turns": [4, 5, 6],
+                        "graveyard_penalty": 0.7,
+                    },
+                    {
+                        "op": "STAX_TAX",
+                        "by_turn": 4,
+                        "inflation_factor": 1.25,
+                    },
+                    {
+                        "op": "TARGETED_REMOVAL",
+                        "count": 2,
+                    },
+                ],
+            },
+            "stress_transform_engine_v1": {
+                "version": "stress_transform_engine_v1",
+                "status": "OK",
+                "reason_code": None,
+                "codes": [],
+                "format": "commander",
+                "deck_size_N": 99,
+                "selected_model_id": "PUNISHING_POD_V0",
+                "operators_applied": [
+                    {"op": "TARGETED_REMOVAL", "count": 2},
+                ],
+                "checkpoints": [7, 9, 10, 12],
+                "checkpoint_draws": [
+                    {"checkpoint": 7, "effective_n": 7.0, "n_int": 7},
+                    {"checkpoint": 9, "effective_n": 9.0, "n_int": 9},
+                    {"checkpoint": 10, "effective_n": 10.0, "n_int": 10},
+                    {"checkpoint": 12, "effective_n": 12.0, "n_int": 12},
+                ],
+                "stress_adjusted_effective_K": [
+                    {
+                        "bucket": "RAMP",
+                        "effective_K_before": 12.5,
+                        "K_int_before": 12,
+                        "effective_K_after": 10.5,
+                        "K_int_after": 10,
+                    }
+                ],
+                "stress_adjusted_probabilities_by_bucket": [
+                    {
+                        "bucket": "RAMP",
+                        "effective_K_after": 10.5,
+                        "K_int_after": 10,
+                        "probabilities_by_checkpoint": [
+                            {"checkpoint": 7, "effective_n": 7.0, "n_int": 7, "p_ge_1": 0.542398},
+                            {"checkpoint": 9, "effective_n": 9.0, "n_int": 9, "p_ge_1": 0.651245},
+                            {"checkpoint": 10, "effective_n": 10.0, "n_int": 10, "p_ge_1": 0.699663},
+                            {"checkpoint": 12, "effective_n": 12.0, "n_int": 12, "p_ge_1": 0.778733},
+                        ],
+                    }
+                ],
+                "operator_impacts": [],
+            },
+            "resilience_math_engine_v1": {
+                "version": "resilience_math_engine_v1",
+                "status": "WARN",
+                "reason_code": None,
+                "codes": ["RESILIENCE_COMMANDER_FRAGILITY_UNAVAILABLE"],
+                "format": "commander",
+                "checkpoints": [7, 9, 10, 12],
+                "commander_dependency": "MED",
+                "metrics": {
+                    "engine_continuity_after_removal": 0.81,
+                    "rebuild_after_wipe": 0.75,
+                    "graveyard_fragility_delta": 0.14,
+                    "commander_fragility_delta": None,
+                },
+                "bucket_metrics": [
+                    {
+                        "bucket": "RAMP",
+                        "baseline_effective_K": 12.5,
+                        "stress_effective_K": 10.5,
+                        "baseline_p_ge_1_mean": 0.742654,
+                        "stress_p_ge_1_mean": 0.66801,
+                        "stress_delta_p_ge_1_mean": 0.074644,
+                    }
+                ],
+            },
+            "commander_reliability_model_v1": {
+                "version": "commander_reliability_model_v1",
+                "status": "WARN",
+                "reason_code": None,
+                "codes": ["COMMANDER_RELIABILITY_PROTECTION_PROXY_UNAVAILABLE"],
+                "commander_dependent": "HIGH",
+                "checkpoint_mapping": {"t3": 9, "t4": 10, "t6": 12},
+                "metrics": {
+                    "cast_reliability_t3": 0.5,
+                    "cast_reliability_t4": 0.6,
+                    "cast_reliability_t6": 0.8,
+                    "protection_coverage_proxy": None,
+                    "commander_fragility_delta": 0.15,
+                },
+                "notes": [
+                    "Commander dependency is HIGH while protection coverage proxy is unavailable.",
+                    "Protection coverage proxy unavailable from primitive index/playable slot inputs.",
+                ],
+            },
+            "sufficiency_summary_v1": {
+                "version": "sufficiency_summary_v1",
+                "status": "WARN",
+                "reason_code": None,
+                "codes": [
+                    "SUFFICIENCY_COMMANDER_PROTECTION_PROXY_UNAVAILABLE",
+                    "SUFFICIENCY_REQUIRED_EFFECTS_SOURCE_WARN",
+                ],
+                "failures": [],
+                "warnings": [
+                    "SUFFICIENCY_COMMANDER_PROTECTION_PROXY_UNAVAILABLE",
+                    "SUFFICIENCY_REQUIRED_EFFECTS_SOURCE_WARN",
+                ],
+                "domain_verdicts": {
+                    "required_effects": {
+                        "status": "WARN",
+                        "codes": ["SUFFICIENCY_REQUIRED_EFFECTS_SOURCE_WARN"],
+                    },
+                    "baseline_prob": {"status": "PASS", "codes": []},
+                    "stress_prob": {"status": "PASS", "codes": []},
+                    "coherence": {"status": "PASS", "codes": []},
+                    "resilience": {"status": "PASS", "codes": []},
+                    "commander": {
+                        "status": "WARN",
+                        "codes": ["SUFFICIENCY_COMMANDER_PROTECTION_PROXY_UNAVAILABLE"],
+                    },
+                },
+                "thresholds_used": {
+                    "profile_thresholds_version": "profile_thresholds_v1",
+                    "calibration_snapshot_version": "calibration_snapshot_v1",
+                    "format": "commander",
+                    "requested_profile_id": "focused",
+                    "selected_profile_id": "focused",
+                    "selection_source": "profile",
+                    "domains": {},
+                },
+                "versions_used": {
+                    "sufficiency_summary_version": "sufficiency_summary_v1",
+                    "profile_thresholds_version": "profile_thresholds_v1",
+                    "calibration_snapshot_version": "calibration_snapshot_v1",
+                },
             },
             "motifs": [{"motif_id": "M1"}],
             "disruption_totals": {"bridges_total": 1},

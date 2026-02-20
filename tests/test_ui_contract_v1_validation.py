@@ -100,7 +100,7 @@ class UIContractV1ValidationTests(unittest.TestCase):
         if find_card_by_name(self.SNAPSHOT_ID, self.LEGAL_COMMANDER) is None:
             self.skipTest(f"Commander not found in snapshot: {self.LEGAL_COMMANDER}")
 
-        payload = self._post_build(commander=self.LEGAL_COMMANDER, allow_runtime_oracle_text=True)
+        payload = self._post_build(commander=self.LEGAL_COMMANDER, allow_runtime_oracle_text=False)
 
         result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
         self.assertEqual(result.get("ui_contract_version"), "ui_contract_v1")
@@ -123,7 +123,7 @@ class UIContractV1ValidationTests(unittest.TestCase):
         if find_card_by_name(self.SNAPSHOT_ID, self.LEGAL_COMMANDER) is None:
             self.skipTest(f"Commander not found in snapshot: {self.LEGAL_COMMANDER}")
 
-        baseline_payload = self._post_build(commander=self.LEGAL_COMMANDER, allow_runtime_oracle_text=True)
+        baseline_payload = self._post_build(commander=self.LEGAL_COMMANDER, allow_runtime_oracle_text=False)
         payload = self._post_build(commander=self.LEGAL_COMMANDER, allow_runtime_oracle_text=False)
 
         result = payload.get("result") if isinstance(payload.get("result"), dict) else {}

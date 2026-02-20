@@ -1,0 +1,104 @@
+{
+  "version": "bucket_substitutions_v1",
+  "format_defaults": {
+    "commander": {
+      "buckets": {
+        "CARD_DRAW": {
+          "primary_primitives": [
+            "CARD_DRAW_BURST"
+          ],
+          "base_substitutions": [
+            {
+              "primitive": "CARD_SELECTION_FILTER",
+              "weight": 0.35
+            }
+          ],
+          "conditional_substitutions": [
+            {
+              "requirement_flag": "GRAVEYARD_DEPENDENT",
+              "substitutions": [
+                {
+                  "primitive": "SPELL_RECURSION_INSTANT_SORC",
+                  "weight": 0.3
+                }
+              ]
+            },
+            {
+              "requirement_flag": "SPELL_DENSITY_BASED",
+              "substitutions": [
+                {
+                  "primitive": "SPELL_COPY",
+                  "weight": 0.2
+                }
+              ]
+            }
+          ]
+        },
+        "INTERACTION": {
+          "primary_primitives": [
+            "BOARDWIPE_CREATURES",
+            "STACK_COUNTERSPELL",
+            "TARGETED_REMOVAL_CREATURE"
+          ],
+          "base_substitutions": [
+            {
+              "primitive": "TARGETED_REMOVAL_NONCREATURE",
+              "weight": 0.25
+            }
+          ],
+          "conditional_substitutions": [
+            {
+              "requirement_flag": "SAC_BASED",
+              "substitutions": [
+                {
+                  "primitive": "TARGETED_REMOVAL_CREATURE",
+                  "weight": 0.15
+                }
+              ]
+            },
+            {
+              "requirement_flag": "TOKEN_BASED",
+              "substitutions": [
+                {
+                  "primitive": "BOARDWIPE_CREATURES",
+                  "weight": 0.2
+                }
+              ]
+            }
+          ]
+        },
+        "RAMP": {
+          "primary_primitives": [
+            "MANA_RAMP_ARTIFACT_ROCK"
+          ],
+          "base_substitutions": [
+            {
+              "primitive": "TREASURE_PRODUCTION_REPEATABLE",
+              "weight": 0.5
+            }
+          ],
+          "conditional_substitutions": [
+            {
+              "requirement_flag": "LANDFALL_BASED",
+              "substitutions": [
+                {
+                  "primitive": "EXTRA_LAND_DROPS",
+                  "weight": 0.4
+                }
+              ]
+            },
+            {
+              "requirement_flag": "SAC_BASED",
+              "substitutions": [
+                {
+                  "primitive": "TREASURE_PRODUCTION_REPEATABLE",
+                  "weight": 0.25
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}

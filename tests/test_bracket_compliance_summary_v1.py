@@ -169,7 +169,7 @@ class BracketComplianceSummaryV1Tests(unittest.TestCase):
             "unknowns": [],
             "gc_limits_version": "gc_limits_v1",
             "bracket_rules_version": "bracket_rules_v2",
-            "two_card_combos_version": "two_card_combos_v1",
+            "two_card_combos_version": "two_card_combos_v2",
         }
 
         first = run_bracket_compliance_summary_v1(enforcement)

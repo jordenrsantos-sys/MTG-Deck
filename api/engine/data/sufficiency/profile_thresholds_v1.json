@@ -1,0 +1,40 @@
+{
+  "version": "profile_thresholds_v1",
+  "calibration_snapshot_version": "calibration_snapshot_v1",
+  "format_defaults": {
+    "commander": {
+      "default_profile_id": "focused",
+      "profiles": {
+        "focused": {
+          "domains": {
+            "required_effects": {
+              "max_missing": 0,
+              "max_unknowns": 0
+            },
+            "baseline_prob": {
+              "cast_reliability_t3_min": 0.5,
+              "cast_reliability_t4_min": 0.6,
+              "cast_reliability_t6_min": 0.75
+            },
+            "stress_prob": {
+              "engine_continuity_after_removal_min": 0.7,
+              "rebuild_after_wipe_min": 0.6,
+              "graveyard_fragility_delta_max": 0.2
+            },
+            "coherence": {
+              "dead_slot_ratio_max": 0.35,
+              "overlap_score_min": 0.0
+            },
+            "resilience": {
+              "commander_fragility_delta_max": 0.25
+            },
+            "commander": {
+              "protection_coverage_proxy_min": 0.2,
+              "commander_fragility_delta_max": 0.25
+            }
+          }
+        }
+      }
+    }
+  }
+}

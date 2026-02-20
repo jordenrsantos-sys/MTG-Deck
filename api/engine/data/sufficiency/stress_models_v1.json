@@ -1,0 +1,66 @@
+{
+  "version": "stress_models_v1",
+  "format_defaults": {
+    "commander": {
+      "selection": {
+        "default_model_id": "PUNISHING_POD_V0",
+        "by_profile_id": {
+          "focused": "PUNISHING_POD_V0"
+        },
+        "by_bracket_id": {
+          "B3": "LIGHT_DISRUPTION_V0"
+        },
+        "by_profile_bracket": [
+          {
+            "profile_id": "default",
+            "bracket_id": "B3",
+            "model_id": "LIGHT_DISRUPTION_V0"
+          },
+          {
+            "profile_id": "focused",
+            "bracket_id": "B2",
+            "model_id": "PUNISHING_POD_V0"
+          }
+        ]
+      },
+      "models": {
+        "LIGHT_DISRUPTION_V0": {
+          "operators": [
+            {
+              "op": "STAX_TAX",
+              "by_turn": 5,
+              "inflation_factor": 1.1
+            },
+            {
+              "op": "TARGETED_REMOVAL",
+              "count": 1
+            }
+          ]
+        },
+        "PUNISHING_POD_V0": {
+          "operators": [
+            {
+              "op": "BOARD_WIPE",
+              "by_turn": 6,
+              "surviving_engine_fraction": 0.6
+            },
+            {
+              "op": "GRAVEYARD_HATE_WINDOW",
+              "turns": [4, 5, 6],
+              "graveyard_penalty": 0.7
+            },
+            {
+              "op": "STAX_TAX",
+              "by_turn": 4,
+              "inflation_factor": 1.25
+            },
+            {
+              "op": "TARGETED_REMOVAL",
+              "count": 2
+            }
+          ]
+        }
+      }
+    }
+  }
+}

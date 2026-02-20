@@ -1,0 +1,49 @@
+{
+  "version": "commander_spellbook_variants_v1",
+  "source": "commander_spellbook_api",
+  "generated_from": "variants",
+  "variants": [
+    {
+      "variant_id": "CSBVAR_0001",
+      "cards": [
+        "combo piece a",
+        "combo piece b"
+      ],
+      "result": "infinite_test_combo",
+      "tags": [
+        "demo",
+        "infinite"
+      ]
+    },
+    {
+      "variant_id": "CSBVAR_0002",
+      "cards": [
+        "missing card a",
+        "missing card b"
+      ],
+      "result": "infinite_missing_combo",
+      "tags": [
+        "demo"
+      ]
+    },
+    {
+      "variant_id": "CSBVAR_0003",
+      "cards": [
+        "omega piece a",
+        "omega piece b"
+      ],
+      "result": "infinite_omega_combo"
+    },
+    {
+      "variant_id": "CSBVAR_0004",
+      "cards": [
+        "combo piece a",
+        "combo piece b"
+      ],
+      "result": "alternate_line",
+      "tags": [
+        "demo"
+      ]
+    }
+  ]
+}

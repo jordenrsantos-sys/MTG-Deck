@@ -401,7 +401,7 @@ class ProfileBracketEnforcementV1LayerTests(unittest.TestCase):
         self.assertEqual(payload.get("violations"), [])
 
     def test_two_card_combo_runtime_missing_support_emits_unknown_without_crashing(self) -> None:
-        with patch.object(enforcement_layer, "detect_two_card_combos", side_effect=RuntimeError("TWO_CARD_COMBOS_V1_MISSING: test")):
+        with patch.object(enforcement_layer, "detect_two_card_combos", side_effect=RuntimeError("TWO_CARD_COMBOS_V2_MISSING: test")):
             payload = self._run(
                 deck_cards=["Combo Piece A", "Combo Piece B"],
                 bracket_id="B4",

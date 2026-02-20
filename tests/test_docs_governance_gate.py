@@ -35,6 +35,21 @@ class DocsGovernanceGateTests(unittest.TestCase):
                 "K DISCRETIZATION POLICY",
             ),
             (
+                self.spec_path,
+                self.spec_text,
+                "Graph structure must NOT influence overlap_score in v1.",
+            ),
+            (
+                self.spec_path,
+                self.spec_text,
+                "XVII. COMBO_PACK_PIPELINE_V1 CONTRACT",
+            ),
+            (
+                self.plan_path,
+                self.plan_text,
+                "STEP 13 — combo_pack_pipeline_v1",
+            ),
+            (
                 self.inventory_path,
                 self.inventory_text,
                 "SECTION 2 — PHASE 3: SUFFICIENCY ENGINE",
@@ -96,6 +111,21 @@ class DocsGovernanceGateTests(unittest.TestCase):
         self.assertFalse(
             missing_json_refs,
             "Inventory missing references for sufficiency data pack JSON files. "
+            f"Missing: {missing_json_refs}. "
+            f"Discovered JSON files: {json_files}",
+        )
+
+    def test_inventory_covers_combo_data_pack_json_files(self) -> None:
+        combos_dir = self.repo_root / "api" / "engine" / "data" / "combos"
+        json_files = sorted(path.name for path in combos_dir.glob("*.json")) if combos_dir.is_dir() else []
+
+        missing_json_refs = sorted(
+            filename for filename in json_files if filename not in self.inventory_text
+        )
+
+        self.assertFalse(
+            missing_json_refs,
+            "Inventory missing references for combo data pack JSON files. "
             f"Missing: {missing_json_refs}. "
             f"Discovered JSON files: {json_files}",
         )

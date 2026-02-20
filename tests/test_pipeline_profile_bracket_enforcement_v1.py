@@ -173,7 +173,7 @@ def test_pipeline_reports_profile_bracket_enforcement_payload_and_panel(mtg_test
     summary_versions = summary_payload.get("versions") if isinstance(summary_payload.get("versions"), dict) else {}
     assert summary_versions.get("gc_limits_version") == "gc_limits_v1"
     assert summary_versions.get("bracket_rules_version") == "bracket_rules_v2"
-    assert summary_versions.get("two_card_combos_version") == "two_card_combos_v1"
+    assert summary_versions.get("two_card_combos_version") == "two_card_combos_v2"
 
     graph_analytics_summary = result.get("graph_analytics_summary_v1")
     assert isinstance(graph_analytics_summary, dict)
@@ -233,7 +233,8 @@ def test_pipeline_reports_profile_bracket_enforcement_payload_and_panel(mtg_test
     pipeline_versions = result.get("pipeline_versions") if isinstance(result.get("pipeline_versions"), dict) else {}
     assert pipeline_versions.get("gc_limits_version") == "gc_limits_v1"
     assert pipeline_versions.get("bracket_rules_version") == "bracket_rules_v2"
-    assert pipeline_versions.get("two_card_combos_version") == "two_card_combos_v1"
+    assert pipeline_versions.get("two_card_combos_version") == "two_card_combos_v2"
+    assert pipeline_versions.get("spellbook_variants_version") == "commander_spellbook_variants_v1"
 
     available_panels = result.get("available_panels_v1") if isinstance(result.get("available_panels_v1"), dict) else {}
     assert available_panels.get("has_profile_bracket_enforcement_v1") is True

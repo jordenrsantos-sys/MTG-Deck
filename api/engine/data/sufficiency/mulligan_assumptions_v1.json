@@ -1,0 +1,34 @@
+{
+  "version": "mulligan_assumptions_v1",
+  "format_defaults": {
+    "commander": {
+      "default_policy": "NORMAL",
+      "policies": {
+        "DRAW10_SHUFFLE3": {
+          "effective_n_by_checkpoint": {
+            "7": 7.25,
+            "9": 9.25,
+            "10": 10.25,
+            "12": 12.25
+          }
+        },
+        "FRIENDLY": {
+          "effective_n_by_checkpoint": {
+            "7": 7.5,
+            "9": 9.5,
+            "10": 10.5,
+            "12": 12.5
+          }
+        },
+        "NORMAL": {
+          "effective_n_by_checkpoint": {
+            "7": 7.0,
+            "9": 9.0,
+            "10": 10.0,
+            "12": 12.0
+          }
+        }
+      }
+    }
+  }
+}

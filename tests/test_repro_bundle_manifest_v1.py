@@ -16,7 +16,8 @@ class ReproBundleManifestV1Tests(unittest.TestCase):
                 "engine_version": "0.2.3",
                 "gc_limits_version": "gc_limits_v1",
                 "bracket_rules_version": "bracket_rules_v2",
-                "two_card_combos_version": "two_card_combos_v1",
+                "two_card_combos_version": "two_card_combos_v2",
+                "spellbook_variants_version": "commander_spellbook_variants_v1",
             },
             "available_panels_v1": {
                 "has_snapshot_preflight_v1": True,
@@ -59,6 +60,7 @@ class ReproBundleManifestV1Tests(unittest.TestCase):
                 "bracket_rules_version",
                 "engine_version",
                 "gc_limits_version",
+                "spellbook_variants_version",
                 "two_card_combos_version",
             ],
         )

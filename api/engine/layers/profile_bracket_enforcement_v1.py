@@ -4,12 +4,12 @@ from typing import Any, Dict, List
 
 from api.engine.bracket_gc_limits import resolve_gc_limits
 from api.engine.bracket_rules_v2 import resolve_bracket_rules_v2
+from api.engine.combos.two_card_combos_v2 import detect_two_card_combos
 from api.engine.constants import GAME_CHANGERS_SET, GAME_CHANGERS_VERSION
-from api.engine.two_card_combos import detect_two_card_combos
 from engine.db_tags import get_deck_tag_count
 
 
-PROFILE_BRACKET_ENFORCEMENT_V1_VERSION = "profile_bracket_enforcement_v1_3"
+PROFILE_BRACKET_ENFORCEMENT_V1_VERSION = "profile_bracket_enforcement_v1_4"
 
 _TRACKED_CATEGORIES = (
     "mass_land_denial",
@@ -127,7 +127,10 @@ def _resolve_category_support_counts(
     primitive_index_by_slot: Any,
     deck_slot_ids_playable: Any,
 ) -> Dict[str, Dict[str, Any]]:
-    _ = commander
+    combo_deck_cards = list(deck_cards)
+    if isinstance(commander, str) and commander.strip() != "":
+        combo_deck_cards.append(commander)
+
     category_support = {
         category: {
             "supported": False,
@@ -155,15 +158,21 @@ def _resolve_category_support_counts(
         }
 
     try:
-        combo_detection = detect_two_card_combos(deck_cards)
-        combo_count = combo_detection.get("count") if isinstance(combo_detection, dict) else None
-        if isinstance(combo_count, int) and not isinstance(combo_count, bool) and combo_count >= 0:
+        combo_detection = detect_two_card_combos(combo_deck_cards)
+    except RuntimeError:
+        combo_detection = {
+            "supported": False,
+            "count": None,
+            "matches": [],
+        }
+    if isinstance(combo_detection, dict):
+        combo_supported = bool(combo_detection.get("supported"))
+        combo_count = combo_detection.get("count")
+        if combo_supported and isinstance(combo_count, int) and not isinstance(combo_count, bool) and combo_count >= 0:
             category_support["two_card_combos"] = {
                 "supported": True,
                 "count": combo_count,
             }
-    except RuntimeError:
-        pass
 
     return category_support
 

@@ -16,36 +16,89 @@ from engine.db_tags import TagSnapshotMissingError, bulk_get_card_tags, ensure_t
 from engine.game_changers import detect_game_changers, bracket_floor_from_count
 
 from api.engine.constants import *
+from api.engine.bucket_substitutions_v1 import load_bucket_substitutions_v1
 from api.engine.dependency_signatures_v1 import load_dependency_signatures_v1
+from api.engine.mulligan_assumptions_v1 import load_mulligan_assumptions_v1
+from api.engine.stress_models_v1 import load_stress_models_v1
+from api.engine.weight_rules_v1 import load_weight_rules_v1
+from api.engine.profile_thresholds_v1 import resolve_profile_thresholds_v1
+from api.engine.combos.commander_spellbook_variants_v1 import SPELLBOOK_VARIANTS_V1_VERSION
+from api.engine.combos.two_card_combos_v2 import TWO_CARD_COMBOS_V2_VERSION
 from api.engine.layers.canonical_v1 import run_canonical_v1
 from api.engine.layers.combo_candidate_v0 import run_combo_candidate_v0
 from api.engine.layers.combo_skeleton_v0 import run_combo_skeleton_v0
 from api.engine.layers.counterfactual_stress_test_v1 import run_counterfactual_stress_test_v1
 from api.engine.layers.disruption_v1 import run_disruption_v1
 from api.engine.layers.disruption_surface_v1 import run_disruption_surface_v1
+from api.engine.layers.engine_coherence_v1 import (
+    ENGINE_COHERENCE_V1_VERSION,
+    run_engine_coherence_v1,
+)
 from api.engine.layers.engine_requirement_detection_v1 import run_engine_requirement_detection_v1
+from api.engine.layers.graph_v1_schema_assert_v1 import (
+    GRAPH_V1_SCHEMA_ASSERT_V1_VERSION,
+    run_graph_v1_schema_assert_v1,
+)
 from api.engine.layers.graph_v3_typed import run_graph_v3_typed
 from api.engine.layers.graph_analytics_summary_v1 import run_graph_analytics_summary_v1
 from api.engine.layers.graph_pathways_summary_v1 import run_graph_pathways_summary_v1
+from api.engine.layers.mulligan_model_v1 import (
+    MULLIGAN_MODEL_V1_VERSION,
+    run_mulligan_model_v1,
+)
 from api.engine.layers.motif_v1 import run_motif_v1
 from api.engine.layers.pathways_v1 import run_pathways_v1
 from api.engine.layers.bracket_compliance_summary_v1 import run_bracket_compliance_summary_v1
 from api.engine.layers.profile_bracket_enforcement_v1 import run_profile_bracket_enforcement_v1
+from api.engine.layers.probability_math_core_v1 import (
+    PROBABILITY_MATH_CORE_V1_VERSION,
+    run_probability_math_core_v1,
+)
+from api.engine.layers.probability_checkpoint_layer_v1 import (
+    PROBABILITY_CHECKPOINT_LAYER_V1_VERSION,
+    run_probability_checkpoint_layer_v1,
+)
+from api.engine.layers.stress_model_definition_v1 import (
+    STRESS_MODEL_DEFINITION_V1_VERSION,
+    run_stress_model_definition_v1,
+)
+from api.engine.layers.stress_transform_engine_v1 import (
+    STRESS_TRANSFORM_ENGINE_V1_VERSION,
+    run_stress_transform_engine_v1,
+)
+from api.engine.layers.resilience_math_engine_v1 import (
+    RESILIENCE_MATH_ENGINE_V1_VERSION,
+    run_resilience_math_engine_v1,
+)
+from api.engine.layers.commander_reliability_model_v1 import (
+    COMMANDER_RELIABILITY_MODEL_V1_VERSION,
+    run_commander_reliability_model_v1,
+)
+from api.engine.layers.sufficiency_summary_v1 import (
+    SUFFICIENCY_SUMMARY_V1_VERSION,
+    run_sufficiency_summary_v1,
+)
 from api.engine.layers.primitive_index_v1 import run_primitive_index_v1
-from api.engine.layers.proof_attempt_v1 import run_proof_attempt_v1
-from api.engine.layers.proof_scaffold_v1 import run_proof_scaffold_v1
 from api.engine.layers.required_effects_coverage_v1 import run_required_effects_coverage_v1
 from api.engine.layers.redundancy_index_v1 import run_redundancy_index_v1
 from api.engine.layers.snapshot_preflight_v1 import run_snapshot_preflight_v1
 from api.engine.layers.structural_scorecard_v1 import run_structural_scorecard_v1
 from api.engine.layers.structural_v1 import run_structural_v1
+from api.engine.layers.substitution_engine_v1 import (
+    SUBSTITUTION_ENGINE_V1_VERSION,
+    run_substitution_engine_v1,
+)
+from api.engine.layers.weight_multiplier_engine_v1 import (
+    WEIGHT_MULTIPLIER_ENGINE_V1_VERSION,
+    run_weight_multiplier_engine_v1,
+)
 from api.engine.layers.typed_graph_invariants_v1 import run_typed_graph_invariants_v1
 from api.engine.layers.vulnerability_index_v1 import run_vulnerability_index_v1
 from api.engine.required_effects_v1 import resolve_required_effects_v1
 from api.engine.graph_expand_v1 import build_bipartite_graph_v1, expand_candidate_edges_v1
+from api.engine.runtime_mode_guard import assert_runtime_safe_mode
 from api.engine.snapshot_preflight_v1 import SnapshotPreflightError, run_snapshot_preflight
 from api.engine.structural_snapshot_v1 import build_structural_snapshot_v1
-from api.engine.two_card_combos import TWO_CARD_COMBOS_V1_VERSION
 from api.engine.unknowns import add_unknown, sort_unknowns
 from api.engine.utils import stable_json_dumps, sha256_hex, strip_hash_fields
 from api.engine.validate_invariants_v1 import validate_invariants_v1
@@ -143,6 +196,17 @@ def build_available_panels_v1(
     disruption_surface_v1: Any = None,
     vulnerability_index_v1: Any = None,
     engine_requirement_detection_v1: Any = None,
+    engine_coherence_v1: Any = None,
+    mulligan_model_v1: Any = None,
+    substitution_engine_v1: Any = None,
+    weight_multiplier_engine_v1: Any = None,
+    probability_math_core_v1: Any = None,
+    probability_checkpoint_layer_v1: Any = None,
+    stress_model_definition_v1: Any = None,
+    stress_transform_engine_v1: Any = None,
+    resilience_math_engine_v1: Any = None,
+    commander_reliability_model_v1: Any = None,
+    sufficiency_summary_v1: Any = None,
     required_effects_coverage_v1: Any = None,
     redundancy_index_v1: Any = None,
     counterfactual_stress_test_v1: Any = None,
@@ -234,6 +298,72 @@ def build_available_panels_v1(
             and isinstance(engine_requirement_detection_v1, dict)
             and isinstance(engine_requirement_detection_v1.get("status"), str)
             and engine_requirement_detection_v1.get("status").strip() != ""
+        ),
+        "has_engine_coherence_v1": (
+            is_present(engine_coherence_v1)
+            and isinstance(engine_coherence_v1, dict)
+            and isinstance(engine_coherence_v1.get("status"), str)
+            and engine_coherence_v1.get("status").strip() != ""
+        ),
+        "has_mulligan_model_v1": (
+            is_present(mulligan_model_v1)
+            and isinstance(mulligan_model_v1, dict)
+            and isinstance(mulligan_model_v1.get("status"), str)
+            and mulligan_model_v1.get("status").strip() != ""
+        ),
+        "has_substitution_engine_v1": (
+            is_present(substitution_engine_v1)
+            and isinstance(substitution_engine_v1, dict)
+            and isinstance(substitution_engine_v1.get("status"), str)
+            and substitution_engine_v1.get("status").strip() != ""
+        ),
+        "has_weight_multiplier_engine_v1": (
+            is_present(weight_multiplier_engine_v1)
+            and isinstance(weight_multiplier_engine_v1, dict)
+            and isinstance(weight_multiplier_engine_v1.get("status"), str)
+            and weight_multiplier_engine_v1.get("status").strip() != ""
+        ),
+        "has_probability_math_core_v1": (
+            is_present(probability_math_core_v1)
+            and isinstance(probability_math_core_v1, dict)
+            and isinstance(probability_math_core_v1.get("status"), str)
+            and probability_math_core_v1.get("status").strip() != ""
+        ),
+        "has_probability_checkpoint_layer_v1": (
+            is_present(probability_checkpoint_layer_v1)
+            and isinstance(probability_checkpoint_layer_v1, dict)
+            and isinstance(probability_checkpoint_layer_v1.get("status"), str)
+            and probability_checkpoint_layer_v1.get("status").strip() != ""
+        ),
+        "has_stress_model_definition_v1": (
+            is_present(stress_model_definition_v1)
+            and isinstance(stress_model_definition_v1, dict)
+            and isinstance(stress_model_definition_v1.get("status"), str)
+            and stress_model_definition_v1.get("status").strip() != ""
+        ),
+        "has_stress_transform_engine_v1": (
+            is_present(stress_transform_engine_v1)
+            and isinstance(stress_transform_engine_v1, dict)
+            and isinstance(stress_transform_engine_v1.get("status"), str)
+            and stress_transform_engine_v1.get("status").strip() != ""
+        ),
+        "has_resilience_math_engine_v1": (
+            is_present(resilience_math_engine_v1)
+            and isinstance(resilience_math_engine_v1, dict)
+            and isinstance(resilience_math_engine_v1.get("status"), str)
+            and resilience_math_engine_v1.get("status").strip() != ""
+        ),
+        "has_commander_reliability_model_v1": (
+            is_present(commander_reliability_model_v1)
+            and isinstance(commander_reliability_model_v1, dict)
+            and isinstance(commander_reliability_model_v1.get("status"), str)
+            and commander_reliability_model_v1.get("status").strip() != ""
+        ),
+        "has_sufficiency_summary_v1": (
+            is_present(sufficiency_summary_v1)
+            and isinstance(sufficiency_summary_v1, dict)
+            and isinstance(sufficiency_summary_v1.get("status"), str)
+            and sufficiency_summary_v1.get("status").strip() != ""
         ),
         "has_required_effects_coverage_v1": (
             is_present(required_effects_coverage_v1)
@@ -523,6 +653,7 @@ def is_ci_compatible(commander: dict, card: dict) -> bool:
 def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> dict:
     _ = conn
     _ = repo_root_path
+    assert_runtime_safe_mode()
     from api.main import BuildResponse
 
     snapshot_preflight_payload_for_result: Dict[str, Any] | None = None
@@ -1542,10 +1673,93 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             slot_ids_by_primitive=slot_ids_by_primitive,
             commander_slot_id=(commander_canonical_slot or {}).get("slot_id"),
         )
+        engine_coherence_v1 = run_engine_coherence_v1(
+            primitive_index_by_slot=primitive_index_by_slot,
+            deck_slot_ids_playable=list(deck_cards_slot_ids_playable),
+        )
+
+        mulligan_assumptions_payload = load_mulligan_assumptions_v1()
+        mulligan_model_v1 = run_mulligan_model_v1(
+            format=req.format,
+            mulligan_assumptions_payload=mulligan_assumptions_payload,
+        )
+
+        bucket_substitutions_payload = load_bucket_substitutions_v1()
+        substitution_rules_version = (
+            bucket_substitutions_payload.get("version")
+            if isinstance(bucket_substitutions_payload, dict)
+            else "bucket_substitutions_v1"
+        )
+        substitution_engine_v1 = run_substitution_engine_v1(
+            primitive_index_by_slot=primitive_index_by_slot,
+            deck_slot_ids_playable=list(deck_cards_slot_ids_playable),
+            engine_requirement_detection_v1_payload=engine_requirement_detection_v1,
+            format=req.format,
+            bucket_substitutions_payload=bucket_substitutions_payload,
+        )
+
+        weight_rules_payload = load_weight_rules_v1()
+        weight_rules_version = (
+            weight_rules_payload.get("version")
+            if isinstance(weight_rules_payload, dict)
+            else "weight_rules_v1"
+        )
+        weight_multiplier_engine_v1 = run_weight_multiplier_engine_v1(
+            engine_requirement_detection_v1_payload=engine_requirement_detection_v1,
+            substitution_engine_v1_payload=substitution_engine_v1,
+            format=req.format,
+            weight_rules_payload=weight_rules_payload,
+        )
+        probability_math_core_v1 = run_probability_math_core_v1(
+            substitution_engine_v1_payload=substitution_engine_v1,
+        )
+        probability_checkpoint_layer_v1 = run_probability_checkpoint_layer_v1(
+            format=req.format,
+            substitution_engine_v1_payload=substitution_engine_v1,
+            mulligan_model_v1_payload=mulligan_model_v1,
+        )
+
+        stress_model_request_override_id = getattr(req, "stress_model_id_override", None)
+        if not isinstance(stress_model_request_override_id, str) or stress_model_request_override_id.strip() == "":
+            stress_model_request_override_id = getattr(req, "stress_model_id", None)
+
+        stress_models_payload = load_stress_models_v1()
+        stress_model_definition_v1 = run_stress_model_definition_v1(
+            format=req.format,
+            bracket_id=req.bracket_id if isinstance(req.bracket_id, str) else "",
+            profile_id=req.profile_id if isinstance(req.profile_id, str) else "",
+            request_override_model_id=stress_model_request_override_id,
+            stress_models_payload=stress_models_payload,
+        )
+        stress_transform_engine_v1 = run_stress_transform_engine_v1(
+            substitution_engine_v1_payload=substitution_engine_v1,
+            probability_checkpoint_layer_v1_payload=probability_checkpoint_layer_v1,
+            stress_model_definition_v1_payload=stress_model_definition_v1,
+            probability_math_core_v1_payload=probability_math_core_v1,
+        )
+        resilience_math_engine_v1 = run_resilience_math_engine_v1(
+            probability_checkpoint_layer_v1_payload=probability_checkpoint_layer_v1,
+            stress_transform_engine_v1_payload=stress_transform_engine_v1,
+            engine_requirement_detection_v1_payload=engine_requirement_detection_v1,
+        )
+        commander_reliability_model_v1 = run_commander_reliability_model_v1(
+            commander_slot_id=(commander_canonical_slot or {}).get("slot_id"),
+            probability_checkpoint_layer_v1_payload=probability_checkpoint_layer_v1,
+            stress_transform_engine_v1_payload=stress_transform_engine_v1,
+            engine_requirement_detection_v1_payload=engine_requirement_detection_v1,
+            primitive_index_by_slot=primitive_index_by_slot,
+            deck_slot_ids_playable=list(deck_cards_slot_ids_playable),
+        )
 
         required_effects_requirements_dict, required_effects_version = resolve_required_effects_v1(
             format=req.format,
             taxonomy_version=runtime_taxonomy_version,
+        )
+        profile_thresholds_v1_payload, profile_thresholds_version, calibration_snapshot_version = (
+            resolve_profile_thresholds_v1(
+                format=req.format,
+                profile_id=req.profile_id if isinstance(req.profile_id, str) else "",
+            )
         )
         required_effects_coverage_v1 = run_required_effects_coverage_v1(
             deck_slot_ids_playable=list(deck_cards_slot_ids_playable),
@@ -1572,6 +1786,42 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             deck_slot_ids_playable=list(deck_cards_slot_ids_playable),
         )
         bracket_compliance_summary_v1 = run_bracket_compliance_summary_v1(profile_bracket_enforcement_v1)
+
+        sufficiency_summary_versions_used = {
+            "engine_coherence_version": ENGINE_COHERENCE_V1_VERSION,
+            "mulligan_model_version": MULLIGAN_MODEL_V1_VERSION,
+            "substitution_engine_version": SUBSTITUTION_ENGINE_V1_VERSION,
+            "weight_multiplier_engine_version": WEIGHT_MULTIPLIER_ENGINE_V1_VERSION,
+            "probability_model_version": PROBABILITY_MATH_CORE_V1_VERSION,
+            "probability_checkpoint_version": PROBABILITY_CHECKPOINT_LAYER_V1_VERSION,
+            "stress_model_version": STRESS_MODEL_DEFINITION_V1_VERSION,
+            "stress_transform_version": STRESS_TRANSFORM_ENGINE_V1_VERSION,
+            "resilience_math_engine_version": RESILIENCE_MATH_ENGINE_V1_VERSION,
+            "commander_reliability_model_version": COMMANDER_RELIABILITY_MODEL_V1_VERSION,
+            "required_effects_version": required_effects_version,
+            "profile_thresholds_version": profile_thresholds_version,
+            "calibration_snapshot_version": calibration_snapshot_version,
+            "sufficiency_summary_version": SUFFICIENCY_SUMMARY_V1_VERSION,
+        }
+        sufficiency_summary_v1 = run_sufficiency_summary_v1(
+            format=req.format,
+            profile_id=req.profile_id if isinstance(req.profile_id, str) else "",
+            profile_thresholds_v1_payload=profile_thresholds_v1_payload,
+            engine_requirement_detection_v1_payload=engine_requirement_detection_v1,
+            engine_coherence_v1_payload=engine_coherence_v1,
+            mulligan_model_v1_payload=mulligan_model_v1,
+            substitution_engine_v1_payload=substitution_engine_v1,
+            weight_multiplier_engine_v1_payload=weight_multiplier_engine_v1,
+            probability_math_core_v1_payload=probability_math_core_v1,
+            probability_checkpoint_layer_v1_payload=probability_checkpoint_layer_v1,
+            stress_model_definition_v1_payload=stress_model_definition_v1,
+            stress_transform_engine_v1_payload=stress_transform_engine_v1,
+            resilience_math_engine_v1_payload=resilience_math_engine_v1,
+            commander_reliability_model_v1_payload=commander_reliability_model_v1,
+            required_effects_coverage_v1_payload=required_effects_coverage_v1,
+            bracket_compliance_summary_v1_payload=bracket_compliance_summary_v1,
+            pipeline_versions=sufficiency_summary_versions_used,
+        )
 
         required_primitives_v1 = sorted(
             [primitive for primitive in effective_generic_minimums.keys() if isinstance(primitive, str)]
@@ -1603,6 +1853,29 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
 
         primitive_counts_by_scope = structural_state["primitive_counts_by_scope"]
         primitive_counts_by_scope_totals = structural_state["primitive_counts_by_scope_totals"]
+
+        legacy_structural_v1_requested = str(os.getenv("ENGINE_ENABLE_LEGACY_STRUCTURAL_V1") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        structural_v1_payload = {
+            "version": STRUCTURAL_REPORTING_VERSION,
+            "status": "WARN",
+            "reason_code": "DEPRECATED_LEGACY_STRUCTURAL_V1",
+            "primitive_counts_by_scope": primitive_counts_by_scope,
+            "primitive_counts_by_scope_totals": primitive_counts_by_scope_totals,
+        }
+        if legacy_structural_v1_requested:
+            add_unknown(
+                unknowns,
+                code="STRUCTURAL_V1_DEPRECATED",
+                input_value="structural_v1",
+                message="Legacy structural_v1 panel request is deprecated; use structural_snapshot_v1.",
+                reason="ENGINE_ENABLE_LEGACY_STRUCTURAL_V1=1",
+            )
+
         structural_snapshot_v1 = build_structural_snapshot_v1(
             snapshot_id=str(req.db_snapshot_id),
             taxonomy_version=str(runtime_taxonomy_version),
@@ -1646,6 +1919,33 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "bounds": graph_expand_bounds_v1,
             "stats": graph_expand_candidate_stats_v1,
         }
+        graph_v1_schema_assert_v1 = run_graph_v1_schema_assert_v1(graph_v1_payload=graph_v1)
+        if graph_v1_schema_assert_v1.get("status") == "ERROR":
+            add_unknown(
+                unknowns,
+                code="GRAPH_V1_SCHEMA_ASSERT_ERROR",
+                input_value="graph_v1",
+                message="graph_v1 failed frozen schema assertion.",
+                reason=str(graph_v1_schema_assert_v1.get("reason_code") or "GRAPH_V1_SCHEMA_ASSERT_FAILED"),
+            )
+            return BuildResponse(
+                engine_version=ENGINE_VERSION,
+                ruleset_version=RULESET_VERSION,
+                bracket_definition_version=BRACKET_DEFINITION_VERSION,
+                game_changers_version=GAME_CHANGERS_VERSION,
+                db_snapshot_id=req.db_snapshot_id,
+                profile_id=req.profile_id,
+                bracket_id=req.bracket_id,
+                status="ERROR",
+                unknowns=sort_unknowns(unknowns),
+                result=_ui_result_envelope(
+                    {
+                        "graph_v1": graph_v1,
+                        "graph_v1_schema_assert_v1": graph_v1_schema_assert_v1,
+                    }
+                ),
+            )
+
         typed_graph_invariants_v1 = run_typed_graph_invariants_v1(graph_v1=graph_v1)
         graph_analytics_summary_v1 = run_graph_analytics_summary_v1(
             graph_v1=graph_v1,
@@ -1909,61 +2209,37 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
         }
         node_order_index = {sid: idx for idx, sid in enumerate(node_order)}
 
-        proof_scaffold_state = {
-            "combo_candidates_v0": combo_candidates_v0,
-            "slot_by_id": slot_by_id,
-            "path_distance_by_slot": path_distance_by_slot,
-            "commander_playable": commander_playable,
-            "disruption_commander_risk": disruption_commander_risk,
-            "sorted_unique": sorted_unique,
-            "order_by_node_order": order_by_node_order,
-            "articulation_set": articulation_set,
-            "node_order": node_order,
-            "bridge_edge_set": bridge_edge_set,
-            "hub_rank_by_slot": hub_rank_by_slot,
-            "node_by_slot_id": node_by_slot_id,
-            "disruption_node_impact_by_slot": disruption_node_impact_by_slot,
-            "proof_rule_topics_v1": PROOF_RULE_TOPICS_V1,
-            "rules_db_available": RULES_DB_AVAILABLE,
-            "rules_db_connect": rules_db_connect,
-            "ruleset_id_default": RULESET_ID_DEFAULT,
-            "builtin_topic_selection_defaults": BUILTIN_TOPIC_SELECTION_DEFAULTS,
-            "builtin_topic_selection_topics": BUILTIN_TOPIC_SELECTION_TOPICS,
-            "rules_topic_config_obj": RULES_TOPIC_CONFIG_OBJ,
-            "rules_topic_config_available": RULES_TOPIC_CONFIG_AVAILABLE,
-            "rules_topic_config_version": RULES_TOPIC_CONFIG_VERSION,
-            "engine_topic_prefer_sections_override_by_topic": engine_topic_prefer_sections_override_by_topic,
-            "engine_topic_take_final_override_by_topic": engine_topic_take_final_override_by_topic,
-            "rules_lookup_by_fts_with_trace": rules_lookup_by_fts_with_trace,
-            "make_rule_citation": make_rule_citation,
-            "rules_db_abs_path": RULES_DB_ABS_PATH,
-            "default_topic_selection_policy_id": DEFAULT_TOPIC_SELECTION_POLICY_ID,
-            "proof_scaffold_rules_policy_version": PROOF_SCAFFOLD_RULES_POLICY_VERSION,
-            "proof_scaffold_layer_version": PROOF_SCAFFOLD_LAYER_VERSION,
-            "proof_scaffold_ruleset_version": PROOF_SCAFFOLD_RULESET_VERSION,
-            "make_slot_id": make_slot_id,
-            "component_by_slot": component_by_slot,
-            "graph_hash_v2": graph_hash_v2,
-            "stable_json_dumps": stable_json_dumps,
-            "sha256_hex": sha256_hex,
-            "combo_candidates_hash_v1": combo_candidates_hash_v1,
-            "disruption_hash_v1": disruption_hash_v1,
-            "pathways_hash_v1": pathways_hash_v1,
+        combo_proof_scaffolds_v0 = []
+        rules_db_available_for_build = False
+        ruleset_id_for_build = RULESET_ID_DEFAULT
+        topic_selection_rules_version = "runtime_safe_mode_v1"
+        rules_topic_selection_trace = {
+            "status": "SKIP",
+            "reason_code": "RUNTIME_SAFE_MODE",
+            "codes": ["PROOF_SCAFFOLD_RUNTIME_DISABLED"],
         }
-        proof_scaffold_state = run_proof_scaffold_v1(proof_scaffold_state)
+        proof_scaffolds_rules_context_consistent = True
 
-        combo_proof_scaffolds_v0 = proof_scaffold_state["combo_proof_scaffolds_v0"]
-        rules_db_available_for_build = proof_scaffold_state["rules_db_available_for_build"]
-        ruleset_id_for_build = proof_scaffold_state["ruleset_id_for_build"]
-        topic_selection_rules_version = proof_scaffold_state["topic_selection_rules_version"]
-        rules_topic_selection_trace = proof_scaffold_state["rules_topic_selection_trace"]
-        proof_scaffolds_rules_context_consistent = proof_scaffold_state["proof_scaffolds_rules_context_consistent"]
-        proof_scaffold_fingerprint_payload_v1 = proof_scaffold_state["proof_scaffold_fingerprint_payload_v1"]
-        proof_scaffold_fingerprint_payload_v2 = proof_scaffold_state["proof_scaffold_fingerprint_payload_v2"]
-        proof_scaffold_fingerprint_payload_v3 = proof_scaffold_state["proof_scaffold_fingerprint_payload_v3"]
-        proof_scaffolds_hash_v1 = proof_scaffold_state["proof_scaffolds_hash_v1"]
-        proof_scaffolds_hash_v2 = proof_scaffold_state["proof_scaffolds_hash_v2"]
-        proof_scaffolds_hash_v3 = proof_scaffold_state["proof_scaffolds_hash_v3"]
+        proof_scaffold_fingerprint_payload_v1 = {
+            "layer": "proof_scaffold_v1",
+            "skip_code": "LAYER_SKIPPED_RUNTIME_SAFE_MODE",
+            "combo_candidates_hash_v1": combo_candidates_hash_v1,
+            "graph_hash_v2": graph_hash_v2,
+        }
+        proof_scaffolds_hash_v1 = sha256_hex(stable_json_dumps(proof_scaffold_fingerprint_payload_v1))
+
+        proof_scaffold_fingerprint_payload_v2 = {
+            "proof_scaffolds_hash_v1": proof_scaffolds_hash_v1,
+            "skip_code": "LAYER_SKIPPED_RUNTIME_SAFE_MODE",
+        }
+        proof_scaffolds_hash_v2 = sha256_hex(stable_json_dumps(proof_scaffold_fingerprint_payload_v2))
+
+        proof_scaffold_fingerprint_payload_v3 = {
+            "proof_scaffolds_hash_v1": proof_scaffolds_hash_v1,
+            "proof_scaffolds_hash_v2": proof_scaffolds_hash_v2,
+            "skip_code": "LAYER_SKIPPED_RUNTIME_SAFE_MODE",
+        }
+        proof_scaffolds_hash_v3 = sha256_hex(stable_json_dumps(proof_scaffold_fingerprint_payload_v3))
 
         for patch in engine_primitive_override_patches:
             patch_id = patch.get("patch_id")
@@ -2049,54 +2325,44 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "proof_scaffolds_hash_v2": proof_scaffolds_hash_v2,
         }
         proof_attempt_layer_name = "proof_attempt_v1"
-        proof_attempt_layer_skipped_for_oracle_text = ENGINE_ALLOW_RUNTIME_ORACLE_TEXT is not True
-        if proof_attempt_layer_skipped_for_oracle_text:
-            add_unknown(
-                unknowns,
-                code="LAYER_SKIPPED_ORACLE_TEXT_REQUIRED",
-                input_value=proof_attempt_layer_name,
-                message=(
-                    f"Layer {proof_attempt_layer_name} skipped because tag-only runtime forbids runtime oracle parsing."
-                ),
-                reason="ENGINE_ALLOW_RUNTIME_ORACLE_TEXT=False",
-                suggestions=[],
-            )
-            combo_proof_attempts_v0 = []
-            proof_attempt_hash_stable = True
-            proof_attempts_total_matches_scaffolds = len(combo_proof_scaffolds_v0) == 0
+        proof_attempt_layer_skipped_for_oracle_text = True
+        add_unknown(
+            unknowns,
+            code="LAYER_SKIPPED_ORACLE_TEXT_REQUIRED",
+            input_value=proof_attempt_layer_name,
+            message=(
+                f"Layer {proof_attempt_layer_name} skipped because runtime safe mode forbids runtime oracle parsing."
+            ),
+            reason="RUNTIME_SAFE_MODE",
+            suggestions=[],
+        )
+        combo_proof_attempts_v0 = []
+        proof_attempt_hash_stable = True
+        proof_attempts_total_matches_scaffolds = len(combo_proof_scaffolds_v0) == 0
 
-            proof_attempt_skip_payload_v1 = {
-                "proof_scaffolds_hash_v2": proof_scaffolds_hash_v2,
-                "layer": proof_attempt_layer_name,
-                "skip_code": "LAYER_SKIPPED_ORACLE_TEXT_REQUIRED",
-            }
-            proof_attempts_hash_v1 = sha256_hex(stable_json_dumps(proof_attempt_skip_payload_v1))
-            proof_attempts_hash_v2 = sha256_hex(
-                stable_json_dumps(
-                    {
-                        "proof_attempts_hash_v1": proof_attempts_hash_v1,
-                        "skip_code": "LAYER_SKIPPED_ORACLE_TEXT_REQUIRED",
-                    }
-                )
+        proof_attempt_skip_payload_v1 = {
+            "proof_scaffolds_hash_v2": proof_scaffolds_hash_v2,
+            "layer": proof_attempt_layer_name,
+            "skip_code": "LAYER_SKIPPED_ORACLE_TEXT_REQUIRED",
+        }
+        proof_attempts_hash_v1 = sha256_hex(stable_json_dumps(proof_attempt_skip_payload_v1))
+        proof_attempts_hash_v2 = sha256_hex(
+            stable_json_dumps(
+                {
+                    "proof_attempts_hash_v1": proof_attempts_hash_v1,
+                    "skip_code": "LAYER_SKIPPED_ORACLE_TEXT_REQUIRED",
+                }
             )
-            proof_attempts_hash_v3 = sha256_hex(
-                stable_json_dumps(
-                    {
-                        "proof_attempts_hash_v1": proof_attempts_hash_v1,
-                        "proof_attempts_hash_v2": proof_attempts_hash_v2,
-                        "skip_code": "LAYER_SKIPPED_ORACLE_TEXT_REQUIRED",
-                    }
-                )
+        )
+        proof_attempts_hash_v3 = sha256_hex(
+            stable_json_dumps(
+                {
+                    "proof_attempts_hash_v1": proof_attempts_hash_v1,
+                    "proof_attempts_hash_v2": proof_attempts_hash_v2,
+                    "skip_code": "LAYER_SKIPPED_ORACLE_TEXT_REQUIRED",
+                }
             )
-        else:
-            proof_attempt_state = run_proof_attempt_v1(proof_attempt_state)
-
-            combo_proof_attempts_v0 = proof_attempt_state["combo_proof_attempts_v0"]
-            proof_attempt_hash_stable = proof_attempt_state["proof_attempt_hash_stable"]
-            proof_attempts_total_matches_scaffolds = proof_attempt_state["proof_attempts_total_matches_scaffolds"]
-            proof_attempts_hash_v1 = proof_attempt_state["proof_attempts_hash_v1"]
-            proof_attempts_hash_v2 = proof_attempt_state["proof_attempts_hash_v2"]
-            proof_attempts_hash_v3 = proof_attempt_state["proof_attempts_hash_v3"]
+        )
 
         nonplayable_by_code: Dict[str, int] = {}
         duplicate_exclusions = []
@@ -2367,16 +2633,34 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 if isinstance(profile_bracket_enforcement_v1, dict)
                 else None
             ),
-            "two_card_combos_version": TWO_CARD_COMBOS_V1_VERSION,
+            "two_card_combos_version": TWO_CARD_COMBOS_V2_VERSION,
+            "spellbook_variants_version": SPELLBOOK_VARIANTS_V1_VERSION,
             "taxonomy_version": runtime_taxonomy_version,
             "taxonomy_ruleset_version": runtime_tag_ruleset_version,
             "canonical_layer_version": CANONICAL_LAYER_VERSION,
             "primitive_index_version": PRIMITIVE_INDEX_VERSION,
             "dependency_signatures_version": dependency_signatures_version,
+            "engine_coherence_version": ENGINE_COHERENCE_V1_VERSION,
+            "mulligan_model_version": MULLIGAN_MODEL_V1_VERSION,
+            "substitution_rules_version": substitution_rules_version,
+            "substitution_engine_version": SUBSTITUTION_ENGINE_V1_VERSION,
+            "weight_rules_version": weight_rules_version,
+            "weight_multiplier_engine_version": WEIGHT_MULTIPLIER_ENGINE_V1_VERSION,
+            "probability_model_version": PROBABILITY_MATH_CORE_V1_VERSION,
+            "probability_checkpoint_version": PROBABILITY_CHECKPOINT_LAYER_V1_VERSION,
+            "stress_model_version": STRESS_MODEL_DEFINITION_V1_VERSION,
+            "stress_transform_version": STRESS_TRANSFORM_ENGINE_V1_VERSION,
+            "resilience_model_version": RESILIENCE_MATH_ENGINE_V1_VERSION,
+            "resilience_math_engine_version": RESILIENCE_MATH_ENGINE_V1_VERSION,
+            "commander_reliability_model_version": COMMANDER_RELIABILITY_MODEL_V1_VERSION,
+            "profile_thresholds_version": profile_thresholds_version,
+            "calibration_snapshot_version": calibration_snapshot_version,
+            "sufficiency_summary_version": SUFFICIENCY_SUMMARY_V1_VERSION,
             "required_effects_version": required_effects_version,
             "structural_reporting_version": STRUCTURAL_REPORTING_VERSION,
             "build_pipeline_stage": BUILD_PIPELINE_STAGE,
             "graph_layer_version": GRAPH_LAYER_VERSION,
+            "graph_v1_schema_assert_version": GRAPH_V1_SCHEMA_ASSERT_V1_VERSION,
             "graph_ruleset_version": GRAPH_RULESET_VERSION,
             "graph_fingerprint_version": GRAPH_FINGERPRINT_VERSION,
             "graph_typed_rules_version": GRAPH_TYPED_RULES_VERSION,
@@ -2662,7 +2946,9 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "primitive_counts_by_scope": primitive_counts_by_scope,
                 "primitive_counts_by_scope_totals": primitive_counts_by_scope_totals,
                 "structural_snapshot_v1": structural_snapshot_v1,
+                **({"structural_v1": structural_v1_payload} if legacy_structural_v1_requested else {}),
                 "graph_v1": graph_v1,
+                "graph_v1_schema_assert_v1": graph_v1_schema_assert_v1,
                 "typed_graph_invariants_v1": typed_graph_invariants_v1,
                 "profile_bracket_enforcement_v1": profile_bracket_enforcement_v1,
                 "bracket_compliance_summary_v1": bracket_compliance_summary_v1,
@@ -2671,6 +2957,17 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "disruption_surface_v1": disruption_surface_v1,
                 "vulnerability_index_v1": vulnerability_index_v1,
                 "engine_requirement_detection_v1": engine_requirement_detection_v1,
+                "engine_coherence_v1": engine_coherence_v1,
+                "mulligan_model_v1": mulligan_model_v1,
+                "substitution_engine_v1": substitution_engine_v1,
+                "weight_multiplier_engine_v1": weight_multiplier_engine_v1,
+                "probability_math_core_v1": probability_math_core_v1,
+                "probability_checkpoint_layer_v1": probability_checkpoint_layer_v1,
+                "stress_model_definition_v1": stress_model_definition_v1,
+                "stress_transform_engine_v1": stress_transform_engine_v1,
+                "resilience_math_engine_v1": resilience_math_engine_v1,
+                "commander_reliability_model_v1": commander_reliability_model_v1,
+                "sufficiency_summary_v1": sufficiency_summary_v1,
                 "required_effects_coverage_v1": required_effects_coverage_v1,
                 "redundancy_index_v1": redundancy_index_v1,
                 "counterfactual_stress_test_v1": counterfactual_stress_test_v1,
@@ -2725,6 +3022,17 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                     disruption_surface_v1=disruption_surface_v1,
                     vulnerability_index_v1=vulnerability_index_v1,
                     engine_requirement_detection_v1=engine_requirement_detection_v1,
+                    engine_coherence_v1=engine_coherence_v1,
+                    mulligan_model_v1=mulligan_model_v1,
+                    substitution_engine_v1=substitution_engine_v1,
+                    weight_multiplier_engine_v1=weight_multiplier_engine_v1,
+                    probability_math_core_v1=probability_math_core_v1,
+                    probability_checkpoint_layer_v1=probability_checkpoint_layer_v1,
+                    stress_model_definition_v1=stress_model_definition_v1,
+                    stress_transform_engine_v1=stress_transform_engine_v1,
+                    resilience_math_engine_v1=resilience_math_engine_v1,
+                    commander_reliability_model_v1=commander_reliability_model_v1,
+                    sufficiency_summary_v1=sufficiency_summary_v1,
                     required_effects_coverage_v1=required_effects_coverage_v1,
                     redundancy_index_v1=redundancy_index_v1,
                     counterfactual_stress_test_v1=counterfactual_stress_test_v1,

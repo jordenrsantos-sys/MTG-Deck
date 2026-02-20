@@ -1,0 +1,45 @@
+{
+  "version": "weight_rules_v1",
+  "format_defaults": {
+    "commander": {
+      "rules": [
+        {
+          "rule_id": "card_draw_graveyard_bonus",
+          "target_bucket": "CARD_DRAW",
+          "requirement_flag": "GRAVEYARD_DEPENDENT",
+          "multiplier": 1.05
+        },
+        {
+          "rule_id": "card_draw_spell_density_bonus",
+          "target_bucket": "CARD_DRAW",
+          "requirement_flag": "SPELL_DENSITY_BASED",
+          "multiplier": 1.1
+        },
+        {
+          "rule_id": "interaction_sac_bonus",
+          "target_bucket": "INTERACTION",
+          "requirement_flag": "SAC_BASED",
+          "multiplier": 1.08
+        },
+        {
+          "rule_id": "interaction_token_bonus",
+          "target_bucket": "INTERACTION",
+          "requirement_flag": "TOKEN_BASED",
+          "multiplier": 1.1
+        },
+        {
+          "rule_id": "ramp_landfall_bonus",
+          "target_bucket": "RAMP",
+          "requirement_flag": "LANDFALL_BASED",
+          "multiplier": 1.12
+        },
+        {
+          "rule_id": "ramp_sac_bonus",
+          "target_bucket": "RAMP",
+          "requirement_flag": "SAC_BASED",
+          "multiplier": 1.06
+        }
+      ]
+    }
+  }
+}
