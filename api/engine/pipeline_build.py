@@ -82,6 +82,10 @@ from api.engine.layers.primitive_index_v1 import run_primitive_index_v1
 from api.engine.layers.required_effects_coverage_v1 import run_required_effects_coverage_v1
 from api.engine.layers.redundancy_index_v1 import run_redundancy_index_v1
 from api.engine.layers.snapshot_preflight_v1 import run_snapshot_preflight_v1
+from api.engine.layers.primitive_bridge_explorer_v1 import (
+    PRIMITIVE_BRIDGE_EXPLORER_VERSION,
+    run_primitive_bridge_explorer_v1,
+)
 from api.engine.layers.structural_scorecard_v1 import run_structural_scorecard_v1
 from api.engine.layers.structural_v1 import run_structural_v1
 from api.engine.layers.substitution_engine_v1 import (
@@ -153,6 +157,16 @@ def is_present(value: Any) -> bool:
     return True
 
 
+def _coerce_bridge_amplification_bonus_weight(profile_thresholds_payload: Any) -> float:
+    payload = profile_thresholds_payload if isinstance(profile_thresholds_payload, dict) else {}
+    domains = payload.get("domains") if isinstance(payload.get("domains"), dict) else {}
+    coherence = domains.get("coherence") if isinstance(domains.get("coherence"), dict) else {}
+    raw = coherence.get("bridge_amplification_bonus_v1")
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return max(0.0, min(1.0, float(raw)))
+    return 0.0
+
+
 def build_available_panels_v1(
     *,
     deck_cards_canonical_input_order: Any = None,
@@ -211,6 +225,7 @@ def build_available_panels_v1(
     redundancy_index_v1: Any = None,
     counterfactual_stress_test_v1: Any = None,
     structural_scorecard_v1: Any = None,
+    primitive_bridge_explorer_v1: Any = None,
 ) -> Dict[str, bool]:
     has_deck_cards_summary = (
         is_present(deck_cards_playable)
@@ -388,6 +403,12 @@ def build_available_panels_v1(
             and isinstance(structural_scorecard_v1, dict)
             and isinstance(structural_scorecard_v1.get("status"), str)
             and structural_scorecard_v1.get("status").strip() != ""
+        ),
+        "primitive_bridge_explorer_v1": (
+            is_present(primitive_bridge_explorer_v1)
+            and isinstance(primitive_bridge_explorer_v1, dict)
+            and isinstance(primitive_bridge_explorer_v1.get("status"), str)
+            and primitive_bridge_explorer_v1.get("status").strip() != ""
         ),
         "has_motifs": is_present(motifs),
         "has_disruption": has_disruption,
@@ -1770,6 +1791,9 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 profile_id=req.profile_id if isinstance(req.profile_id, str) else "",
             )
         )
+        bridge_amplification_bonus_weight = _coerce_bridge_amplification_bonus_weight(
+            profile_thresholds_v1_payload
+        )
         required_effects_coverage_v1 = run_required_effects_coverage_v1(
             deck_slot_ids_playable=list(deck_cards_slot_ids_playable),
             primitive_index_by_slot=primitive_index_by_slot,
@@ -1986,6 +2010,14 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             typed_graph_invariants=typed_graph_invariants_v1,
             pathways=graph_pathways_summary_v1,
             commander_slot_id=(commander_canonical_slot or {}).get("slot_id"),
+        )
+        primitive_bridge_explorer_v1 = run_primitive_bridge_explorer_v1(
+            primitive_index_by_slot=primitive_index_by_slot,
+            slot_ids_by_primitive=slot_ids_by_primitive,
+            graph_v1=graph_v1,
+            required_primitives_v0=required_primitives_v1,
+            commander_dependency_metadata=engine_requirement_detection_v1,
+            bridge_amplification_bonus_weight=bridge_amplification_bonus_weight,
         )
         structural_scorecard_v1 = run_structural_scorecard_v1(
             bracket_compliance=bracket_compliance_summary_v1,
@@ -2666,6 +2698,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "calibration_snapshot_version": calibration_snapshot_version,
             "sufficiency_summary_version": SUFFICIENCY_SUMMARY_V1_VERSION,
             "required_effects_version": required_effects_version,
+            "primitive_bridge_explorer_version": PRIMITIVE_BRIDGE_EXPLORER_VERSION,
             "structural_reporting_version": STRUCTURAL_REPORTING_VERSION,
             "build_pipeline_stage": BUILD_PIPELINE_STAGE,
             "graph_layer_version": GRAPH_LAYER_VERSION,
@@ -2981,6 +3014,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "redundancy_index_v1": redundancy_index_v1,
                 "counterfactual_stress_test_v1": counterfactual_stress_test_v1,
                 "structural_scorecard_v1": structural_scorecard_v1,
+                "primitive_bridge_explorer_v1": primitive_bridge_explorer_v1,
                 "snapshot_preflight_v1": snapshot_preflight_payload_for_result,
                 "unknowns_canonical": unknowns_canonical,
                 "unknowns_canonical_total": len(unknowns_canonical),
@@ -3046,6 +3080,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                     redundancy_index_v1=redundancy_index_v1,
                     counterfactual_stress_test_v1=counterfactual_stress_test_v1,
                     structural_scorecard_v1=structural_scorecard_v1,
+                    primitive_bridge_explorer_v1=primitive_bridge_explorer_v1,
                 ),
                 "ui_index_v1": {
                     "primary_ids": {

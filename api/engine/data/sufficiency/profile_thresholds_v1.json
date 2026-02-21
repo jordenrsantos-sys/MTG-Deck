@@ -23,7 +23,8 @@
             },
             "coherence": {
               "dead_slot_ratio_max": 0.35,
-              "overlap_score_min": 0.0
+              "overlap_score_min": 0.0,
+              "bridge_amplification_bonus_v1": 0.0
             },
             "resilience": {
               "commander_fragility_delta_max": 0.25

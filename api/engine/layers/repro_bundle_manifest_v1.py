@@ -19,6 +19,7 @@ _LAYER_GATE_MAP: List[Tuple[str, str]] = [
     ("disruption_surface_v1", "has_disruption_surface_v1"),
     ("vulnerability_index_v1", "has_vulnerability_index_v1"),
     ("structural_scorecard_v1", "has_structural_scorecard_v1"),
+    ("primitive_bridge_explorer_v1", "primitive_bridge_explorer_v1"),
 ]
 
 

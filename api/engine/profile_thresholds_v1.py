@@ -132,15 +132,27 @@ def _normalize_coherence(raw: Any, *, field_path: str) -> Dict[str, float]:
     if not isinstance(raw, dict):
         raise _runtime_error("PROFILE_THRESHOLDS_V1_INVALID", f"{field_path} must be an object")
 
-    expected = {
+    required = {
         "dead_slot_ratio_max",
         "overlap_score_min",
     }
-    if set(raw.keys()) != expected:
+    optional = {
+        "bridge_amplification_bonus_v1",
+    }
+    keys = set(raw.keys())
+    if not required.issubset(keys):
         raise _runtime_error(
             "PROFILE_THRESHOLDS_V1_INVALID",
-            f"{field_path} keys must be exactly {sorted(expected)}",
+            f"{field_path} missing required keys: {sorted(required - keys)}",
         )
+    unknown_keys = keys - required - optional
+    if len(unknown_keys) > 0:
+        raise _runtime_error(
+            "PROFILE_THRESHOLDS_V1_INVALID",
+            f"{field_path} has unknown keys: {sorted(unknown_keys)}",
+        )
+
+    bridge_bonus = raw.get("bridge_amplification_bonus_v1", 0.0)
 
     return {
         "dead_slot_ratio_max": _require_probability(
@@ -150,6 +162,10 @@ def _normalize_coherence(raw: Any, *, field_path: str) -> Dict[str, float]:
         "overlap_score_min": _require_probability(
             raw.get("overlap_score_min"),
             field_path=f"{field_path}.overlap_score_min",
+        ),
+        "bridge_amplification_bonus_v1": _require_probability(
+            bridge_bonus,
+            field_path=f"{field_path}.bridge_amplification_bonus_v1",
         ),
     }
 
