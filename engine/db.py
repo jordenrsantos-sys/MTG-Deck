@@ -9,6 +9,14 @@ DEFAULT_DB_RELATIVE_PATH = Path("data") / "mtg.sqlite"
 DB_PATH = (REPO_ROOT / DEFAULT_DB_RELATIVE_PATH).resolve()
 
 
+class _ManagedConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 def resolve_db_path() -> Path:
     env_db_path = os.getenv("MTG_ENGINE_DB_PATH")
     if isinstance(env_db_path, str) and env_db_path.strip() != "":
@@ -201,7 +209,7 @@ def _extract_commander_eligibility_from_facets(facets: Dict[str, Any]) -> Tuple[
     return None, None, candidate_keys
 
 def connect() -> sqlite3.Connection:
-    con = sqlite3.connect(str(resolve_db_path()))
+    con = sqlite3.connect(str(resolve_db_path()), factory=_ManagedConnection)
     con.row_factory = sqlite3.Row
     return con
 

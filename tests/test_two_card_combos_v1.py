@@ -18,6 +18,17 @@ class TwoCardCombosV1Tests(unittest.TestCase):
 
         self.assertTrue(str(ctx.exception).startswith("TWO_CARD_COMBOS_V1_MISSING:"))
 
+    def test_loader_maps_curated_manifest_errors_to_missing_code(self) -> None:
+        with patch.object(
+            combos,
+            "resolve_pack_file_path",
+            side_effect=RuntimeError("CURATED_PACK_MANIFEST_V1_MISSING: test"),
+        ):
+            with self.assertRaises(RuntimeError) as raised:
+                combos.load_two_card_combos_v1()
+
+        self.assertTrue(str(raised.exception).startswith("TWO_CARD_COMBOS_V1_MISSING:"))
+
     def test_detect_two_card_combos_matches_when_both_cards_present(self) -> None:
         payload = combos.detect_two_card_combos(["Combo Piece A", "Combo Piece B"])
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from api.engine.layers.required_effects_coverage_v1 import (
     REQUIRED_EFFECTS_COVERAGE_V1_VERSION,
@@ -193,6 +194,17 @@ class RequiredEffectsCoverageV1Tests(unittest.TestCase):
         first = run_required_effects_coverage_v1(**kwargs)
         second = run_required_effects_coverage_v1(**kwargs)
         self.assertEqual(first, second)
+
+    def test_resolver_handles_curated_manifest_lookup_errors(self) -> None:
+        with patch(
+            "api.engine.required_effects_v1.resolve_pack_file_path",
+            side_effect=RuntimeError("CURATED_PACK_MANIFEST_V1_MISSING: test"),
+        ):
+            payload, version = resolve_required_effects_v1("commander", taxonomy_version="taxonomy_v1_23")
+
+        self.assertEqual(version, "required_effects_v1")
+        self.assertEqual(payload.get("format"), "commander")
+        self.assertEqual(payload.get("taxonomy_primitive_ids"), [])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,42 @@
+{
+  "packs": [
+    {
+      "load_order": 10,
+      "pack_id": "two_card_combos_v1",
+      "pack_version": "two_card_combos_v1",
+      "path": "api/engine/data/combos/two_card_combos_v1.json",
+      "sha256": "aeea3e2b1ee845bf3368b458a3710ca5f0b56f9ef686dcf649542693a7f6a4db"
+    },
+    {
+      "load_order": 15,
+      "pack_id": "commander_spellbook_variants_v1",
+      "pack_version": "commander_spellbook_variants_v1",
+      "path": "api/engine/data/combos/commander_spellbook_variants_v1.json",
+      "sha256": "1586b8b39cc886bf53a2f8f44168654b42cc658dd4f72dfa1bf6359c6ea89282"
+    },
+    {
+      "load_order": 16,
+      "pack_id": "two_card_combos_v2",
+      "pack_version": "two_card_combos_v2",
+      "path": "api/engine/data/combos/two_card_combos_v2.json",
+      "sha256": "a195a5546857e36bf8c250e5a44968269b243eeec5075cbdcf4926aa8347fe71"
+    },
+    {
+      "created_by": "taxonomy.exporter",
+      "load_order": 20,
+      "pack_id": "taxonomy_primitives",
+      "pack_version": "taxonomy_v1_23",
+      "path": "taxonomy/packs/taxonomy_v1_23/primitives.json",
+      "sha256": "aa73eb776797e69f56d7438e6675bfafe73199b48d721c6a93faf0106bde4b92"
+    },
+    {
+      "created_by": "taxonomy.exporter",
+      "load_order": 30,
+      "pack_id": "taxonomy_primitive_mappings",
+      "pack_version": "taxonomy_v1_23",
+      "path": "taxonomy/packs/taxonomy_v1_23/primitive_index_map_v1_14.json",
+      "sha256": "40fc15c2193dfa5dacd41b6ff1c48e9e06b8575800fea963d2fcbaac622b81f2"
+    }
+  ],
+  "version": "curated_pack_manifest_v1"
+}

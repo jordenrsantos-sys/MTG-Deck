@@ -19,6 +19,17 @@ class TwoCardCombosV2Tests(unittest.TestCase):
 
         self.assertTrue(str(raised.exception).startswith("TWO_CARD_COMBOS_V2_MISSING:"))
 
+    def test_loader_maps_curated_manifest_errors_to_missing_code(self) -> None:
+        with patch.object(
+            combos_v2,
+            "resolve_pack_file_path",
+            side_effect=RuntimeError("CURATED_PACK_MANIFEST_V1_MISSING: test"),
+        ):
+            with self.assertRaises(RuntimeError) as raised:
+                combos_v2.load_two_card_combos_v2()
+
+        self.assertTrue(str(raised.exception).startswith("TWO_CARD_COMBOS_V2_MISSING:"))
+
     def test_loader_normalizes_and_sorts_pairs_deterministically(self) -> None:
         payload = {
             "version": "two_card_combos_v2",

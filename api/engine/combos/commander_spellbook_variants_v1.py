@@ -4,19 +4,40 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+from api.engine.curated_pack_manifest_v1 import resolve_pack_file_path
+
 
 SPELLBOOK_VARIANTS_V1_VERSION = "commander_spellbook_variants_v1"
+_SPELLBOOK_VARIANTS_V1_PACK_ID = "commander_spellbook_variants_v1"
 
-_SPELLBOOK_VARIANTS_V1_FILE = (
-    Path(__file__).resolve().parents[1]
-    / "data"
-    / "combos"
-    / "commander_spellbook_variants_v1.json"
-)
+_SPELLBOOK_VARIANTS_V1_FILE: Path | None = None
 
 
 def _runtime_error(code: str, detail: str) -> RuntimeError:
     return RuntimeError(f"{code}: {detail}")
+
+
+def _resolve_spellbook_variants_v1_file() -> Path:
+    if isinstance(_SPELLBOOK_VARIANTS_V1_FILE, Path):
+        return _SPELLBOOK_VARIANTS_V1_FILE
+
+    try:
+        return resolve_pack_file_path(
+            pack_id=_SPELLBOOK_VARIANTS_V1_PACK_ID,
+            pack_version=SPELLBOOK_VARIANTS_V1_VERSION,
+        )
+    except RuntimeError as exc:
+        code = str(exc).split(":", 1)[0].strip()
+        if code in {
+            "CURATED_PACK_MANIFEST_V1_MISSING",
+            "CURATED_PACK_MANIFEST_V1_INVALID_JSON",
+            "CURATED_PACK_MANIFEST_V1_INVALID",
+            "CURATED_PACK_MANIFEST_V1_DUPLICATE_ENTRY",
+            "CURATED_PACK_MANIFEST_V1_PACK_NOT_FOUND",
+            "CURATED_PACK_MANIFEST_V1_FILE_MISSING",
+        }:
+            raise _runtime_error("SPELLBOOK_VARIANTS_V1_MISSING", str(exc)) from exc
+        raise
 
 
 def _nonempty_str(value: Any) -> str | None:
@@ -99,13 +120,14 @@ def _normalize_variant(raw: Any, *, index: int) -> Dict[str, Any]:
 
 
 def load_commander_spellbook_variants_v1() -> Dict[str, Any]:
-    if not _SPELLBOOK_VARIANTS_V1_FILE.is_file():
-        raise _runtime_error("SPELLBOOK_VARIANTS_V1_MISSING", str(_SPELLBOOK_VARIANTS_V1_FILE))
+    variants_file = _resolve_spellbook_variants_v1_file()
+    if not variants_file.is_file():
+        raise _runtime_error("SPELLBOOK_VARIANTS_V1_MISSING", str(variants_file))
 
     try:
-        parsed = json.loads(_SPELLBOOK_VARIANTS_V1_FILE.read_text(encoding="utf-8"))
+        parsed = json.loads(variants_file.read_text(encoding="utf-8"))
     except Exception as exc:
-        raise _runtime_error("SPELLBOOK_VARIANTS_V1_INVALID_JSON", str(_SPELLBOOK_VARIANTS_V1_FILE)) from exc
+        raise _runtime_error("SPELLBOOK_VARIANTS_V1_INVALID_JSON", str(variants_file)) from exc
 
     if not isinstance(parsed, dict):
         raise _runtime_error("SPELLBOOK_VARIANTS_V1_INVALID", "root must be an object")

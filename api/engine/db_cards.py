@@ -93,8 +93,11 @@ def lookup_cards_by_oracle_ids(
 
     try:
         if conn is None:
-            with cards_db_connect() as local_con:
+            local_con = cards_db_connect()
+            try:
                 rows = local_con.execute(query, [snapshot_id, *oracle_ids_unique]).fetchall()
+            finally:
+                local_con.close()
         else:
             rows = conn.execute(query, [snapshot_id, *oracle_ids_unique]).fetchall()
     except Exception:

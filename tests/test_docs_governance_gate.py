@@ -50,9 +50,19 @@ class DocsGovernanceGateTests(unittest.TestCase):
                 "STEP 13 — combo_pack_pipeline_v1",
             ),
             (
+                self.plan_path,
+                self.plan_text,
+                "STEP 14 — decklist_ingestion_v1 + engine_viewer_v0",
+            ),
+            (
                 self.inventory_path,
                 self.inventory_text,
                 "SECTION 2 — PHASE 3: SUFFICIENCY ENGINE",
+            ),
+            (
+                self.inventory_path,
+                self.inventory_text,
+                "2.14 Decklist Ingestion + Engine Viewer",
             ),
         ]
 

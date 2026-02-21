@@ -1,5 +1,5 @@
 # ENGINE TASK INVENTORY V1
-Version: inventory_v1_18
+Version: inventory_v1_19
 
 ---------------------------------------------------------------------
 DOCUMENT GOVERNANCE RULES
@@ -169,6 +169,17 @@ SECTION 2 — PHASE 3: SUFFICIENCY ENGINE (SPEC-ALIGNED)
     - two_card_combos_v2 derivation + runtime detection
     - deterministic fallback to two_card_combos_v1
     - offline updater tool + pipeline/repro integration
+
+2.14 Decklist Ingestion + Engine Viewer
+[x] decklist_ingestion_v1  (COMPLETE - implementation_plan_v1_17 reference)
+    - deterministic raw decklist parser (counts/comments/section headers)
+    - snapshot-locked card resolution with explicit unknown queue
+    - canonicalization-only /deck/validate endpoint (no pipeline execution)
+
+[x] engine_viewer_v0  (COMPLETE - implementation_plan_v1_17 reference)
+    - ui_harness upgraded to call /deck/validate before /build
+    - unknown queue gating disables Build when unresolved names remain
+    - 3-column viewer layout (run history, build header, panel explorer)
 
 ---------------------------------------------------------------------
 SECTION 3 — DATA PACKS REQUIRED
@@ -347,4 +358,9 @@ No deletions.
 ## [inventory_v1_18] - 2026-02-20
 - Marked Phase 3 Step 13 (combo_pack_pipeline_v1) complete, including Commander Spellbook-derived combo data packs, runtime combo detector migration to two_card_combos_v2 with v1 fallback, and offline updater governance coverage.
 - Needed to record closed-world deterministic combo sourcing updates and ensure combo runtime/version lock artifacts are explicitly tracked in inventory sections 2/3/4.
+- Impacts inventory/spec/plan/runtime governance traceability.
+
+## [inventory_v1_19] - 2026-02-20
+- Marked Phase 3 Step 14 decklist_ingestion_v1 and engine_viewer_v0 complete, including deterministic raw decklist parse/resolve/ingest modules, canonicalization-only /deck/validate endpoint, and ui_harness Engine Viewer v0 validate-first flow.
+- Needed to close missing usable ingestion/UI path while preserving frozen schema contracts and deterministic unknown-surfacing policy.
 - Impacts inventory/spec/plan/runtime governance traceability.

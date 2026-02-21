@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+export { default } from "./EngineViewerV0";
+/*
 
 type BuildResult = {
   ui_contract_version?: string;
@@ -304,6 +305,8 @@ function safeJsonParse(raw: string): BuildResponse | null {
 }
 
 function App() {
+  return <EngineViewerV0 />;
+
   const [dbSnapshotId, setDbSnapshotId] = useState(DEFAULT_FORM.db_snapshot_id);
   const [profileId, setProfileId] = useState(DEFAULT_FORM.profile_id);
   const [bracketId, setBracketId] = useState(DEFAULT_FORM.bracket_id);
@@ -1504,3 +1507,4 @@ function App() {
 }
 
 export default App;
+*/

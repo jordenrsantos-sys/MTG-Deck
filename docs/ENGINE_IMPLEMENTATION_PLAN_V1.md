@@ -1,7 +1,7 @@
 ---------------------------------------------------------------------
 
 # ENGINE IMPLEMENTATION PLAN V1
-Version: implementation_plan_v1_16
+Version: implementation_plan_v1_17
 
 ---------------------------------------------------------------------
 DOCUMENT GOVERNANCE RULES
@@ -19,7 +19,7 @@ No silent edits allowed.
 ---------------------------------------------------------------------
 
 Governed by:
-- docs/ENGINE_TASK_INVENTORY_V1.md (inventory_v1_18)
+- docs/ENGINE_TASK_INVENTORY_V1.md (inventory_v1_19)
 - docs/SUFFICIENCY_SPEC_V1.md (sufficiency_spec_v1_15)
 
 Rule: Implement one step at a time. No step begins until prior step passes tests.
@@ -548,6 +548,45 @@ Implementation Notes (2026-02-20):
   - TWO_CARD_COMBOS_V2_INVALID_JSON
   - TWO_CARD_COMBOS_V2_INVALID
 
+STEP 14 — decklist_ingestion_v1 + engine_viewer_v0
+Goal:
+- Add deterministic user-facing decklist ingestion (parse + snapshot resolve + canonical build input) and upgrade ui_harness into validate-first Engine Viewer v0.
+
+Acceptance:
+- POST /deck/validate performs canonicalization-only parse/resolve/ingest and does not run build pipeline.
+- Ambiguous/missing name resolution surfaces deterministic unknown queue with stable candidate ordering.
+- Commander inference follows explicit policy: single Commander-section card accepted, otherwise COMMANDER_MISSING unless override provided.
+- ui_harness blocks Build when unknown queue is non-empty and uses canonical_deck_input from /deck/validate for /build.
+
+Implementation Notes (2026-02-20):
+- files added:
+  - api/engine/decklist_parse_v1.py
+  - api/engine/decklist_resolve_v1.py
+  - api/engine/decklist_ingest_v1.py
+  - tests/fixtures/decklist_resolve_v1_fixture.sql
+  - tests/decklist_fixture_harness.py
+  - tests/test_decklist_parse_v1.py
+  - tests/test_decklist_resolve_v1.py
+  - tests/test_decklist_ingest_v1.py
+  - tests/test_deck_validate_endpoint.py
+  - ui_harness/src/EngineViewerV0.tsx
+- files modified:
+  - api/main.py
+  - ui_harness/src/App.tsx
+  - ui_harness/src/styles.css
+  - docs/ENGINE_TASK_INVENTORY_V1.md
+  - docs/ENGINE_IMPLEMENTATION_PLAN_V1.md
+- tests added:
+  - tests/test_decklist_parse_v1.py
+  - tests/test_decklist_resolve_v1.py
+  - tests/test_decklist_ingest_v1.py
+  - tests/test_deck_validate_endpoint.py
+- deterministic behaviors enforced:
+  - stable decklist normalization (whitespace collapse + casefold) and normalized SHA-256 representation
+  - snapshot-locked name resolution with deterministic exact/normalized/alias priority
+  - ambiguity surfaced as unknowns with candidate sorting by (oracle_id, name)
+  - validate-first UI flow; Build disabled when unknown queue has entries
+
 ---------------------------------------------------------------------
 1A) ARCHITECTURE HARDENING PASS COMPLETED (2026-02-20)
 ---------------------------------------------------------------------
@@ -756,4 +795,9 @@ No deletions.
 ## [implementation_plan_v1_16] - 2026-02-20
 - Marked Step 13 (combo_pack_pipeline_v1) complete with deterministic Commander Spellbook offline normalization, derived two-card combos v2 runtime loader/detector integration, panel/pipeline version updates, and repro bundle rule inclusion.
 - Needed to enforce closed-world combo sourcing with deterministic local runtime behavior, while preserving two_card_combos_v1 fallback compatibility and graceful unavailability handling.
+- Impacts inventory/spec/plan/runtime governance traceability.
+
+## [implementation_plan_v1_17] - 2026-02-20
+- Marked Step 14 (decklist_ingestion_v1 + engine_viewer_v0) complete with deterministic parse/resolve/ingest modules, canonicalization-only /deck/validate endpoint, and validate-first UI harness workflow.
+- Needed to close the missing usable ingestion path while preserving frozen schemas and enforcing deterministic unknown-surfacing behavior (no best-guess auto-pick).
 - Impacts inventory/spec/plan/runtime governance traceability.

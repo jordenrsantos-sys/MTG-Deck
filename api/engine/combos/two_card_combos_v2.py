@@ -4,18 +4,15 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from api.engine.curated_pack_manifest_v1 import resolve_pack_file_path
 from api.engine.two_card_combos import TWO_CARD_COMBOS_V1_VERSION, load_two_card_combos_v1
 
 
 TWO_CARD_COMBOS_V2_VERSION = "two_card_combos_v2"
 TWO_CARD_COMBOS_MATCH_MAX = 25
+_TWO_CARD_COMBOS_V2_PACK_ID = "two_card_combos_v2"
 
-_TWO_CARD_COMBOS_V2_FILE = (
-    Path(__file__).resolve().parents[1]
-    / "data"
-    / "combos"
-    / "two_card_combos_v2.json"
-)
+_TWO_CARD_COMBOS_V2_FILE: Path | None = None
 
 
 def _runtime_error(code: str, detail: str) -> RuntimeError:
@@ -27,6 +24,29 @@ def _runtime_error_code(exc: RuntimeError) -> str:
     if ":" in message:
         return message.split(":", 1)[0].strip()
     return message.strip()
+
+
+def _resolve_two_card_combos_v2_file() -> Path:
+    if isinstance(_TWO_CARD_COMBOS_V2_FILE, Path):
+        return _TWO_CARD_COMBOS_V2_FILE
+
+    try:
+        return resolve_pack_file_path(
+            pack_id=_TWO_CARD_COMBOS_V2_PACK_ID,
+            pack_version=TWO_CARD_COMBOS_V2_VERSION,
+        )
+    except RuntimeError as exc:
+        code = _runtime_error_code(exc)
+        if code in {
+            "CURATED_PACK_MANIFEST_V1_MISSING",
+            "CURATED_PACK_MANIFEST_V1_INVALID_JSON",
+            "CURATED_PACK_MANIFEST_V1_INVALID",
+            "CURATED_PACK_MANIFEST_V1_DUPLICATE_ENTRY",
+            "CURATED_PACK_MANIFEST_V1_PACK_NOT_FOUND",
+            "CURATED_PACK_MANIFEST_V1_FILE_MISSING",
+        }:
+            raise _runtime_error("TWO_CARD_COMBOS_V2_MISSING", str(exc)) from exc
+        raise
 
 
 def _nonempty_str(value: Any) -> str | None:
@@ -104,13 +124,14 @@ def _normalize_pair(raw: Any, *, index: int) -> Dict[str, Any]:
 
 
 def load_two_card_combos_v2() -> Dict[str, Any]:
-    if not _TWO_CARD_COMBOS_V2_FILE.is_file():
-        raise _runtime_error("TWO_CARD_COMBOS_V2_MISSING", str(_TWO_CARD_COMBOS_V2_FILE))
+    combos_file = _resolve_two_card_combos_v2_file()
+    if not combos_file.is_file():
+        raise _runtime_error("TWO_CARD_COMBOS_V2_MISSING", str(combos_file))
 
     try:
-        parsed = json.loads(_TWO_CARD_COMBOS_V2_FILE.read_text(encoding="utf-8"))
+        parsed = json.loads(combos_file.read_text(encoding="utf-8"))
     except Exception as exc:
-        raise _runtime_error("TWO_CARD_COMBOS_V2_INVALID_JSON", str(_TWO_CARD_COMBOS_V2_FILE)) from exc
+        raise _runtime_error("TWO_CARD_COMBOS_V2_INVALID_JSON", str(combos_file)) from exc
 
     if not isinstance(parsed, dict):
         raise _runtime_error("TWO_CARD_COMBOS_V2_INVALID", "root must be an object")

@@ -19,6 +19,17 @@ class CommanderSpellbookVariantsV1Tests(unittest.TestCase):
 
         self.assertTrue(str(raised.exception).startswith("SPELLBOOK_VARIANTS_V1_MISSING:"))
 
+    def test_loader_maps_curated_manifest_errors_to_missing_code(self) -> None:
+        with patch.object(
+            spellbook,
+            "resolve_pack_file_path",
+            side_effect=RuntimeError("CURATED_PACK_MANIFEST_V1_MISSING: test"),
+        ):
+            with self.assertRaises(RuntimeError) as raised:
+                spellbook.load_commander_spellbook_variants_v1()
+
+        self.assertTrue(str(raised.exception).startswith("SPELLBOOK_VARIANTS_V1_MISSING:"))
+
     def test_loader_invalid_payload_raises_explicit_error_code(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             invalid_path = Path(tmp_dir) / "commander_spellbook_variants_v1.json"

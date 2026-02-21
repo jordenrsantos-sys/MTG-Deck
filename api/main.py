@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from engine.db import DB_PATH as CARDS_DB_PATH, list_snapshots
 from api.engine.constants import (
@@ -11,6 +11,11 @@ from api.engine.constants import (
     BRACKET_DEFINITION_VERSION,
     GAME_CHANGERS_VERSION,
     REPO_ROOT,
+)
+from api.engine.decklist_ingest_v1 import (
+    build_canonical_deck_input_v1,
+    compute_request_hash_v1,
+    ingest_decklist,
 )
 from api.engine.deck_completion_v0 import generate_deck_completion_v0
 from api.engine.pipeline_build import run_build_pipeline
@@ -62,8 +67,82 @@ class BuildResponse(BaseModel):
     proof_scaffolds_hash_v1: Optional[str] = None
     proof_scaffolds_hash_v2: Optional[str] = None
     proof_scaffolds_hash_v3: Optional[str] = None
+    request_hash_v1: Optional[str] = None
     unknowns: List[Dict[str, Any]]
     result: Dict[str, Any]
+
+
+class DecklistUnknownCandidateV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    oracle_id: str
+    name: str
+
+
+class DecklistUnknownV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name_raw: str
+    name_norm: str
+    count: int
+    line_no: int
+    reason_code: str
+    candidates: List[DecklistUnknownCandidateV1] = Field(default_factory=list)
+
+
+class DeckValidateViolationV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    card_name: str
+    count: int
+    line_nos: List[int]
+    message: str
+
+
+class CanonicalDeckInputV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    db_snapshot_id: str
+    profile_id: str
+    bracket_id: str
+    format: str
+    commander: str
+    cards: List[str] = Field(default_factory=list)
+    engine_patches_v0: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class DeckValidateNameOverrideV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name_raw: str
+    resolved_oracle_id: Optional[str] = None
+    resolved_name: Optional[str] = None
+
+
+class DeckValidateRequest(BaseModel):
+    db_snapshot_id: str = Field(..., description="Required snapshot ID")
+    raw_decklist_text: str = Field(..., description="Raw decklist text")
+    format: str = "commander"
+    profile_id: Optional[str] = None
+    bracket_id: Optional[str] = None
+    commander: Optional[str] = None
+    name_overrides_v1: List[DeckValidateNameOverrideV1] = Field(default_factory=list)
+
+
+class DeckValidateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    db_snapshot_id: str
+    format: str
+    canonical_deck_input: CanonicalDeckInputV1
+    unknowns: List[DecklistUnknownV1]
+    violations_v1: List[DeckValidateViolationV1]
+    request_hash_v1: str
+    parse_version: str
+    resolve_version: str
+    ingest_version: str
 
 
 class StrategyHypothesisRequest(BaseModel):
@@ -112,8 +191,167 @@ def snapshots(limit: int = 20):
 
 @app.post("/build", response_model=BuildResponse)
 def build(req: BuildRequest):
+    canonical_request = build_canonical_deck_input_v1(
+        db_snapshot_id=req.db_snapshot_id,
+        profile_id=req.profile_id,
+        bracket_id=req.bracket_id,
+        format=req.format,
+        commander=req.commander if isinstance(req.commander, str) else "",
+        cards=req.cards,
+        engine_patches_v0=req.engine_patches_v0,
+    )
+    request_hash_v1 = compute_request_hash_v1(canonical_request)
+
     payload = run_build_pipeline(req=req, conn=None, repo_root_path=REPO_ROOT)
+    payload["request_hash_v1"] = request_hash_v1
     return BuildResponse(**payload)
+
+
+def _coerce_nonnegative_int(value: Any, *, default: int = 0) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return int(default)
+    if int(value) < 0:
+        return int(default)
+    return int(value)
+
+
+def _coerce_positive_int(value: Any, *, default: int = 1) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return int(default)
+    if int(value) < 1:
+        return int(default)
+    return int(value)
+
+
+def _coerce_nonempty_str(value: Any) -> str:
+    if isinstance(value, str):
+        token = value.strip()
+        if token != "":
+            return token
+    return ""
+
+
+@app.post("/deck/validate", response_model=DeckValidateResponse)
+def deck_validate(req: DeckValidateRequest):
+    name_overrides_v1 = [
+        row.model_dump(mode="python")
+        for row in req.name_overrides_v1
+        if isinstance(row, DeckValidateNameOverrideV1)
+    ]
+
+    ingest_payload = ingest_decklist(
+        raw_text=req.raw_decklist_text,
+        db_snapshot_id=req.db_snapshot_id,
+        format=req.format,
+        commander_name_override=req.commander,
+        name_overrides_v1=name_overrides_v1,
+    )
+
+    canonical_from_ingest = (
+        ingest_payload.get("canonical_deck_input")
+        if isinstance(ingest_payload.get("canonical_deck_input"), dict)
+        else {}
+    )
+    canonical_commander = (
+        canonical_from_ingest.get("commander")
+        if isinstance(canonical_from_ingest.get("commander"), str)
+        else ""
+    )
+    canonical_cards = (
+        canonical_from_ingest.get("cards")
+        if isinstance(canonical_from_ingest.get("cards"), list)
+        else []
+    )
+
+    canonical_deck_input_dict = build_canonical_deck_input_v1(
+        db_snapshot_id=req.db_snapshot_id,
+        profile_id=req.profile_id if isinstance(req.profile_id, str) else "",
+        bracket_id=req.bracket_id if isinstance(req.bracket_id, str) else "",
+        format=ingest_payload.get("format") if isinstance(ingest_payload.get("format"), str) else "commander",
+        commander=canonical_commander,
+        cards=[name for name in canonical_cards if isinstance(name, str)],
+        engine_patches_v0=[],
+        name_overrides_v1=name_overrides_v1,
+    )
+    request_hash_v1 = compute_request_hash_v1(canonical_deck_input_dict)
+
+    canonical_deck_input = CanonicalDeckInputV1(
+        db_snapshot_id=canonical_deck_input_dict["db_snapshot_id"],
+        profile_id=canonical_deck_input_dict["profile_id"],
+        bracket_id=canonical_deck_input_dict["bracket_id"],
+        format=canonical_deck_input_dict["format"],
+        commander=canonical_deck_input_dict["commander"],
+        cards=list(canonical_deck_input_dict["cards"]),
+        engine_patches_v0=list(canonical_deck_input_dict["engine_patches_v0"]),
+    )
+
+    unknowns_raw = ingest_payload.get("unknowns") if isinstance(ingest_payload.get("unknowns"), list) else []
+    unknowns: List[DecklistUnknownV1] = []
+    for row in unknowns_raw:
+        if not isinstance(row, dict):
+            continue
+        candidates_raw = row.get("candidates") if isinstance(row.get("candidates"), list) else []
+        candidates: List[DecklistUnknownCandidateV1] = []
+        for candidate in candidates_raw:
+            if not isinstance(candidate, dict):
+                continue
+            oracle_id = _coerce_nonempty_str(candidate.get("oracle_id"))
+            name = _coerce_nonempty_str(candidate.get("name"))
+            if oracle_id == "" or name == "":
+                continue
+            candidates.append(
+                DecklistUnknownCandidateV1(
+                    oracle_id=oracle_id,
+                    name=name,
+                )
+            )
+
+        unknowns.append(
+            DecklistUnknownV1(
+                name_raw=_coerce_nonempty_str(row.get("name_raw")),
+                name_norm=_coerce_nonempty_str(row.get("name_norm")),
+                count=_coerce_positive_int(row.get("count"), default=1),
+                line_no=_coerce_nonnegative_int(row.get("line_no"), default=0),
+                reason_code=_coerce_nonempty_str(row.get("reason_code")),
+                candidates=candidates,
+            )
+        )
+
+    violations_raw = ingest_payload.get("violations_v1") if isinstance(ingest_payload.get("violations_v1"), list) else []
+    violations_v1: List[DeckValidateViolationV1] = []
+    for row in violations_raw:
+        if not isinstance(row, dict):
+            continue
+        line_nos_raw = row.get("line_nos") if isinstance(row.get("line_nos"), list) else []
+        line_nos = sorted(
+            {
+                _coerce_nonnegative_int(value, default=0)
+                for value in line_nos_raw
+                if isinstance(value, int) and not isinstance(value, bool)
+            }
+        )
+        violations_v1.append(
+            DeckValidateViolationV1(
+                code=_coerce_nonempty_str(row.get("code")),
+                card_name=_coerce_nonempty_str(row.get("card_name")),
+                count=_coerce_positive_int(row.get("count"), default=1),
+                line_nos=line_nos,
+                message=_coerce_nonempty_str(row.get("message")),
+            )
+        )
+
+    return DeckValidateResponse(
+        status=ingest_payload.get("status") if isinstance(ingest_payload.get("status"), str) else "UNKNOWN_PRESENT",
+        db_snapshot_id=req.db_snapshot_id,
+        format=canonical_deck_input.format,
+        canonical_deck_input=canonical_deck_input,
+        unknowns=unknowns,
+        violations_v1=violations_v1,
+        request_hash_v1=request_hash_v1,
+        parse_version=ingest_payload.get("parse_version") if isinstance(ingest_payload.get("parse_version"), str) else "",
+        resolve_version=ingest_payload.get("resolve_version") if isinstance(ingest_payload.get("resolve_version"), str) else "",
+        ingest_version=ingest_payload.get("ingest_version") if isinstance(ingest_payload.get("ingest_version"), str) else "",
+    )
 
 
 @app.post("/strategy_hypothesis_v0")

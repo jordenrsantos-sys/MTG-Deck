@@ -4,10 +4,11 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Set, Tuple
 
+from api.engine.curated_pack_manifest_v1 import resolve_pack_file_path
+
 
 _REQUIRED_EFFECTS_FILE = Path(__file__).resolve().parent / "data" / "requirements" / "required_effects_v1.json"
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_TAXONOMY_PACKS_DIR = _REPO_ROOT / "taxonomy" / "packs"
+_TAXONOMY_PRIMITIVES_PACK_ID = "taxonomy_primitives"
 
 
 def _runtime_error(code: str, detail: str) -> RuntimeError:
@@ -59,33 +60,14 @@ def _normalize_requirements_for_format(raw: Any, *, format_key: str) -> Dict[str
     return normalized
 
 
-def _taxonomy_pack_dir(taxonomy_version: str | None = None) -> Path | None:
-    requested = _nonempty_str(taxonomy_version)
-    if requested is not None:
-        candidate = _TAXONOMY_PACKS_DIR / requested
-        if candidate.is_dir():
-            return candidate
-
-    if not _TAXONOMY_PACKS_DIR.is_dir():
-        return None
-
-    pack_dirs = sorted(
-        [entry for entry in _TAXONOMY_PACKS_DIR.iterdir() if entry.is_dir()],
-        key=lambda path: path.name,
-    )
-    if len(pack_dirs) == 0:
-        return None
-
-    return pack_dirs[-1]
-
-
 def _load_taxonomy_primitive_ids(*, taxonomy_version: str | None = None) -> Set[str]:
-    pack_dir = _taxonomy_pack_dir(taxonomy_version=taxonomy_version)
-    if pack_dir is None:
-        return set()
-
-    primitives_file = pack_dir / "primitives.json"
-    if not primitives_file.is_file():
+    version_token = _nonempty_str(taxonomy_version)
+    try:
+        primitives_file = resolve_pack_file_path(
+            pack_id=_TAXONOMY_PRIMITIVES_PACK_ID,
+            pack_version=version_token,
+        )
+    except RuntimeError:
         return set()
 
     try:

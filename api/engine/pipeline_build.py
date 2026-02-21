@@ -682,11 +682,14 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
     def _execute():
         nonlocal snapshot_preflight_payload_for_result
 
-        with cards_db_connect() as preflight_con:
+        preflight_con = cards_db_connect()
+        try:
             snapshot_preflight_payload_for_result = run_snapshot_preflight_v1(
                 db=preflight_con,
                 snapshot_id=req.db_snapshot_id,
             )
+        finally:
+            preflight_con.close()
 
         if snapshot_preflight_payload_for_result.get("status") != "OK":
             preflight_errors_raw = snapshot_preflight_payload_for_result.get("errors")
@@ -819,7 +822,8 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             commander_oracle_id = commander_resolved.get("oracle_id")
 
             try:
-                with cards_db_connect() as preflight_con:
+                preflight_con = cards_db_connect()
+                try:
                     _ = run_snapshot_preflight(
                         db=preflight_con,
                         db_snapshot_id=req.db_snapshot_id,
@@ -827,6 +831,8 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                         ruleset_version=runtime_ruleset_version,
                         commander_oracle_id=commander_oracle_id,
                     )
+                finally:
+                    preflight_con.close()
             except SnapshotPreflightError as exc:
                 preflight_unknown = exc.to_unknown()
                 return BuildResponse(
@@ -1339,7 +1345,8 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
         compiled_tags_by_oracle: Dict[str, Dict[str, Any]] = {}
         if tag_oracle_ids:
             try:
-                with cards_db_connect() as con:
+                con = cards_db_connect()
+                try:
                     ensure_tag_tables(con)
                     compiled_tags_by_oracle = bulk_get_card_tags(
                         conn=con,
@@ -1347,6 +1354,8 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                         snapshot_id=req.db_snapshot_id,
                         taxonomy_version=runtime_taxonomy_version,
                     )
+                finally:
+                    con.close()
             except TagSnapshotMissingError as exc:
                 return BuildResponse(
                     engine_version=ENGINE_VERSION,
