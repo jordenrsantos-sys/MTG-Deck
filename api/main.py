@@ -1,7 +1,9 @@
+import os
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
 from engine.db import DB_PATH as CARDS_DB_PATH, list_snapshots
@@ -173,6 +175,27 @@ class DeckCompleteRequest(BaseModel):
 
 
 app = FastAPI(title="MTG Strategy Engine", version=ENGINE_VERSION)
+
+DEV_CORS = os.getenv("MTG_ENGINE_DEV_CORS", "0") == "1"
+
+if DEV_CORS:
+    dev_ports = range(5173, 5181)
+    allow_origins = [f"http://127.0.0.1:{port}" for port in dev_ports] + [
+        f"http://localhost:{port}" for port in dev_ports
+    ]
+else:
+    allow_origins = [
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allow_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
