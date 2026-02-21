@@ -65,6 +65,37 @@ type RunHistoryEntry = {
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8000";
 
+async function debugFetch(url: string, options: RequestInit): Promise<Response> {
+  if (import.meta.env.DEV) {
+    console.group("API CALL");
+    console.log("URL:", url);
+    console.log("Method:", options.method ?? "GET");
+    console.log("Payload:", options.body ?? null);
+  }
+
+  try {
+    const res = await fetch(url, options);
+
+    if (import.meta.env.DEV) {
+      const debugJson = await res.clone().json().catch(() => null);
+      console.log("Status:", res.status);
+      console.log("Headers:", Object.fromEntries(res.headers.entries()));
+      if (res.ok) {
+        console.log("Response JSON:", debugJson);
+      }
+      console.groupEnd();
+    }
+
+    return res;
+  } catch (err) {
+    if (import.meta.env.DEV) {
+      console.error("FETCH ERROR:", err);
+      console.groupEnd();
+    }
+    throw err;
+  }
+}
+
 const DEFAULT_FORM = {
   db_snapshot_id: "20260217_190902",
   profile_id: "focused",
@@ -277,15 +308,17 @@ export default function EngineViewerV0() {
   }, [buildResponse, selectedPanelKey]);
 
   async function postJson(path: string, payload: Record<string, unknown>): Promise<unknown> {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const requestUrl = `${API_BASE_URL}${path}`;
+    const requestBody = JSON.stringify(payload);
+    const res = await debugFetch(requestUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(payload),
+      body: requestBody,
     });
 
-    const text = await response.text();
+    const text = await res.text();
     let parsed: unknown = null;
     try {
       parsed = JSON.parse(text);
@@ -293,8 +326,8 @@ export default function EngineViewerV0() {
       parsed = null;
     }
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${text}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${text}`);
     }
 
     return parsed;
