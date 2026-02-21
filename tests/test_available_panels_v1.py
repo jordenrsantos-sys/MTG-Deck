@@ -39,6 +39,7 @@ _AVAILABLE_PANEL_KEYS = [
     "has_redundancy_index_v1",
     "has_counterfactual_stress_test_v1",
     "has_structural_scorecard_v1",
+    "primitive_bridge_explorer_v1",
     "has_motifs",
     "has_disruption",
     "has_pathways",
@@ -108,6 +109,7 @@ class AvailablePanelsV1Tests(unittest.TestCase):
             redundancy_index_v1={},
             counterfactual_stress_test_v1={},
             structural_scorecard_v1={},
+            primitive_bridge_explorer_v1={},
         )
         self.assertTrue(all(flag is False for flag in explicit_empty.values()))
 
@@ -802,6 +804,22 @@ class AvailablePanelsV1Tests(unittest.TestCase):
                     }
                 },
             ),
+            (
+                "primitive_bridge_explorer_v1",
+                {
+                    "primitive_bridge_explorer_v1": {
+                        "version": "primitive_bridge_explorer_v1",
+                        "status": "OK",
+                        "reason_code": None,
+                        "codes": [],
+                        "bridge_clusters_v1": [],
+                        "latent_engine_clusters_v1": [],
+                        "cross_engine_overlap_score_v1": 0.0,
+                        "structural_asymmetry_index_v1": 0.0,
+                        "bridge_amplification_bonus_v1": 0.0,
+                    }
+                },
+            ),
             ("has_motifs", {"motifs": [{"motif_id": "M1"}]}),
             ("has_disruption", {"disruption_totals": {"bridges_total": 1}}),
             ("has_pathways", {"pathways_totals": {"reachable_total": 1}}),
@@ -1173,6 +1191,26 @@ class AvailablePanelsV1Tests(unittest.TestCase):
                     "profile_thresholds_version": "profile_thresholds_v1",
                     "calibration_snapshot_version": "calibration_snapshot_v1",
                 },
+            },
+            "primitive_bridge_explorer_v1": {
+                "version": "primitive_bridge_explorer_v1",
+                "status": "OK",
+                "reason_code": None,
+                "codes": [],
+                "bridge_clusters_v1": [
+                    {
+                        "primitive_chain": ["A", "B", "C"],
+                        "slot_ids": ["S1", "S2"],
+                        "bridge_score": 0.4,
+                        "novelty_score": 0.3,
+                        "redundancy_score": 0.5,
+                        "vulnerability_score": 0.2,
+                    }
+                ],
+                "latent_engine_clusters_v1": [],
+                "cross_engine_overlap_score_v1": 0.2,
+                "structural_asymmetry_index_v1": 0.25,
+                "bridge_amplification_bonus_v1": 0.0,
             },
             "motifs": [{"motif_id": "M1"}],
             "disruption_totals": {"bridges_total": 1},
