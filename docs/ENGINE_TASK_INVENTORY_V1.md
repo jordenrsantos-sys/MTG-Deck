@@ -1,5 +1,5 @@
 # ENGINE TASK INVENTORY V1
-Version: inventory_v1_19
+Version: inventory_v1_20
 
 ---------------------------------------------------------------------
 DOCUMENT GOVERNANCE RULES
@@ -46,6 +46,7 @@ Observability & Structural:
 - vulnerability_index_v1
 - counterfactual_stress_test_v1
 - structural_scorecard_v1
+- primitive_bridge_explorer_v1
 
 Policy:
 - gc_limits_v1
@@ -181,6 +182,13 @@ SECTION 2 — PHASE 3: SUFFICIENCY ENGINE (SPEC-ALIGNED)
     - unknown queue gating disables Build when unresolved names remain
     - 3-column viewer layout (run history, build header, panel explorer)
 
+2.15 Structural Discovery V2
+[x] primitive_bridge_explorer_v1  (COMPLETE - implementation_plan_v1_18 reference)
+    - deterministic bounded primitive bridge-chain discovery (max_hops + max_evaluated_chains)
+    - latent engine cluster extraction and classification
+    - cross_engine_overlap_score_v1 / structural_asymmetry_index_v1 reporting
+    - optional bridge_amplification_bonus_v1 sourced from profile_thresholds_v1 coherence domain
+
 ---------------------------------------------------------------------
 SECTION 3 — DATA PACKS REQUIRED
 ---------------------------------------------------------------------
@@ -217,6 +225,7 @@ SECTION 4 — VERSION LOCKS REQUIRED
 [x] weight_multiplier_engine_version  (COMPLETE - implementation_plan_v1_8 reference)
 [x] two_card_combos_version  (COMPLETE - implementation_plan_v1_16 reference)
 [x] spellbook_variants_version  (COMPLETE - implementation_plan_v1_16 reference)
+[x] primitive_bridge_explorer_version  (COMPLETE - implementation_plan_v1_18 reference)
 
 ---------------------------------------------------------------------
 SECTION 5 — DETERMINISM SAFETY
@@ -263,6 +272,7 @@ SECTION 7 — EXECUTION ORDER
 11) commander_reliability_model_v1
 12) sufficiency_summary_v1
 13) combo_pack_pipeline_v1
+14) primitive_bridge_explorer_v1
 
 ---------------------------------------------------------------------
 
@@ -363,4 +373,9 @@ No deletions.
 ## [inventory_v1_19] - 2026-02-20
 - Marked Phase 3 Step 14 decklist_ingestion_v1 and engine_viewer_v0 complete, including deterministic raw decklist parse/resolve/ingest modules, canonicalization-only /deck/validate endpoint, and ui_harness Engine Viewer v0 validate-first flow.
 - Needed to close missing usable ingestion/UI path while preserving frozen schema contracts and deterministic unknown-surfacing policy.
+- Impacts inventory/spec/plan/runtime governance traceability.
+
+## [inventory_v1_20] - 2026-02-21
+- Marked Phase 3 Step 15 primitive_bridge_explorer_v1 (Structural Discovery V2) complete, including deterministic bounded bridge discovery, latent engine cluster extraction, profile-weighted bridge amplification bonus support, panel gate integration, and pipeline version pinning.
+- Needed to expose structural connector discovery signals and asymmetry metrics while preserving frozen runtime schema contracts.
 - Impacts inventory/spec/plan/runtime governance traceability.

@@ -1,5 +1,5 @@
 # SUFFICIENCY SPECIFICATION V1
-Version: sufficiency_spec_v1_15
+Version: sufficiency_spec_v1_16
 
 ---------------------------------------------------------------------
 DOCUMENT GOVERNANCE RULES
@@ -1349,6 +1349,80 @@ Determinism and safety constraints:
 - Fixed bounded loops for pagination via max-pages.
 
 ---------------------------------------------------------------------
+XVIII. PRIMITIVE_BRIDGE_EXPLORER_V1 CONTRACT
+---------------------------------------------------------------------
+
+Purpose:
+- Discover deterministic primitive bridge chains and latent engine clusters from
+  primitive_index_by_slot + graph_v1 without oracle text parsing.
+
+Inputs:
+- primitive_index_by_slot: Dict[str, List[str]]
+- slot_ids_by_primitive: Dict[str, List[str]]
+- graph_v1: Dict[str, Any]
+- required_primitives_v0: optional List[str]
+- commander_dependency_metadata: optional Dict[str, Any]
+- bridge_amplification_bonus_weight: optional float in [0,1]
+
+Determinism and bounds:
+- Exploration must be bounded:
+  - max_chain_hops = 3
+  - max_evaluated_chains = 500
+- Candidate ordering must be deterministic (sorted primitive ids / stable tie-breakers).
+- Output list ordering must be deterministic for bridge_clusters_v1 and latent_engine_clusters_v1.
+
+Skip policy:
+- status="SKIP", reason_code="PRIMITIVE_INDEX_UNAVAILABLE" when primitive index is unavailable/empty.
+- status="SKIP", reason_code="GRAPH_V1_UNAVAILABLE" when graph_v1 is unavailable.
+
+Status policy:
+- status="OK" when any bridge cluster or latent cluster is present.
+- status="WARN" with code NO_BRIDGES_DETECTED when both cluster lists are empty.
+
+Profile-threshold bonus policy:
+- bridge_amplification_bonus_v1 is sourced from profile_thresholds_v1 coherence domain key
+  bridge_amplification_bonus_v1.
+- Missing key defaults deterministically to 0.0.
+- Value is clamped to [0,1] and used only as a multiplicative adjustment for
+  structural_asymmetry_index_v1.
+
+Output contract:
+- version: "primitive_bridge_explorer_v1"
+- status: "OK" | "WARN" | "SKIP"
+- reason_code: string | null
+- codes: sorted List[str]
+- bridge_clusters_v1: deterministic List[{
+    "primitive_chain": List[str],
+    "slot_ids": List[str],
+    "bridge_score": float,
+    "novelty_score": float,
+    "redundancy_score": float,
+    "vulnerability_score": float
+  }]
+- latent_engine_clusters_v1: deterministic List[{
+    "cluster_type": str,
+    "primitives": List[str],
+    "required_board_state": List[str],
+    "minimal_slot_set": List[str],
+    "closure_potential": bool
+  }]
+- cross_engine_overlap_score_v1: float
+- structural_asymmetry_index_v1: float
+- bridge_amplification_bonus_v1: float
+- bounds: {
+    "max_chain_hops": int,
+    "max_evaluated_chains": int,
+    "evaluated_chain_candidates": int
+  }
+
+Pipeline integration requirements:
+- result.primitive_bridge_explorer_v1 must be emitted by pipeline_build.
+- available_panels_v1 must include primitive_bridge_explorer_v1 (bool gate).
+- pipeline_versions must include primitive_bridge_explorer_version.
+
+No oracle_text parsing is allowed.
+
+---------------------------------------------------------------------
 ---------------------------------------------------------------------
 CHANGE LOG
 ---------------------------------------------------------------------
@@ -1437,4 +1511,9 @@ No deletions.
 ## [sufficiency_spec_v1_15] - 2026-02-20
 - Added explicit combo_pack_pipeline_v1 contract defining closed-world runtime combo sourcing, Commander Spellbook variants/two-card pack schemas, deterministic v2->v1 fallback policy, detector output bounds, and pipeline/repro integration requirements.
 - Needed because combo data sourcing boundaries, runtime fallback semantics, and deterministic detector contract were not explicitly frozen before Step 13 governance completion.
+- Impacts inventory/spec/plan/runtime governance traceability.
+
+## [sufficiency_spec_v1_16] - 2026-02-21
+- Added explicit primitive_bridge_explorer_v1 contract defining bounded deterministic bridge discovery, latent cluster extraction, score outputs, skip/warn policy, and profile-threshold bridge amplification bonus behavior.
+- Needed to freeze Structural Discovery V2 behavior and pipeline integration rules while preserving closed-world deterministic runtime constraints.
 - Impacts inventory/spec/plan/runtime governance traceability.

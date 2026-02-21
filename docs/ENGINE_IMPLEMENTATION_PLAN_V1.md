@@ -1,7 +1,7 @@
 ---------------------------------------------------------------------
 
 # ENGINE IMPLEMENTATION PLAN V1
-Version: implementation_plan_v1_17
+Version: implementation_plan_v1_18
 
 ---------------------------------------------------------------------
 DOCUMENT GOVERNANCE RULES
@@ -19,8 +19,8 @@ No silent edits allowed.
 ---------------------------------------------------------------------
 
 Governed by:
-- docs/ENGINE_TASK_INVENTORY_V1.md (inventory_v1_19)
-- docs/SUFFICIENCY_SPEC_V1.md (sufficiency_spec_v1_15)
+- docs/ENGINE_TASK_INVENTORY_V1.md (inventory_v1_20)
+- docs/SUFFICIENCY_SPEC_V1.md (sufficiency_spec_v1_16)
 
 Rule: Implement one step at a time. No step begins until prior step passes tests.
 
@@ -587,6 +587,39 @@ Implementation Notes (2026-02-20):
   - ambiguity surfaced as unknowns with candidate sorting by (oracle_id, name)
   - validate-first UI flow; Build disabled when unknown queue has entries
 
+STEP 15 — primitive_bridge_explorer_v1 (Structural Discovery V2)
+Goal:
+- Add deterministic primitive bridge discovery to surface latent connector chains and structural asymmetry signals from primitive_index_by_slot + graph_v1.
+
+Acceptance:
+- Bounded graph walk (max hops and max evaluated chains) with deterministic ordering.
+- SKIP behavior for unavailable primitive index or graph payload.
+- Panel gate added without ui_contract_v1 schema changes.
+- pipeline_versions pin includes primitive_bridge_explorer_version.
+
+Implementation Notes (2026-02-21):
+- files added:
+  - api/engine/layers/primitive_bridge_explorer_v1.py
+  - tests/test_primitive_bridge_explorer_v1.py
+  - tests/test_pipeline_primitive_bridge_explorer_v1.py
+- files modified:
+  - api/engine/pipeline_build.py
+  - api/engine/profile_thresholds_v1.py
+  - api/engine/data/sufficiency/profile_thresholds_v1.json
+  - api/engine/layers/repro_bundle_manifest_v1.py
+  - tests/test_available_panels_v1.py
+  - tests/test_schema_freeze_guard.py
+  - docs/ENGINE_TASK_INVENTORY_V1.md
+  - docs/ENGINE_IMPLEMENTATION_PLAN_V1.md
+  - docs/SUFFICIENCY_SPEC_V1.md
+- tests added:
+  - tests/test_primitive_bridge_explorer_v1.py
+  - tests/test_pipeline_primitive_bridge_explorer_v1.py
+- pipeline_versions additions:
+  - primitive_bridge_explorer_version
+- deterministic warning codes introduced:
+  - NO_BRIDGES_DETECTED
+
 ---------------------------------------------------------------------
 1A) ARCHITECTURE HARDENING PASS COMPLETED (2026-02-20)
 ---------------------------------------------------------------------
@@ -800,4 +833,9 @@ No deletions.
 ## [implementation_plan_v1_17] - 2026-02-20
 - Marked Step 14 (decklist_ingestion_v1 + engine_viewer_v0) complete with deterministic parse/resolve/ingest modules, canonicalization-only /deck/validate endpoint, and validate-first UI harness workflow.
 - Needed to close the missing usable ingestion path while preserving frozen schemas and enforcing deterministic unknown-surfacing behavior (no best-guess auto-pick).
+- Impacts inventory/spec/plan/runtime governance traceability.
+
+## [implementation_plan_v1_18] - 2026-02-21
+- Marked Step 15 (primitive_bridge_explorer_v1 / Structural Discovery V2) complete with deterministic bounded bridge-chain discovery, latent engine cluster detection, cross-engine overlap/asymmetry scoring, and profile-threshold bridge amplification bonus integration.
+- Needed to expose structural connector discovery signals without modifying frozen ui_contract_v1, graph_v1, or structural_snapshot_v1 schemas.
 - Impacts inventory/spec/plan/runtime governance traceability.
