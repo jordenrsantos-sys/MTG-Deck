@@ -1,0 +1,879 @@
+{
+  "version": "tag_import_v1_next_pass_20260222_v3",
+  "taxonomy_version": "taxonomy_v1_23",
+  "description": "Deterministic closed-world next pass for complete/tune-impact coverage buckets (lands/ramp/draw/removal/protection/recursion/tutor/interaction/wincon) from currently untagged snapshot cards.",
+  "entries": [
+    {
+      "oracle_id": "1167fe30-32b8-4381-8067-a05cd345977b",
+      "name": "A Little Chat",
+      "primitive_ids": [
+        "CARD_SELECTION_SCRY_SURVEIL"
+      ]
+    },
+    {
+      "oracle_id": "92b617f9-6e6b-42a0-9c45-6ff5f6193051",
+      "name": "Aang's Defense",
+      "primitive_ids": [
+        "CARD_DRAW_BURST"
+      ]
+    },
+    {
+      "oracle_id": "ddf461b9-a205-4dc7-a9c3-c047b1ff709f",
+      "name": "Aang's Journey",
+      "primitive_ids": [
+        "TUTOR_ANY_TO_HAND"
+      ]
+    },
+    {
+      "oracle_id": "82333385-631f-4abf-b159-bb367f1c6fd9",
+      "name": "Abandon Attachments",
+      "primitive_ids": [
+        "CARD_DRAW_BURST",
+        "CARD_SELECTION_SCRY_SURVEIL"
+      ]
+    },
+    {
+      "oracle_id": "6300de53-6e71-4f0e-87e1-b0acd25c59a8",
+      "name": "Abeyance",
+      "primitive_ids": [
+        "CARD_DRAW_BURST"
+      ]
+    },
+    {
+      "oracle_id": "04ea7e88-7ea5-4b4c-9a7c-2a6ac0bc0682",
+      "name": "Absorb Vis",
+      "primitive_ids": [
+        "TUTOR_ANY_TO_HAND"
+      ]
+    },
+    {
+      "oracle_id": "61a23402-3244-4b5e-9134-98e1f82eda65",
+      "name": "Abstruse Appropriation",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "aab463bb-e790-403b-a88d-06ef81c7302b",
+      "name": "Abzan Beastmaster",
+      "primitive_ids": [
+        "CARD_DRAW_BURST"
+      ]
+    },
+    {
+      "oracle_id": "4137a22c-f793-4e27-a9b2-72740a6e2121",
+      "name": "Abzan Charm",
+      "primitive_ids": [
+        "CARD_DRAW_BURST",
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "3d02ee2f-b7bd-40b0-b9be-2420991b2be0",
+      "name": "Abzan Devotee",
+      "primitive_ids": [
+        "MANA_RAMP_CREATURE_DORK"
+      ]
+    },
+    {
+      "oracle_id": "b22de128-6dad-4e15-a547-1c9ca08df5ff",
+      "name": "Academic Dispute",
+      "primitive_ids": [
+        "CARD_DRAW_BURST",
+        "CARD_SELECTION_SCRY_SURVEIL"
+      ]
+    },
+    {
+      "oracle_id": "79189464-9645-4411-8886-68fd40a588ed",
+      "name": "Accelerate",
+      "primitive_ids": [
+        "CARD_DRAW_BURST"
+      ]
+    },
+    {
+      "oracle_id": "a63eb744-71c4-447d-9372-c3a734f022c5",
+      "name": "Accumulate Wisdom",
+      "primitive_ids": [
+        "CARD_SELECTION_SCRY_SURVEIL"
+      ]
+    },
+    {
+      "oracle_id": "1ca25379-d194-4670-a7bf-525ad11cf436",
+      "name": "Accumulated Knowledge",
+      "primitive_ids": [
+        "CARD_DRAW_BURST"
+      ]
+    },
+    {
+      "oracle_id": "4ccc1ac5-db90-4fc9-9795-7afaf7466c3e",
+      "name": "Acidic Soil",
+      "primitive_ids": [
+        "NONCOMBAT_DAMAGE_PAYOFF"
+      ]
+    },
+    {
+      "oracle_id": "fcdfe9d5-2743-4d3e-ab57-bf0f96beaa15",
+      "name": "Aclazotz, Deepest Betrayal // Temple of the Dead",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "944689b2-f9f7-45c3-952c-54287b9824d5",
+      "name": "Acolyte's Reward",
+      "primitive_ids": [
+        "NONCOMBAT_DAMAGE_PAYOFF"
+      ]
+    },
+    {
+      "oracle_id": "205ffa76-ff8e-4405-b21a-42358a9883c2",
+      "name": "Active Volcano",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "467e22c3-6107-40ff-afc7-5960710c970b",
+      "name": "Adamant Will",
+      "primitive_ids": [
+        "COUNTERSPELL_PROTECTION"
+      ]
+    },
+    {
+      "oracle_id": "70235727-e330-46fa-b057-ddbb55cd1ac3",
+      "name": "Adventure Awaits",
+      "primitive_ids": [
+        "CARD_DRAW_BURST",
+        "CARD_SELECTION_SCRY_SURVEIL"
+      ]
+    },
+    {
+      "oracle_id": "5bf49f39-b3d5-4148-8dc2-b5b5011769d2",
+      "name": "Adventurous Impulse",
+      "primitive_ids": [
+        "CARD_SELECTION_SCRY_SURVEIL"
+      ]
+    },
+    {
+      "oracle_id": "5063f015-bd1c-4e14-9888-63e202be2ac8",
+      "name": "Advice from the Fae",
+      "primitive_ids": [
+        "CARD_SELECTION_SCRY_SURVEIL"
+      ]
+    },
+    {
+      "oracle_id": "592d847e-e3f3-425d-89f9-01ab533ad581",
+      "name": "Aegar, the Freezing Flame",
+      "primitive_ids": [
+        "CARD_DRAW_BURST"
+      ]
+    },
+    {
+      "oracle_id": "6511f317-bd38-46d0-b800-7125a3f420da",
+      "name": "Aesi, Tyrant of Gyre Strait",
+      "primitive_ids": [
+        "CARD_DRAW_BURST"
+      ]
+    },
+    {
+      "oracle_id": "45892ec2-8996-444f-a61c-5151926baa0b",
+      "name": "Aethersnatch",
+      "primitive_ids": [
+        "STACK_COUNTERSPELL"
+      ]
+    },
+    {
+      "oracle_id": "562d71b9-1646-474e-9293-55da6947a758",
+      "name": "Agadeem's Awakening // Agadeem, the Undercrypt",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "099fd4b3-92fd-4b5f-bb4f-eefa6f09700c",
+      "name": "Agent of Stromgald",
+      "primitive_ids": [
+        "MANA_RAMP_CREATURE_DORK"
+      ]
+    },
+    {
+      "oracle_id": "192aa7b2-a819-4ffd-bfbf-a270271898e6",
+      "name": "Aggravate",
+      "primitive_ids": [
+        "NONCOMBAT_DAMAGE_PAYOFF"
+      ]
+    },
+    {
+      "oracle_id": "d1c8f14b-7977-488a-8bd9-cefd6687f017",
+      "name": "Aggressive Instinct",
+      "primitive_ids": [
+        "NONCOMBAT_DAMAGE_PAYOFF"
+      ]
+    },
+    {
+      "oracle_id": "a47ff11e-dbcf-45b1-a13d-fff677ea42c9",
+      "name": "Aggressive Sabotage",
+      "primitive_ids": [
+        "NONCOMBAT_DAMAGE_PAYOFF"
+      ]
+    },
+    {
+      "oracle_id": "41681a1f-0777-4b96-8c7e-d6a5d1b1c8fc",
+      "name": "Agonizing Demise",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "b191ae0c-7d54-459f-abe3-aab5d792e514",
+      "name": "Aim for the Head",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "64e3791b-de99-4eed-af49-cbec218c28aa",
+      "name": "Airbender's Reversal",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "925a0b9b-a1fa-4aad-89d9-e2698ac3582f",
+      "name": "Ajani's Presence",
+      "primitive_ids": [
+        "COUNTERSPELL_PROTECTION"
+      ]
+    },
+    {
+      "oracle_id": "01cd52f9-7fac-4396-bec7-d06bf683e011",
+      "name": "Akki Rockspeaker",
+      "primitive_ids": [
+        "MANA_RAMP_CREATURE_DORK"
+      ]
+    },
+    {
+      "oracle_id": "afedce7b-0e18-40ad-a26a-1933fddb560d",
+      "name": "Akoum Warrior // Akoum Teeth",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "a3fc6888-0a4b-4e1d-b709-042b8b6b1a04",
+      "name": "Akroma's Blessing",
+      "primitive_ids": [
+        "COUNTERSPELL_PROTECTION"
+      ]
+    },
+    {
+      "oracle_id": "c4229cc8-11e5-4221-b00d-86969701e21b",
+      "name": "Alesha's Legacy",
+      "primitive_ids": [
+        "COUNTERSPELL_PROTECTION"
+      ]
+    },
+    {
+      "oracle_id": "e98e8129-3e0e-45cc-b00c-1387cc592023",
+      "name": "Alluring Suitor // Deadly Dancer",
+      "primitive_ids": [
+        "MANA_RAMP_CREATURE_DORK"
+      ]
+    },
+    {
+      "oracle_id": "46db3dc2-9eb1-4be3-96f9-0013119fcd97",
+      "name": "Ancient Excavation",
+      "primitive_ids": [
+        "TUTOR_ANY_TO_HAND"
+      ]
+    },
+    {
+      "oracle_id": "0ea6d165-2c30-41a4-8829-6d0510afc03f",
+      "name": "And They Shall Know No Fear",
+      "primitive_ids": [
+        "COUNTERSPELL_PROTECTION"
+      ]
+    },
+    {
+      "oracle_id": "61f3a549-77b4-4403-afa2-a0f02603f2e6",
+      "name": "Angrath's Fury",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "ad09b3c3-c8e7-481c-8c45-e7f234935117",
+      "name": "Anguished Unmaking",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "28f55673-7aa0-497e-8434-aa70df1b5e04",
+      "name": "Annihilate",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "402c3afe-7041-41a3-8fcd-64a060c12d4a",
+      "name": "Anoint with Affliction",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "d06eedb4-bd5a-4864-9505-a570a745d165",
+      "name": "Apex of Power",
+      "primitive_ids": [
+        "MANA_RITUAL_BURST"
+      ]
+    },
+    {
+      "oracle_id": "edcb0248-e7c9-4df9-8dba-982048654fd2",
+      "name": "Archenemy's Charm",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "43827acb-70cf-44a3-8560-e9f7330c835e",
+      "name": "Ardent Electromancer",
+      "primitive_ids": [
+        "MANA_RAMP_CREATURE_DORK"
+      ]
+    },
+    {
+      "oracle_id": "be2a4bc4-8af6-48c5-9421-32d26272e71a",
+      "name": "Arguel's Blood Fast // Temple of Aclazotz",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "c5acf2a5-40f4-433d-a74d-1cb56c521464",
+      "name": "Arid Mesa",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "64de050c-7167-4ebd-8584-f064d8be3302",
+      "name": "Armor of Shadows",
+      "primitive_ids": [
+        "COUNTERSPELL_PROTECTION"
+      ]
+    },
+    {
+      "oracle_id": "31fc5d8b-94bc-4688-8a84-f15800e717a8",
+      "name": "Ashling, Rekindled // Ashling, Rimebound",
+      "primitive_ids": [
+        "MANA_RAMP_CREATURE_DORK"
+      ]
+    },
+    {
+      "oracle_id": "1c2ce0d0-8c3e-48e8-b1fd-54658bdb9af9",
+      "name": "Asphyxiate",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "76da2150-34b9-4483-99df-131e1c5468d5",
+      "name": "Assassin's Blade",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "1ad6339d-6206-49bf-bf97-05e6d3bcaab7",
+      "name": "Assassin's Strike",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "ac10d218-f9a6-4058-9cda-a15ca1b0b7b5",
+      "name": "Assassin's Trophy",
+      "primitive_ids": [
+        "TARGETED_REMOVAL_CREATURE"
+      ]
+    },
+    {
+      "oracle_id": "b337c241-f2c4-48e3-a303-371b172fcd18",
+      "name": "Attune with Aether",
+      "primitive_ids": [
+        "TUTOR_ANY_TO_HAND"
+      ]
+    },
+    {
+      "oracle_id": "511d3de9-076b-4811-bddf-00623f98993f",
+      "name": "Auroral Procession",
+      "primitive_ids": [
+        "RECURSION_TO_HAND"
+      ]
+    },
+    {
+      "oracle_id": "c152f829-0452-407b-8020-023bf3d75c74",
+      "name": "Aven Warcraft",
+      "primitive_ids": [
+        "COUNTERSPELL_PROTECTION"
+      ]
+    },
+    {
+      "oracle_id": "c0cbb347-b060-43ce-a9c5-8c835be3cf1b",
+      "name": "Azor's Gateway // Sanctum of the Sun",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "d2075f58-b0e9-4e85-b7e6-0523a27a1d5b",
+      "name": "Bala Ged Recovery // Bala Ged Sanctuary",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "8b84fec5-617c-4088-8250-2ba1f1f9479a",
+      "name": "Balamb Garden, SeeD Academy // Balamb Garden, Airborne",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "d1ce7fcf-42f8-4b35-9ba1-55033c65c43e",
+      "name": "Barroom Brawl",
+      "primitive_ids": [
+        "STACK_COUNTERSPELL"
+      ]
+    },
+    {
+      "oracle_id": "18e7ba0d-88a5-466b-9228-d3f5aae8f83e",
+      "name": "Basal Sliver",
+      "primitive_ids": [
+        "MANA_RAMP_CREATURE_DORK"
+      ]
+    },
+    {
+      "oracle_id": "9da50130-3f83-4968-983c-7dcba257cf1b",
+      "name": "Basal Thrull",
+      "primitive_ids": [
+        "MANA_RAMP_CREATURE_DORK"
+      ]
+    },
+    {
+      "oracle_id": "8e862a8e-7954-43ad-9bc0-09ce7b9859f0",
+      "name": "Bathe in Light",
+      "primitive_ids": [
+        "COUNTERSPELL_PROTECTION"
+      ]
+    },
+    {
+      "oracle_id": "4b977117-741c-4157-8fcf-719e475a8a4c",
+      "name": "Battle Hymn",
+      "primitive_ids": [
+        "MANA_RITUAL_BURST"
+      ]
+    },
+    {
+      "oracle_id": "f1c303d8-6d77-4bc6-82d1-2a409a6f2cfd",
+      "name": "Belbe, Corrupted Observer",
+      "primitive_ids": [
+        "MANA_RAMP_CREATURE_DORK"
+      ]
+    },
+    {
+      "oracle_id": "b03de49d-246f-44e2-9487-9e4e43ec7be4",
+      "name": "Beyeen Veil // Beyeen Coast",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "667c5676-7a18-4fa9-b965-b26797538e23",
+      "name": "Birchlore Rangers",
+      "primitive_ids": [
+        "MANA_RAMP_CREATURE_DORK"
+      ]
+    },
+    {
+      "oracle_id": "fb81e4d3-1d8c-4779-be62-87cf49277e51",
+      "name": "Birgi, God of Storytelling // Harnfel, Horn of Bounty",
+      "primitive_ids": [
+        "MANA_RAMP_CREATURE_DORK"
+      ]
+    },
+    {
+      "oracle_id": "34320ebf-da97-44a4-bbeb-a9da06548289",
+      "name": "Blackbloom Rogue // Blackbloom Bog",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "351091cb-1263-4202-9447-021c6019cff1",
+      "name": "Blightsoil Druid",
+      "primitive_ids": [
+        "MANA_RAMP_CREATURE_DORK"
+      ]
+    },
+    {
+      "oracle_id": "e580a229-e800-4746-9d37-c32fcef8de28",
+      "name": "Blightstep Pathway // Searstep Pathway",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "695ce90b-a5a2-4d8c-ac05-07f04010603e",
+      "name": "Blood Celebrant",
+      "primitive_ids": [
+        "MANA_RAMP_CREATURE_DORK"
+      ]
+    },
+    {
+      "oracle_id": "c52fc8a1-43c6-41f8-b010-03be7c89ef1d",
+      "name": "Bloodsoaked Insight // Sanguine Morass",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "fc0707c7-d504-4ccf-a0d2-3eb6e26e7a57",
+      "name": "Bloodstained Mire",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "727f3201-1cfc-4ab2-9dfe-be4f7251f42f",
+      "name": "Boggart Trawler // Boggart Bog",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "c20a96f7-aa5a-4c15-b8b1-806685c99b27",
+      "name": "Bolt Bend",
+      "primitive_ids": [
+        "STACK_COUNTERSPELL"
+      ]
+    },
+    {
+      "oracle_id": "40ab2b22-9cf6-4a73-a05f-6ce496d10bf7",
+      "name": "Bonus Round",
+      "primitive_ids": [
+        "STACK_COUNTERSPELL"
+      ]
+    },
+    {
+      "oracle_id": "af1553eb-4f9f-4335-9078-56649bd8d8fc",
+      "name": "Brass's Tunnel-Grinder // Tecutlan, the Searing Rift",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "9d581188-ce80-494e-bd38-f411e1f4efb5",
+      "name": "Bridgeworks Battle // Tanglespan Bridgeworks",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "bd002797-a545-4bee-88bf-b878436e7cca",
+      "name": "Brokers Hideout",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "c61374e5-a7f6-455e-a40b-a481751b536b",
+      "name": "Bushwhack",
+      "primitive_ids": [
+        "TUTOR_ANY_TO_HAND"
+      ]
+    },
+    {
+      "oracle_id": "652bfa31-b2eb-4cba-850f-1db02a83bb35",
+      "name": "Call the Gatewatch",
+      "primitive_ids": [
+        "TUTOR_ANY_TO_HAND"
+      ]
+    },
+    {
+      "oracle_id": "3d177c04-9aa3-44b8-bbe4-df5de23a4ce6",
+      "name": "Chef's Kiss",
+      "primitive_ids": [
+        "STACK_COUNTERSPELL"
+      ]
+    },
+    {
+      "oracle_id": "88b18901-50cd-461c-b1bc-be900210be8e",
+      "name": "Conqueror's Galleon // Conqueror's Foothold",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "ae120613-97d6-4393-b39d-c3e6c076f5d6",
+      "name": "Deflecting Swat",
+      "primitive_ids": [
+        "STACK_COUNTERSPELL"
+      ]
+    },
+    {
+      "oracle_id": "2699005b-a471-429f-a9d8-fbf2077ee2fd",
+      "name": "Disciple of Freyalise // Garden of Freyalise",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "df34a6ad-ae1c-4470-8c9e-49815bba1973",
+      "name": "Dowsing Dagger // Lost Vale",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "2f4374f6-c695-4a5d-a6d6-0e41eaa587ca",
+      "name": "Dowsing Device // Geode Grotto",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "db19a27a-ee22-4931-ae3c-0ce21f456ea6",
+      "name": "Drowner of Truth // Drowned Jungle",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "8a922366-ee2a-4ddb-a904-683dcf4f191a",
+      "name": "Elven Cache",
+      "primitive_ids": [
+        "RECURSION_TO_HAND"
+      ]
+    },
+    {
+      "oracle_id": "6ec2a242-9068-4ee2-8ac8-8341cc570f56",
+      "name": "Emeria's Call // Emeria, Shattered Skyclave",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "a75445d3-1303-4bb5-89ad-26ea93fecd48",
+      "name": "Evolving Wilds",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "053a69d8-2b5e-4f14-8b02-ca405891dc4a",
+      "name": "Fell the Profane // Fell Mire",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "9043d8d5-b38a-406f-a44c-49f579c644f0",
+      "name": "Flood Plain",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "f3c7af78-a77d-4134-82a2-a5ce84285a84",
+      "name": "Flooded Strand",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "c178953c-3888-4edd-9d0c-265bd82b1d24",
+      "name": "Glasspool Mimic // Glasspool Shore",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "3a3e8c9b-e458-4661-980d-0a84a4c2452b",
+      "name": "Glasswing Grace // Age-Graced Chapel",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "58afb897-4d57-4b53-a5c3-b532cb3d5180",
+      "name": "Golden Guardian // Gold-Forge Garrison",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "522a4b02-24c7-45d2-9097-2803cc9fffad",
+      "name": "Grasping Shadows // Shadows' Lair",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "e80bd454-8bc5-4921-90cf-6ad28a27a88b",
+      "name": "Grasslands",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "ea9c459a-6047-43aa-968f-a582be4000e8",
+      "name": "Growing Rites of Itlimoc // Itlimoc, Cradle of the Sun",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "93b91d18-6acf-42e5-9a31-bc6e01f90c1f",
+      "name": "Hadana's Climb // Winged Temple of Orazca",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "37783ce6-af58-4ef6-8ab4-587079970307",
+      "name": "Hagra Mauling // Hagra Broodpit",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "e71ac446-02a4-4468-8d29-f28b21617665",
+      "name": "Havengul Laboratory // Havengul Mystery",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "1b99c32d-1d02-410e-84bf-9db2ca05f576",
+      "name": "Healing Technique",
+      "primitive_ids": [
+        "RECURSION_TO_HAND"
+      ]
+    },
+    {
+      "oracle_id": "59a82f57-fe2f-4834-a4ee-4b948eef1e12",
+      "name": "Horizon of Progress",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "573151f0-00d4-4a8a-8a09-745c5f376532",
+      "name": "Hydroelectric Specimen // Hydroelectric Laboratory",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "bd513d9d-5aa2-4860-bd86-8b5d9430f133",
+      "name": "Jidoor, Aristocratic Capital // Overture",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "7d6ccd0b-df16-40b2-930b-bcde0b6ef73f",
+      "name": "Journey to Eternity // Atzal, Cave of Eternity",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "941a4b14-ea2a-4bd0-8cc2-d609f80df32c",
+      "name": "Jwari Disruption // Jwari Ruins",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "0bb73c07-0220-4ba9-8d85-3c357c223833",
+      "name": "Kabira Takedown // Kabira Plateau",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "2ac1c95c-2a9d-40bc-9cad-9cadfa3f19f7",
+      "name": "Kazandu Mammoth // Kazandu Valley",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "f8410804-632b-4f18-9a73-6dccc7e4582d",
+      "name": "Kazuul's Fury // Kazuul's Cliffs",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "37a55560-6e32-4f54-b9a8-fd157aea6eb5",
+      "name": "Khalni Ambush // Khalni Territory",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "ad225ec2-ff3a-48f6-81a7-dfdd1b75e1f7",
+      "name": "Legion Leadership // Legion Stronghold",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "f7d8b91b-6541-4d3e-af51-7e000eac69c1",
+      "name": "Legion's Landing // Adanto, the First Fort",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "9464ddf2-4bcb-44f6-b945-89a132544de6",
+      "name": "Maestros Theater",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "342e08f9-d4d0-4408-8621-66e087058616",
+      "name": "Makindi Stampede // Makindi Mesas",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "a731e87b-8d99-4b64-8ee3-8e540d652366",
+      "name": "Malakir Rebirth // Malakir Mire",
+      "primitive_ids": [
+        "MANA_RAMP_LAND_SEARCH"
+      ]
+    },
+    {
+      "oracle_id": "f666c38d-e601-4aa9-b140-4b6607bb12dd",
+      "name": "Once and Future",
+      "primitive_ids": [
+        "RECURSION_TO_HAND"
+      ]
+    },
+    {
+      "oracle_id": "5b38fafb-3999-46dc-928b-1677625c1943",
+      "name": "Recollect",
+      "primitive_ids": [
+        "RECURSION_TO_HAND"
+      ]
+    }
+  ]
+}

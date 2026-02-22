@@ -1,5 +1,5 @@
 # ENGINE TASK INVENTORY V1
-Version: inventory_v1_22
+Version: inventory_v1_23
 
 ---------------------------------------------------------------------
 DOCUMENT GOVERNANCE RULES
@@ -216,6 +216,17 @@ SECTION 2 — PHASE 3: SUFFICIENCY ENGINE (SPEC-ALIGNED)
     - UNKNOWN_PRESENT short-circuit before baseline build/tuning
     - deterministic tune response envelope with baseline_summary_v1 + recommended_swaps_v1 + request_hash_v1
 
+2.18 Tag Coverage Audit + Tagging Pass V1
+[x] tag_coverage_audit_v1  (COMPLETE - implementation_plan_v1_21 reference)
+    - deterministic snapshot tag coverage audit CLI (card/tag counts, primitive distribution, missing slices, type buckets, DFC sanity)
+    - stable-order JSON report output with optional file export
+    - closed-world DB-only metrics (no network/runtime oracle parsing)
+
+[x] tag_import_v1_offline_pipeline  (COMPLETE - implementation_plan_v1_21 reference)
+    - deterministic offline tag import CLI using curated import pack entries (oracle_id + primitive_ids)
+    - patch-based compile integration via snapshot_build.tag_snapshot (primitive_add only)
+    - includes controlled next-pass import pack for untagged staples + DFC undercoverage
+
 ---------------------------------------------------------------------
 SECTION 3 — DATA PACKS REQUIRED
 ---------------------------------------------------------------------
@@ -302,6 +313,7 @@ SECTION 7 — EXECUTION ORDER
 14) primitive_bridge_explorer_v1
 15) guardrails_core_v1 (color_identity_constraints_v1 + bracket_gc_enforcement_v1 + candidate_pool_v1)
 16) deck_tune_engine_v1 (deck_tune_engine_v1 + deck_tune_endpoint_v1)
+17) tag_coverage_audit_v1 + tag_import_v1_offline_pipeline
 
 ---------------------------------------------------------------------
 
@@ -418,3 +430,8 @@ No deletions.
 - Marked Deck Tune Engine v1 complete (deck_tune_engine_v1 + /deck/tune_v1 endpoint), including deterministic bounded swap evaluation and Guardrails Core v1-constrained candidate selection.
 - Needed to provide deterministic local-only deck refinement recommendations without invoking deck completion behaviors.
 - Impacts inventory/plan/runtime governance traceability while preserving frozen schema contracts.
+
+## [inventory_v1_23] - 2026-02-22
+- Marked Tag Coverage Audit + Tagging Pass v1 complete, including deterministic snapshot tag coverage reporting and deterministic offline curated tag-import pass tooling.
+- Needed to measure tag coverage gaps, prioritize untagged staples/DFC coverage, and safely improve local compiled tags without runtime schema or oracle-text policy regressions.
+- Impacts inventory/plan/runtime governance traceability while preserving frozen schema contracts and closed-world runtime behavior.

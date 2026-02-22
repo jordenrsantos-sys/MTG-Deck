@@ -1,7 +1,7 @@
 ---------------------------------------------------------------------
 
 # ENGINE IMPLEMENTATION PLAN V1
-Version: implementation_plan_v1_20
+Version: implementation_plan_v1_21
 
 ---------------------------------------------------------------------
 DOCUMENT GOVERNANCE RULES
@@ -19,7 +19,7 @@ No silent edits allowed.
 ---------------------------------------------------------------------
 
 Governed by:
-- docs/ENGINE_TASK_INVENTORY_V1.md (inventory_v1_22)
+- docs/ENGINE_TASK_INVENTORY_V1.md (inventory_v1_23)
 - docs/SUFFICIENCY_SPEC_V1.md (sufficiency_spec_v1_16)
 
 Rule: Implement one step at a time. No step begins until prior step passes tests.
@@ -684,6 +684,43 @@ Implementation Notes (2026-02-21):
   - COLOR_IDENTITY_UNAVAILABLE
   - UNKNOWN_COLOR_IDENTITY
 
+STEP 18 — Tag Coverage Audit v1 + Offline Tag Import v1
+Goal:
+- Add deterministic, closed-world tag coverage auditing and a deterministic offline curated tag import pass that improves compiled tag coverage for a target snapshot.
+
+Acceptance:
+- New audit CLI emits stable-order JSON for a snapshot with required metrics: card/tag coverage, primitive distribution, top missing slices, type bucket coverage, and DFC tagged-vs-untagged sanity.
+- New offline tag import CLI consumes a curated import pack (oracle_id + primitive_ids), enforces deterministic normalization/ordering, and applies primitive_add patches through snapshot_build.tag_snapshot.
+- Runtime constraints unchanged: no runtime oracle-text parsing; no frozen schema changes (ui_contract_v1, structural_snapshot_v1, graph_v1).
+- Full unittest suite passes after implementation.
+
+Implementation Notes (2026-02-22):
+- files added:
+  - snapshot_build/tag_coverage_audit_v1.py
+  - snapshot_build/tag_import_v1.py
+  - api/engine/data/packs/tag_import_v1_next_pass_20260222.json
+  - tests/test_tag_coverage_audit_v1.py
+  - tests/test_tag_import_v1.py
+- files modified:
+  - docs/ENGINE_TASK_INVENTORY_V1.md
+  - docs/ENGINE_IMPLEMENTATION_PLAN_V1.md
+- tests added:
+  - tests/test_tag_coverage_audit_v1.py
+  - tests/test_tag_import_v1.py
+- pipeline_versions additions:
+  - none (offline tooling only; runtime /build schema/version contracts unchanged)
+- deterministic codes/behaviors introduced:
+  - audit VERSION: tag_coverage_audit_v1
+  - import VERSION: tag_import_v1
+  - deterministic patch planning: sorted (oracle_id, primitive_id), deduped rows, and invalid primitive filtering from local taxonomy pack
+- operator commands (deterministic, closed-world):
+  - before audit:
+    - python -B -m snapshot_build.tag_coverage_audit_v1 --snapshot_id <id> --db_path <db_path> --out <before.json>
+  - apply next-pass import + rebuild indices:
+    - python -B -m snapshot_build.tag_import_v1 --snapshot_id <id> --taxonomy_pack taxonomy/packs/taxonomy_v1_23 --import_pack api/engine/data/packs/tag_import_v1_next_pass_20260222.json --db_path <db_path> --build_indices
+  - after audit:
+    - python -B -m snapshot_build.tag_coverage_audit_v1 --snapshot_id <id> --db_path <db_path> --out <after.json>
+
 ---------------------------------------------------------------------
 1A) ARCHITECTURE HARDENING PASS COMPLETED (2026-02-20)
 ---------------------------------------------------------------------
@@ -913,3 +950,8 @@ No deletions.
 - Marked Step 17 (Deck Tune Engine v1) complete with new /deck/tune_v1 endpoint wiring, deterministic bounded cut/add swap evaluation, and Guardrails Core v1-constrained candidate sourcing.
 - Needed to provide deterministic local-only deck tuning recommendations while explicitly avoiding deck completion behavior and frozen schema modifications.
 - Impacts inventory/plan/runtime governance traceability while preserving frozen schema contracts.
+
+## [implementation_plan_v1_21] - 2026-02-22
+- Marked Step 18 (Tag Coverage Audit v1 + Offline Tag Import v1) complete with deterministic snapshot audit reporting and deterministic curated primitive-add import tooling.
+- Needed to quantify untagged coverage gaps and execute a safe closed-world next-pass tagging improvement path without changing runtime frozen contracts.
+- Impacts inventory/plan/runtime governance traceability while preserving frozen schema contracts and no-runtime-oracle parsing policy.
