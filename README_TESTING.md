@@ -22,6 +22,20 @@ source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 ```
 
+## Runtime dependencies
+
+Install runtime dependencies when running the API locally outside tests:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Run the API server with module invocation (do not use a local `uvicorn` file):
+
+```bash
+python -m uvicorn api.main:app --reload
+```
+
 ## 3) Run tests
 
 ```bash
