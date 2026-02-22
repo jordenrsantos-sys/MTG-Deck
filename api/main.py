@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import datetime
 from time import perf_counter
@@ -8,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from engine.db import DB_PATH as CARDS_DB_PATH, list_snapshots
+from engine.db import DB_PATH as CARDS_DB_PATH, connect as cards_db_connect, list_snapshots
 from api.engine.constants import (
     ENGINE_VERSION,
     RULESET_VERSION,
@@ -308,6 +309,139 @@ def snapshots(limit: int = 20):
     return {"snapshots": list_snapshots(limit=limit)}
 
 
+@app.get("/cards/suggest")
+def cards_suggest(q: str, snapshot_id: Optional[str] = None, limit: int = 20):
+    query = _coerce_nonempty_str(q).lower()
+    normalized_snapshot_id = _coerce_nonempty_str(snapshot_id)
+    safe_limit = min(max(_coerce_positive_int(limit, default=20), 1), 20)
+
+    if len(query) < 2:
+        return {
+            "query": query,
+            "snapshot_id": normalized_snapshot_id,
+            "limit": safe_limit,
+            "results": [],
+        }
+
+    if normalized_snapshot_id == "":
+        normalized_snapshot_id = _latest_snapshot_id()
+
+    if normalized_snapshot_id == "":
+        return {
+            "query": query,
+            "snapshot_id": "",
+            "limit": safe_limit,
+            "results": [],
+        }
+
+    def _to_result_row(row: Any) -> Dict[str, Any] | None:
+        if not isinstance(row, (dict,)):
+            try:
+                row_dict = dict(row)
+            except Exception:
+                return None
+        else:
+            row_dict = row
+
+        name = _coerce_nonempty_str(row_dict.get("name"))
+        oracle_id = _coerce_nonempty_str(row_dict.get("oracle_id"))
+        if name == "":
+            return None
+
+        mana_cost_raw = row_dict.get("mana_cost")
+        type_line_raw = row_dict.get("type_line")
+        image_uri = _extract_image_uri_from_card_row(row_dict)
+
+        return {
+            "oracle_id": oracle_id,
+            "name": name,
+            "mana_cost": mana_cost_raw if isinstance(mana_cost_raw, str) and mana_cost_raw != "" else None,
+            "type_line": type_line_raw if isinstance(type_line_raw, str) and type_line_raw != "" else None,
+            "image_uri": image_uri,
+        }
+
+    try:
+        with cards_db_connect() as con:
+            pragma_rows = con.execute("PRAGMA table_info(cards)").fetchall()
+            available_columns: set[str] = set()
+            for pragma_row in pragma_rows:
+                try:
+                    pragma_row_dict = dict(pragma_row)
+                except Exception:
+                    continue
+                col_name = pragma_row_dict.get("name")
+                if isinstance(col_name, str) and col_name != "":
+                    available_columns.add(col_name)
+
+            select_fields = ["oracle_id", "name", "mana_cost", "type_line"]
+            for optional_field in [
+                "image_uri",
+                "image_url",
+                "art_uri",
+                "art_url",
+                "image_uris_json",
+                "card_faces_json",
+            ]:
+                if optional_field in available_columns:
+                    select_fields.append(optional_field)
+
+            select_clause = ", ".join(select_fields)
+
+            prefix_rows = con.execute(
+                f"SELECT {select_clause} FROM cards "
+                "WHERE snapshot_id = ? AND LOWER(name) LIKE ? "
+                "ORDER BY name ASC LIMIT ?",
+                (normalized_snapshot_id, query + "%", safe_limit),
+            ).fetchall()
+
+            results: List[Dict[str, Any]] = []
+            dedupe_keys: set[str] = set()
+
+            def _append_rows(rows: Any) -> None:
+                for row in rows:
+                    result_row = _to_result_row(row)
+                    if result_row is None:
+                        continue
+                    oracle_id_key = result_row.get("oracle_id")
+                    if isinstance(oracle_id_key, str) and oracle_id_key != "":
+                        dedupe_key = f"oracle:{oracle_id_key}"
+                    else:
+                        dedupe_key = f"name:{str(result_row.get('name') or '').lower()}"
+                    if dedupe_key in dedupe_keys:
+                        continue
+                    dedupe_keys.add(dedupe_key)
+                    results.append(result_row)
+                    if len(results) >= safe_limit:
+                        return
+
+            _append_rows(prefix_rows)
+
+            if len(results) < safe_limit:
+                remaining = safe_limit - len(results)
+                contains_rows = con.execute(
+                    f"SELECT {select_clause} FROM cards "
+                    "WHERE snapshot_id = ? AND LOWER(name) LIKE ? AND LOWER(name) NOT LIKE ? "
+                    "ORDER BY name ASC LIMIT ?",
+                    (normalized_snapshot_id, "%" + query + "%", query + "%", remaining),
+                ).fetchall()
+                _append_rows(contains_rows)
+
+    except Exception:
+        return {
+            "query": query,
+            "snapshot_id": normalized_snapshot_id,
+            "limit": safe_limit,
+            "results": [],
+        }
+
+    return {
+        "query": query,
+        "snapshot_id": normalized_snapshot_id,
+        "limit": safe_limit,
+        "results": results,
+    }
+
+
 @app.post("/build", response_model=BuildResponse)
 def build(req: BuildRequest):
     canonical_request = build_canonical_deck_input_v1(
@@ -381,6 +515,65 @@ def _coerce_nonnegative_float(value: Any, *, default: float = 0.0) -> float:
 
 def _round6(value: float) -> float:
     return float(f"{float(value):.6f}")
+
+
+def _parse_json_object(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str):
+        return {}
+    try:
+        parsed = json.loads(value)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _parse_json_list(value: Any) -> List[Any]:
+    if isinstance(value, list):
+        return value
+    if not isinstance(value, str):
+        return []
+    try:
+        parsed = json.loads(value)
+    except Exception:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _latest_snapshot_id() -> str:
+    snapshots_payload = list_snapshots(limit=1)
+    if not isinstance(snapshots_payload, list) or len(snapshots_payload) == 0:
+        return ""
+    first_row = snapshots_payload[0]
+    if not isinstance(first_row, dict):
+        return ""
+    return _coerce_nonempty_str(first_row.get("snapshot_id"))
+
+
+def _extract_image_uri_from_card_row(card_row: Dict[str, Any]) -> str | None:
+    for direct_key in ["image_uri", "image_url", "art_uri", "art_url"]:
+        value = card_row.get(direct_key)
+        if isinstance(value, str) and value.strip() != "":
+            return value.strip()
+
+    image_uris = _parse_json_object(card_row.get("image_uris_json"))
+    for image_key in ["normal", "large", "png", "art_crop", "small"]:
+        value = image_uris.get(image_key)
+        if isinstance(value, str) and value.strip() != "":
+            return value.strip()
+
+    card_faces = _parse_json_list(card_row.get("card_faces_json"))
+    for face in card_faces:
+        if not isinstance(face, dict):
+            continue
+        face_image_uris = face.get("image_uris") if isinstance(face.get("image_uris"), dict) else {}
+        for image_key in ["normal", "large", "png", "art_crop", "small"]:
+            value = face_image_uris.get(image_key)
+            if isinstance(value, str) and value.strip() != "":
+                return value.strip()
+
+    return None
 
 
 def _build_commander_decklist_text_v1(*, commander: str, cards: List[str]) -> str:
