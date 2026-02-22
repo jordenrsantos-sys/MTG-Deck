@@ -1,0 +1,23 @@
+{
+  "version": "stress_operator_policy_v1",
+  "precedence": [
+    "BOARD_WIPE",
+    "GRAVEYARD_HATE_WINDOW",
+    "STAX_TAX",
+    "TARGETED_REMOVAL",
+    "WHEEL",
+    "HAND_DISRUPTION",
+    "COMBAT_PRESSURE"
+  ],
+  "tie_break": "op_name_then_json",
+  "default_by_turn": {
+    "TARGETED_REMOVAL": 4,
+    "HAND_DISRUPTION": 4,
+    "WHEEL": 5,
+    "COMBAT_PRESSURE": 3
+  },
+  "composition": {
+    "mode": "sequential",
+    "record_impacts": true
+  }
+}

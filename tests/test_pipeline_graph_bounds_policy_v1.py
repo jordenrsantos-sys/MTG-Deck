@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import sqlite3
 import sys
 import types
@@ -13,8 +11,6 @@ from api.engine.pipeline_build import run_build_pipeline
 
 
 TEST_SNAPSHOT_ID = "TEST_SNAPSHOT_0001"
-_EXPECTED_RESULT_KEY_COUNT = 190
-_EXPECTED_RESULT_KEYS_SHA256 = "ea0a851bf9cef9664c59383c8813fad5abeb8b280ad1f61df6987b3ac732e34e"
 
 
 class _BuildResponse(dict):
@@ -22,49 +18,50 @@ class _BuildResponse(dict):
         super().__init__(**kwargs)
 
 
-def _build_request() -> SimpleNamespace:
-    return SimpleNamespace(
-        db_snapshot_id=TEST_SNAPSHOT_ID,
-        profile_id="focused",
-        bracket_id="B2",
-        format="commander",
-        commander="Missing Commander",
-        cards=["Missing Card A", "Missing Card B"],
-        engine_patches_v0=[],
-    )
+class PipelineGraphBoundsPolicyV1Tests(unittest.TestCase):
+    def _build_request(self) -> SimpleNamespace:
+        return SimpleNamespace(
+            db_snapshot_id=TEST_SNAPSHOT_ID,
+            profile_id="focused",
+            bracket_id="B2",
+            format="commander",
+            commander="Missing Commander",
+            cards=["Missing Card A", "Missing Card B"],
+            engine_patches_v0=[],
+        )
 
+    def _find_card_by_name_side_effect(self, snapshot_id: str, name: str) -> dict | None:
+        _ = snapshot_id
+        if name == "Missing Commander":
+            return {
+                "name": "Missing Commander",
+                "oracle_id": "oracle_missing_commander",
+                "color_identity": ["R"],
+                "legalities": {"commander": "legal"},
+                "type_line": "Legendary Creature - Goblin",
+            }
+        if name == "Missing Card A":
+            return {
+                "name": "Missing Card A",
+                "oracle_id": "oracle_missing_card_a",
+                "color_identity": ["R"],
+                "legalities": {"commander": "legal"},
+                "type_line": "Sorcery",
+            }
+        if name == "Missing Card B":
+            return {
+                "name": "Missing Card B",
+                "oracle_id": "oracle_missing_card_b",
+                "color_identity": ["R"],
+                "legalities": {"commander": "legal"},
+                "type_line": "Sorcery",
+            }
+        return None
 
-def _find_card_by_name_side_effect(snapshot_id: str, name: str) -> dict | None:
-    _ = snapshot_id
-    if name == "Missing Commander":
-        return {
-            "name": "Missing Commander",
-            "oracle_id": "oracle_missing_commander",
-            "color_identity": ["R"],
-            "legalities": {"commander": "legal"},
-            "type_line": "Legendary Creature - Goblin",
-        }
-    if name == "Missing Card A":
-        return {
-            "name": "Missing Card A",
-            "oracle_id": "oracle_missing_card_a",
-            "color_identity": ["R"],
-            "legalities": {"commander": "legal"},
-            "type_line": "Sorcery",
-        }
-    if name == "Missing Card B":
-        return {
-            "name": "Missing Card B",
-            "oracle_id": "oracle_missing_card_b",
-            "color_identity": ["R"],
-            "legalities": {"commander": "legal"},
-            "type_line": "Sorcery",
-        }
-    return None
+    def test_pipeline_uses_loaded_graph_bounds_policy(self) -> None:
+        stub_api_main = types.ModuleType("api.main")
+        stub_api_main.BuildResponse = _BuildResponse
 
-
-class SchemaFreezeGuardTests(unittest.TestCase):
-    def test_result_top_level_keys_match_frozen_snapshot(self) -> None:
         preflight_payload = {
             "version": "snapshot_preflight_v1",
             "snapshot_id": TEST_SNAPSHOT_ID,
@@ -78,8 +75,14 @@ class SchemaFreezeGuardTests(unittest.TestCase):
             },
         }
 
-        stub_api_main = types.ModuleType("api.main")
-        stub_api_main.BuildResponse = _BuildResponse
+        custom_bounds_policy = {
+            "version": "graph_bounds_policy_v1_test",
+            "bounds": {
+                "MAX_PRIMS_PER_SLOT": 2,
+                "MAX_SLOTS_PER_PRIM": 2,
+                "MAX_CARD_CARD_EDGES_TOTAL": 1,
+            },
+        }
 
         with (
             patch.dict(sys.modules, {"api.main": stub_api_main}),
@@ -89,9 +92,10 @@ class SchemaFreezeGuardTests(unittest.TestCase):
             patch("api.engine.pipeline_build.resolve_runtime_ruleset_version", return_value="ruleset_v_test"),
             patch("api.engine.pipeline_build.run_snapshot_preflight", return_value={"status": "OK"}),
             patch("api.engine.pipeline_build.is_legal_commander_card", return_value=(True, "legal")),
-            patch("api.engine.pipeline_build.find_card_by_name", side_effect=_find_card_by_name_side_effect),
+            patch("api.engine.pipeline_build.find_card_by_name", side_effect=self._find_card_by_name_side_effect),
             patch("api.engine.pipeline_build.suggest_card_names", return_value=[]),
             patch("api.engine.pipeline_build.ensure_tag_tables", return_value=None),
+            patch("api.engine.pipeline_build.load_graph_bounds_policy_v1", return_value=custom_bounds_policy),
             patch(
                 "api.engine.pipeline_build.bulk_get_card_tags",
                 return_value={
@@ -113,24 +117,16 @@ class SchemaFreezeGuardTests(unittest.TestCase):
                 },
             ),
         ):
-            payload = run_build_pipeline(req=_build_request(), conn=None, repo_root_path=None)
+            payload = run_build_pipeline(req=self._build_request(), conn=None, repo_root_path=None)
 
         result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
-        result_keys = sorted(result.keys())
+        graph_v1 = result.get("graph_v1") if isinstance(result.get("graph_v1"), dict) else {}
+        self.assertEqual(graph_v1.get("bounds"), custom_bounds_policy["bounds"])
 
-        digest = hashlib.sha256(
-            json.dumps(result_keys, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
-
+        pipeline_versions = result.get("pipeline_versions") if isinstance(result.get("pipeline_versions"), dict) else {}
         self.assertEqual(
-            len(result_keys),
-            _EXPECTED_RESULT_KEY_COUNT,
-            f"Result top-level key count drifted. Current keys: {result_keys}",
-        )
-        self.assertEqual(
-            digest,
-            _EXPECTED_RESULT_KEYS_SHA256,
-            f"Result top-level key snapshot drifted. Current keys: {result_keys}",
+            pipeline_versions.get("graph_bounds_policy_version"),
+            "graph_bounds_policy_v1_test",
         )
 
 

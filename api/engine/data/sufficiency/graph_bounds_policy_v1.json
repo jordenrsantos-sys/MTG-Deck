@@ -1,0 +1,8 @@
+{
+  "version": "graph_bounds_policy_v1",
+  "bounds": {
+    "MAX_PRIMS_PER_SLOT": 24,
+    "MAX_SLOTS_PER_PRIM": 80,
+    "MAX_CARD_CARD_EDGES_TOTAL": 5000
+  }
+}

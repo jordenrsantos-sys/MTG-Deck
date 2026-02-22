@@ -236,6 +236,8 @@ SECTION 3 — DATA PACKS REQUIRED
 [x] weight_rules_v1.json  (COMPLETE - implementation_plan_v1_8 reference)
 [x] bucket_substitutions_v1.json  (COMPLETE - implementation_plan_v1_7 reference)
 [x] stress_models_v1.json  (COMPLETE - implementation_plan_v1_11 reference)
+[x] stress_operator_policy_v1.json  (COMPLETE - implementation_plan_v1_24 reference)
+[x] graph_bounds_policy_v1.json  (COMPLETE - implementation_plan_v1_24 reference)
 [x] profile_thresholds_v1.json  (COMPLETE - implementation_plan_v1_15 reference)
 [x] commander_spellbook_variants_v1.json  (COMPLETE - implementation_plan_v1_16 reference)
 [x] two_card_combos_v2.json  (COMPLETE - implementation_plan_v1_16 reference)

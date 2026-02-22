@@ -18,8 +18,10 @@ from engine.game_changers import detect_game_changers, bracket_floor_from_count
 from api.engine.constants import *
 from api.engine.bucket_substitutions_v1 import load_bucket_substitutions_v1
 from api.engine.dependency_signatures_v1 import load_dependency_signatures_v1
+from api.engine.graph_bounds_policy_v1 import load_graph_bounds_policy_v1
 from api.engine.mulligan_assumptions_v1 import load_mulligan_assumptions_v1
 from api.engine.stress_models_v1 import load_stress_models_v1
+from api.engine.stress_operator_policy_v1 import load_stress_operator_policy_v1
 from api.engine.weight_rules_v1 import load_weight_rules_v1
 from api.engine.profile_thresholds_v1 import resolve_profile_thresholds_v1
 from api.engine.combos.commander_spellbook_variants_v1 import SPELLBOOK_VARIANTS_V1_VERSION
@@ -33,9 +35,17 @@ from api.engine.layers.combo_skeleton_v0 import run_combo_skeleton_v0
 from api.engine.layers.counterfactual_stress_test_v1 import run_counterfactual_stress_test_v1
 from api.engine.layers.disruption_v1 import run_disruption_v1
 from api.engine.layers.disruption_surface_v1 import run_disruption_surface_v1
+from api.engine.layers.commander_dependency_v2 import (
+    COMMANDER_DEPENDENCY_V2_VERSION,
+    run_commander_dependency_v2,
+)
 from api.engine.layers.engine_coherence_v1 import (
     ENGINE_COHERENCE_V1_VERSION,
     run_engine_coherence_v1,
+)
+from api.engine.layers.engine_coherence_v2 import (
+    ENGINE_COHERENCE_V2_VERSION,
+    run_engine_coherence_v2,
 )
 from api.engine.layers.engine_requirement_detection_v1 import run_engine_requirement_detection_v1
 from api.engine.layers.graph_v1_schema_assert_v1 import (
@@ -68,6 +78,10 @@ from api.engine.layers.stress_model_definition_v1 import (
 from api.engine.layers.stress_transform_engine_v1 import (
     STRESS_TRANSFORM_ENGINE_V1_VERSION,
     run_stress_transform_engine_v1,
+)
+from api.engine.layers.stress_transform_engine_v2 import (
+    STRESS_TRANSFORM_ENGINE_V2_VERSION,
+    run_stress_transform_engine_v2,
 )
 from api.engine.layers.resilience_math_engine_v1 import (
     RESILIENCE_MATH_ENGINE_V1_VERSION,
@@ -1764,6 +1778,12 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             stress_model_request_override_id = getattr(req, "stress_model_id", None)
 
         stress_models_payload = load_stress_models_v1()
+        stress_operator_policy_v1_payload = load_stress_operator_policy_v1()
+        stress_operator_policy_version = (
+            stress_operator_policy_v1_payload.get("version")
+            if isinstance(stress_operator_policy_v1_payload, dict)
+            else "stress_operator_policy_v1"
+        )
         stress_model_definition_v1 = run_stress_model_definition_v1(
             format=req.format,
             bracket_id=req.bracket_id if isinstance(req.bracket_id, str) else "",
@@ -1776,6 +1796,13 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             probability_checkpoint_layer_v1_payload=probability_checkpoint_layer_v1,
             stress_model_definition_v1_payload=stress_model_definition_v1,
             probability_math_core_v1_payload=probability_math_core_v1,
+        )
+        stress_transform_engine_v2 = run_stress_transform_engine_v2(
+            substitution_engine_v1_payload=substitution_engine_v1,
+            probability_checkpoint_layer_v1_payload=probability_checkpoint_layer_v1,
+            stress_model_definition_v1_payload=stress_model_definition_v1,
+            probability_math_core_v1_payload=probability_math_core_v1,
+            stress_operator_policy_v1_payload=stress_operator_policy_v1_payload,
         )
         resilience_math_engine_v1 = run_resilience_math_engine_v1(
             probability_checkpoint_layer_v1_payload=probability_checkpoint_layer_v1,
@@ -1932,11 +1959,33 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             basic_land_slot_ids=basic_land_slot_ids,
         )
 
-        graph_expand_bounds_v1 = {
-            "MAX_PRIMS_PER_SLOT": int(GRAPH_EXPAND_V1_MAX_PRIMS_PER_SLOT),
-            "MAX_SLOTS_PER_PRIM": int(GRAPH_EXPAND_V1_MAX_SLOTS_PER_PRIM),
-            "MAX_CARD_CARD_EDGES_TOTAL": int(GRAPH_EXPAND_V1_MAX_CARD_CARD_EDGES_TOTAL),
-        }
+        commander_dependency_v2 = run_commander_dependency_v2(
+            engine_requirement_detection_v1_payload=engine_requirement_detection_v1,
+            structural_snapshot_v1_payload=structural_snapshot_v1,
+            engine_coherence_v1_payload=engine_coherence_v1,
+        )
+        engine_coherence_v2 = run_engine_coherence_v2(
+            primitive_index_by_slot=primitive_index_by_slot,
+            deck_slot_ids_playable=list(deck_cards_slot_ids_playable),
+            structural_snapshot_v1_payload=structural_snapshot_v1,
+        )
+
+        graph_bounds_policy_v1_payload = load_graph_bounds_policy_v1()
+        graph_bounds_policy_version = (
+            graph_bounds_policy_v1_payload.get("version")
+            if isinstance(graph_bounds_policy_v1_payload, dict)
+            else "graph_bounds_policy_v1"
+        )
+
+        graph_expand_bounds_v1 = (
+            graph_bounds_policy_v1_payload.get("bounds")
+            if isinstance(graph_bounds_policy_v1_payload.get("bounds"), dict)
+            else {
+                "MAX_PRIMS_PER_SLOT": int(GRAPH_EXPAND_V1_MAX_PRIMS_PER_SLOT),
+                "MAX_SLOTS_PER_PRIM": int(GRAPH_EXPAND_V1_MAX_SLOTS_PER_PRIM),
+                "MAX_CARD_CARD_EDGES_TOTAL": int(GRAPH_EXPAND_V1_MAX_CARD_CARD_EDGES_TOTAL),
+            }
+        )
         graph_expand_bipartite_v1 = build_bipartite_graph_v1(
             deck_slot_ids=list(deck_cards_slot_ids_playable),
             primitive_index_by_slot=primitive_index_by_slot,
@@ -2692,6 +2741,8 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "primitive_index_version": PRIMITIVE_INDEX_VERSION,
             "dependency_signatures_version": dependency_signatures_version,
             "engine_coherence_version": ENGINE_COHERENCE_V1_VERSION,
+            "engine_coherence_v2_version": ENGINE_COHERENCE_V2_VERSION,
+            "commander_dependency_v2_version": COMMANDER_DEPENDENCY_V2_VERSION,
             "mulligan_model_version": MULLIGAN_MODEL_V1_VERSION,
             "substitution_rules_version": substitution_rules_version,
             "substitution_engine_version": SUBSTITUTION_ENGINE_V1_VERSION,
@@ -2701,9 +2752,12 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "probability_checkpoint_version": PROBABILITY_CHECKPOINT_LAYER_V1_VERSION,
             "stress_model_version": STRESS_MODEL_DEFINITION_V1_VERSION,
             "stress_transform_version": STRESS_TRANSFORM_ENGINE_V1_VERSION,
+            "stress_transform_v2_version": STRESS_TRANSFORM_ENGINE_V2_VERSION,
+            "stress_operator_policy_version": stress_operator_policy_version,
             "resilience_model_version": RESILIENCE_MATH_ENGINE_V1_VERSION,
             "resilience_math_engine_version": RESILIENCE_MATH_ENGINE_V1_VERSION,
             "commander_reliability_model_version": COMMANDER_RELIABILITY_MODEL_V1_VERSION,
+            "graph_bounds_policy_version": graph_bounds_policy_version,
             "profile_thresholds_version": profile_thresholds_version,
             "calibration_snapshot_version": calibration_snapshot_version,
             "sufficiency_summary_version": SUFFICIENCY_SUMMARY_V1_VERSION,
@@ -3010,6 +3064,8 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "vulnerability_index_v1": vulnerability_index_v1,
                 "engine_requirement_detection_v1": engine_requirement_detection_v1,
                 "engine_coherence_v1": engine_coherence_v1,
+                "engine_coherence_v2": engine_coherence_v2,
+                "commander_dependency_v2": commander_dependency_v2,
                 "mulligan_model_v1": mulligan_model_v1,
                 "substitution_engine_v1": substitution_engine_v1,
                 "weight_multiplier_engine_v1": weight_multiplier_engine_v1,
@@ -3017,6 +3073,8 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "probability_checkpoint_layer_v1": probability_checkpoint_layer_v1,
                 "stress_model_definition_v1": stress_model_definition_v1,
                 "stress_transform_engine_v1": stress_transform_engine_v1,
+                "stress_transform_engine_v2": stress_transform_engine_v2,
+                "stress_operator_policy_v1": stress_operator_policy_v1_payload,
                 "resilience_math_engine_v1": resilience_math_engine_v1,
                 "commander_reliability_model_v1": commander_reliability_model_v1,
                 "sufficiency_summary_v1": sufficiency_summary_v1,
