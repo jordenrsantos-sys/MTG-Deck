@@ -94,6 +94,40 @@ UI MUST gate panels using available_panels_v1.
 
 ---
 
+# 2A. V2 outputs (optional panels)
+
+The following additive v2 payloads may appear under `result`.
+UI must render them only when present and MUST NOT remove or reinterpret v1 fields.
+
+Exact JSON paths:
+
+- `result.commander_dependency_v2`
+  - `result.commander_dependency_v2.version`
+  - `result.pipeline_versions.commander_dependency_v2_version`
+- `result.engine_coherence_v2`
+  - `result.engine_coherence_v2.version`
+  - `result.pipeline_versions.engine_coherence_v2_version`
+- `result.stress_transform_engine_v2`
+  - `result.stress_transform_engine_v2.version`
+  - `result.stress_transform_engine_v2.policy_version`
+  - `result.pipeline_versions.stress_transform_v2_version`
+  - `operators_applied_ordered` (UI rendering term) sourced from ordered engine list:
+    - `result.stress_transform_engine_v2.operators_applied`
+
+Graph bounds version and clamp indicators:
+
+- `result.pipeline_versions.graph_bounds_policy_version`
+- `result.graph_v1.bounds.MAX_PRIMS_PER_SLOT`
+- `result.graph_v1.bounds.MAX_SLOTS_PER_PRIM`
+- `result.graph_v1.bounds.MAX_CARD_CARD_EDGES_TOTAL`
+- `result.graph_v1.stats.caps_hit.max_prims_per_slot`
+- `result.graph_v1.stats.caps_hit.max_slots_per_prim`
+- `result.graph_v1.stats.caps_hit.max_edges_total`
+
+If dedicated v2 panel flags are absent in `available_panels_v1`, UI may gate these optional panels by payload presence (`result.<panel_key>` exists and is an object).
+
+---
+
 # 3. CanonicalSlotV1
 
 {

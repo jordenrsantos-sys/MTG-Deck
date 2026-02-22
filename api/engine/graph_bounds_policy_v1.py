@@ -5,6 +5,13 @@ from pathlib import Path
 from typing import Any, Dict
 
 
+_GRAPH_BOUNDS_SPEC_FILE = (
+    Path(__file__).resolve().parent
+    / "data"
+    / "graph"
+    / "graph_bounds_spec_v1.json"
+)
+
 _GRAPH_BOUNDS_POLICY_FILE = (
     Path(__file__).resolve().parent
     / "data"
@@ -40,16 +47,25 @@ def _require_nonnegative_int(value: Any, *, field_path: str) -> int:
     return int(value)
 
 
-def load_graph_bounds_policy_v1() -> Dict[str, Any]:
-    if not _GRAPH_BOUNDS_POLICY_FILE.is_file():
-        raise _runtime_error("GRAPH_BOUNDS_POLICY_V1_MISSING", str(_GRAPH_BOUNDS_POLICY_FILE))
+def _resolve_graph_bounds_spec_file() -> Path | None:
+    candidates = (_GRAPH_BOUNDS_SPEC_FILE, _GRAPH_BOUNDS_POLICY_FILE)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def load_graph_bounds_spec_v1() -> Dict[str, Any]:
+    spec_file = _resolve_graph_bounds_spec_file()
+    if spec_file is None:
+        raise _runtime_error("GRAPH_BOUNDS_POLICY_V1_MISSING", str(_GRAPH_BOUNDS_SPEC_FILE))
 
     try:
-        parsed = json.loads(_GRAPH_BOUNDS_POLICY_FILE.read_text(encoding="utf-8"))
+        parsed = json.loads(spec_file.read_text(encoding="utf-8"))
     except Exception as exc:
         raise _runtime_error(
             "GRAPH_BOUNDS_POLICY_V1_INVALID_JSON",
-            str(_GRAPH_BOUNDS_POLICY_FILE),
+            str(spec_file),
         ) from exc
 
     if not isinstance(parsed, dict):
@@ -85,3 +101,7 @@ def load_graph_bounds_policy_v1() -> Dict[str, Any]:
         "version": version,
         "bounds": normalized_bounds,
     }
+
+
+def load_graph_bounds_policy_v1() -> Dict[str, Any]:
+    return load_graph_bounds_spec_v1()
