@@ -24,6 +24,9 @@ from api.engine.weight_rules_v1 import load_weight_rules_v1
 from api.engine.profile_thresholds_v1 import resolve_profile_thresholds_v1
 from api.engine.combos.commander_spellbook_variants_v1 import SPELLBOOK_VARIANTS_V1_VERSION
 from api.engine.combos.two_card_combos_v2 import TWO_CARD_COMBOS_V2_VERSION
+from api.engine.bracket_gc_enforcement_v1 import VERSION as BRACKET_GC_ENFORCEMENT_V1_VERSION
+from api.engine.candidate_pool_v1 import VERSION as CANDIDATE_POOL_V1_VERSION
+from api.engine.color_identity_constraints_v1 import VERSION as COLOR_IDENTITY_CONSTRAINTS_V1_VERSION
 from api.engine.layers.canonical_v1 import run_canonical_v1
 from api.engine.layers.combo_candidate_v0 import run_combo_candidate_v0
 from api.engine.layers.combo_skeleton_v0 import run_combo_skeleton_v0
@@ -107,6 +110,13 @@ from api.engine.unknowns import add_unknown, sort_unknowns
 from api.engine.utils import stable_json_dumps, sha256_hex, strip_hash_fields
 from api.engine.validate_invariants_v1 import validate_invariants_v1
 from api.engine.version_resolve_v1 import resolve_runtime_ruleset_version, resolve_runtime_taxonomy_version
+
+
+_GUARDRAILS_CORE_V1_IMPORTS = (
+    COLOR_IDENTITY_CONSTRAINTS_V1_VERSION,
+    BRACKET_GC_ENFORCEMENT_V1_VERSION,
+    CANDIDATE_POOL_V1_VERSION,
+)
 
 
 def is_singleton_exempt(card_name: str, resolved: dict | None) -> bool:

@@ -119,6 +119,88 @@ class DecklistResolveV1Tests(unittest.TestCase):
             },
         )
 
+    def test_resolve_dfc_face_and_combined_variants(self) -> None:
+        parsed = parse_decklist_text(
+            """
+1 Bala Ged Recovery
+1 Bala Ged Recovery // Bala Ged Sanctuary
+1 bala ged recovery//bala ged sanctuary
+1 Bala Ged Recovery / Bala Ged Sanctuary
+"""
+        )
+
+        payload = resolve_parsed_decklist(parsed, DECKLIST_FIXTURE_SNAPSHOT_ID)
+
+        self.assertEqual(payload.get("status"), "OK")
+        self.assertEqual(payload.get("unknowns"), [])
+        self.assertEqual(
+            payload.get("resolved_cards"),
+            [
+                {
+                    "oracle_id": "ORA_DFC_001",
+                    "name": "Bala Ged Recovery // Bala Ged Sanctuary",
+                    "count": 1,
+                    "source_line_no": 2,
+                },
+                {
+                    "oracle_id": "ORA_DFC_001",
+                    "name": "Bala Ged Recovery // Bala Ged Sanctuary",
+                    "count": 1,
+                    "source_line_no": 3,
+                },
+                {
+                    "oracle_id": "ORA_DFC_001",
+                    "name": "Bala Ged Recovery // Bala Ged Sanctuary",
+                    "count": 1,
+                    "source_line_no": 4,
+                },
+                {
+                    "oracle_id": "ORA_DFC_001",
+                    "name": "Bala Ged Recovery // Bala Ged Sanctuary",
+                    "count": 1,
+                    "source_line_no": 5,
+                },
+            ],
+        )
+
+    def test_resolve_dfc_face_ambiguous_with_stable_candidate_order(self) -> None:
+        parsed = parse_decklist_text(
+            """
+1 Mirror Front
+"""
+        )
+
+        first = resolve_parsed_decklist(parsed, DECKLIST_FIXTURE_SNAPSHOT_ID)
+        second = resolve_parsed_decklist(parsed, DECKLIST_FIXTURE_SNAPSHOT_ID)
+
+        self.assertEqual(first, second)
+        self.assertEqual(first.get("status"), "UNKNOWN_PRESENT")
+        self.assertEqual(first.get("resolved_cards"), [])
+
+        unknowns = first.get("unknowns") if isinstance(first.get("unknowns"), list) else []
+        self.assertEqual(
+            unknowns,
+            [
+                {
+                    "name_raw": "Mirror Front",
+                    "name_norm": "mirror front",
+                    "count": 1,
+                    "line_no": 2,
+                    "reason_code": "CARD_NAME_AMBIGUOUS",
+                    "candidates": [
+                        {
+                            "oracle_id": "ORA_DFC_AMB_001",
+                            "name": "Mirror Front // Mirror Back",
+                        },
+                        {
+                            "oracle_id": "ORA_DFC_AMB_002",
+                            "name": "Mirror Front // Mirror Lake",
+                        },
+                    ],
+                }
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

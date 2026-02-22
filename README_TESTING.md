@@ -30,4 +30,4 @@ python -m pytest -q
 
 ## Why versions are pinned
 
-Pinning exact test tool versions (`pytest`, `pytest-cov`) keeps local and CI behavior aligned and reduces non-deterministic failures caused by upstream toolchain changes.
+Pinning exact test tool versions (`pytest`, `pytest-cov`) keeps local and CI behavior aligned and reduces non-deterministic failures caused by upstream toolchain changes. The dev requirements also include `httpx`, which is required by `fastapi.testclient` so endpoint integration tests run locally instead of being skipped.

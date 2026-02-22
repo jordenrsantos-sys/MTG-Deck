@@ -1,9 +1,11 @@
 import os
 from datetime import datetime
+from time import perf_counter
 from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from engine.db import DB_PATH as CARDS_DB_PATH, list_snapshots
@@ -19,7 +21,12 @@ from api.engine.decklist_ingest_v1 import (
     compute_request_hash_v1,
     ingest_decklist,
 )
+from api.engine.deck_complete_engine_v1 import (
+    VERSION as DECK_COMPLETE_ENGINE_V1_VERSION,
+    run_deck_complete_engine_v1,
+)
 from api.engine.deck_completion_v0 import generate_deck_completion_v0
+from api.engine.deck_tune_engine_v1 import VERSION as DECK_TUNE_ENGINE_V1_VERSION, run_deck_tune_engine_v1
 from api.engine.pipeline_build import run_build_pipeline
 from api.engine.run_history_v0 import diff_runs_v0, get_run_v0, list_runs_v0, save_run_v0
 from api.engine.run_bundle_v0 import build_run_bundle_v0
@@ -147,6 +154,95 @@ class DeckValidateResponse(BaseModel):
     ingest_version: str
 
 
+class DeckTuneSwapDeltaSummaryV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_score_delta_v1: float
+    coherence_delta_v1: float
+    primitive_coverage_delta_v1: int
+    gc_compliance_preserved_v1: bool
+
+
+class DeckTuneSwapV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cut_name: str
+    add_name: str
+    reasons_v1: List[str] = Field(default_factory=list)
+    delta_summary_v1: DeckTuneSwapDeltaSummaryV1
+
+
+class DeckTuneRequest(BaseModel):
+    db_snapshot_id: str = Field(..., description="Required snapshot ID")
+    raw_decklist_text: str = Field(..., description="Raw decklist text")
+    format: str = "commander"
+    profile_id: str = Field(..., description="Profile ID")
+    bracket_id: str = Field(..., description="Bracket definition ID")
+    mulligan_model_id: str = Field(..., description="Mulligan model ID")
+    commander: Optional[str] = None
+    name_overrides_v1: List[DeckValidateNameOverrideV1] = Field(default_factory=list)
+    max_swaps: int = 5
+    engine_patches_v0: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class DeckTuneResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    db_snapshot_id: str
+    format: str
+    baseline_summary_v1: Dict[str, Any]
+    recommended_swaps_v1: List[DeckTuneSwapV1]
+    request_hash_v1: str
+    unknowns: List[DecklistUnknownV1]
+    violations_v1: List[DeckValidateViolationV1]
+    parse_version: str
+    resolve_version: str
+    ingest_version: str
+    tune_engine_version: str
+
+
+class DeckCompleteAddedCardV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    reasons_v1: List[str] = Field(default_factory=list)
+    primitives_added_v1: List[str] = Field(default_factory=list)
+
+
+class DeckCompleteV1Request(BaseModel):
+    db_snapshot_id: str = Field(..., description="Required snapshot ID")
+    raw_decklist_text: str = Field(..., description="Raw decklist text")
+    format: str = "commander"
+    profile_id: str = Field(..., description="Profile ID")
+    bracket_id: str = Field(..., description="Bracket definition ID")
+    mulligan_model_id: str = Field(..., description="Mulligan model ID")
+    commander: Optional[str] = None
+    name_overrides_v1: List[DeckValidateNameOverrideV1] = Field(default_factory=list)
+    target_deck_size: int = 100
+    max_adds: int = 30
+    allow_basic_lands: bool = True
+    land_target_mode: str = "AUTO"
+
+
+class DeckCompleteV1Response(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    db_snapshot_id: str
+    format: str
+    baseline_summary_v1: Dict[str, Any]
+    added_cards_v1: List[DeckCompleteAddedCardV1]
+    completed_decklist_text_v1: str
+    request_hash_v1: str
+    unknowns: List[DecklistUnknownV1]
+    violations_v1: List[DeckValidateViolationV1]
+    parse_version: str
+    resolve_version: str
+    ingest_version: str
+    complete_engine_version: str
+
+
 class StrategyHypothesisRequest(BaseModel):
     anchor_cards: List[str] = Field(default_factory=list)
     commander: Optional[str] = None
@@ -252,6 +348,53 @@ def _coerce_nonempty_str(value: Any) -> str:
         if token != "":
             return token
     return ""
+
+
+def _clean_unique_strings_in_order(values: Any, *, limit: int = 0) -> List[str]:
+    if not isinstance(values, list):
+        return []
+    out: List[str] = []
+    seen: set[str] = set()
+    for value in values:
+        token = _coerce_nonempty_str(value)
+        if token == "" or token in seen:
+            continue
+        seen.add(token)
+        out.append(token)
+        if int(limit) > 0 and len(out) >= int(limit):
+            break
+    return out
+
+
+def _coerce_float(value: Any, *, default: float = 0.0) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return float(default)
+    return float(value)
+
+
+def _coerce_nonnegative_float(value: Any, *, default: float = 0.0) -> float:
+    numeric = _coerce_float(value, default=default)
+    if numeric < 0.0:
+        return float(default)
+    return float(numeric)
+
+
+def _round6(value: float) -> float:
+    return float(f"{float(value):.6f}")
+
+
+def _build_commander_decklist_text_v1(*, commander: str, cards: List[str]) -> str:
+    commander_clean = _coerce_nonempty_str(commander)
+    if commander_clean == "":
+        return ""
+
+    lines: List[str] = ["Commander", f"1 {commander_clean}", "Deck"]
+    for card_name in cards:
+        token = _coerce_nonempty_str(card_name)
+        if token == "":
+            continue
+        lines.append(f"1 {token}")
+    return "\n".join(lines)
 
 
 @app.post("/deck/validate", response_model=DeckValidateResponse)
@@ -374,6 +517,511 @@ def deck_validate(req: DeckValidateRequest):
         parse_version=ingest_payload.get("parse_version") if isinstance(ingest_payload.get("parse_version"), str) else "",
         resolve_version=ingest_payload.get("resolve_version") if isinstance(ingest_payload.get("resolve_version"), str) else "",
         ingest_version=ingest_payload.get("ingest_version") if isinstance(ingest_payload.get("ingest_version"), str) else "",
+    )
+
+
+@app.post("/deck/tune_v1", response_model=DeckTuneResponse)
+def deck_tune_v1(req: DeckTuneRequest):
+    dev_metrics_enabled = os.getenv("MTG_ENGINE_DEV_METRICS") == "1"
+    start_total_timer = perf_counter()
+
+    name_overrides_v1 = [
+        row.model_dump(mode="python")
+        for row in req.name_overrides_v1
+        if isinstance(row, DeckValidateNameOverrideV1)
+    ]
+
+    ingest_payload = ingest_decklist(
+        raw_text=req.raw_decklist_text,
+        db_snapshot_id=req.db_snapshot_id,
+        format=req.format,
+        commander_name_override=req.commander,
+        name_overrides_v1=name_overrides_v1,
+    )
+
+    canonical_from_ingest = (
+        ingest_payload.get("canonical_deck_input")
+        if isinstance(ingest_payload.get("canonical_deck_input"), dict)
+        else {}
+    )
+    canonical_commander = (
+        canonical_from_ingest.get("commander")
+        if isinstance(canonical_from_ingest.get("commander"), str)
+        else ""
+    )
+    canonical_cards = (
+        canonical_from_ingest.get("cards")
+        if isinstance(canonical_from_ingest.get("cards"), list)
+        else []
+    )
+    tune_engine_patches_v0 = [dict(row) for row in req.engine_patches_v0 if isinstance(row, dict)]
+
+    canonical_deck_input_dict = build_canonical_deck_input_v1(
+        db_snapshot_id=req.db_snapshot_id,
+        profile_id=req.profile_id,
+        bracket_id=req.bracket_id,
+        format=ingest_payload.get("format") if isinstance(ingest_payload.get("format"), str) else "commander",
+        commander=canonical_commander,
+        cards=[name for name in canonical_cards if isinstance(name, str)],
+        engine_patches_v0=tune_engine_patches_v0,
+        name_overrides_v1=name_overrides_v1,
+    )
+    request_hash_v1 = compute_request_hash_v1(canonical_deck_input_dict)
+
+    unknowns_raw = ingest_payload.get("unknowns") if isinstance(ingest_payload.get("unknowns"), list) else []
+    unknowns: List[DecklistUnknownV1] = []
+    for row in unknowns_raw:
+        if not isinstance(row, dict):
+            continue
+        candidates_raw = row.get("candidates") if isinstance(row.get("candidates"), list) else []
+        candidates: List[DecklistUnknownCandidateV1] = []
+        for candidate in candidates_raw:
+            if not isinstance(candidate, dict):
+                continue
+            oracle_id = _coerce_nonempty_str(candidate.get("oracle_id"))
+            name = _coerce_nonempty_str(candidate.get("name"))
+            if oracle_id == "" or name == "":
+                continue
+            candidates.append(
+                DecklistUnknownCandidateV1(
+                    oracle_id=oracle_id,
+                    name=name,
+                )
+            )
+
+        unknowns.append(
+            DecklistUnknownV1(
+                name_raw=_coerce_nonempty_str(row.get("name_raw")),
+                name_norm=_coerce_nonempty_str(row.get("name_norm")),
+                count=_coerce_positive_int(row.get("count"), default=1),
+                line_no=_coerce_nonnegative_int(row.get("line_no"), default=0),
+                reason_code=_coerce_nonempty_str(row.get("reason_code")),
+                candidates=candidates,
+            )
+        )
+
+    violations_raw = ingest_payload.get("violations_v1") if isinstance(ingest_payload.get("violations_v1"), list) else []
+    violations_v1: List[DeckValidateViolationV1] = []
+    for row in violations_raw:
+        if not isinstance(row, dict):
+            continue
+        line_nos_raw = row.get("line_nos") if isinstance(row.get("line_nos"), list) else []
+        line_nos = sorted(
+            {
+                _coerce_nonnegative_int(value, default=0)
+                for value in line_nos_raw
+                if isinstance(value, int) and not isinstance(value, bool)
+            }
+        )
+        violations_v1.append(
+            DeckValidateViolationV1(
+                code=_coerce_nonempty_str(row.get("code")),
+                card_name=_coerce_nonempty_str(row.get("card_name")),
+                count=_coerce_positive_int(row.get("count"), default=1),
+                line_nos=line_nos,
+                message=_coerce_nonempty_str(row.get("message")),
+            )
+        )
+
+    if len(unknowns) > 0:
+        dev_metrics_v1 = None
+        if dev_metrics_enabled:
+            total_ms = _round6(max((perf_counter() - start_total_timer) * 1000.0, 0.0))
+            dev_metrics_v1 = {
+                "baseline_build_ms": 0.0,
+                "candidate_pool_ms": 0.0,
+                "candidate_pool_breakdown_v1": {
+                    "sql_query_ms": 0.0,
+                    "python_filter_ms": 0.0,
+                    "color_check_ms": 0.0,
+                    "gc_check_ms": 0.0,
+                    "total_candidates_seen": 0,
+                    "total_candidates_returned": 0,
+                },
+                "swap_eval_count": 0,
+                "swap_eval_ms_total": 0.0,
+                "total_ms": total_ms,
+            }
+            print("TUNE DEBUG:")
+            print(f"baseline_build_ms={dev_metrics_v1['baseline_build_ms']}")
+            print(f"candidate_pool_ms={dev_metrics_v1['candidate_pool_ms']}")
+            print(f"swap_eval_count={dev_metrics_v1['swap_eval_count']}")
+            print(f"swap_eval_ms_total={dev_metrics_v1['swap_eval_ms_total']}")
+            print(f"total_ms={dev_metrics_v1['total_ms']}")
+
+        response = DeckTuneResponse(
+            status="UNKNOWN_PRESENT",
+            db_snapshot_id=req.db_snapshot_id,
+            format=canonical_deck_input_dict.get("format") if isinstance(canonical_deck_input_dict.get("format"), str) else "commander",
+            baseline_summary_v1={},
+            recommended_swaps_v1=[],
+            request_hash_v1=request_hash_v1,
+            unknowns=unknowns,
+            violations_v1=violations_v1,
+            parse_version=ingest_payload.get("parse_version") if isinstance(ingest_payload.get("parse_version"), str) else "",
+            resolve_version=ingest_payload.get("resolve_version") if isinstance(ingest_payload.get("resolve_version"), str) else "",
+            ingest_version=ingest_payload.get("ingest_version") if isinstance(ingest_payload.get("ingest_version"), str) else "",
+            tune_engine_version=DECK_TUNE_ENGINE_V1_VERSION,
+        )
+
+        if dev_metrics_enabled and isinstance(dev_metrics_v1, dict):
+            payload = response.model_dump(mode="python")
+            payload["dev_metrics_v1"] = dev_metrics_v1
+            return JSONResponse(content=payload)
+
+        return response
+
+    build_req = BuildRequest(
+        db_snapshot_id=canonical_deck_input_dict.get("db_snapshot_id") if isinstance(canonical_deck_input_dict.get("db_snapshot_id"), str) else req.db_snapshot_id,
+        profile_id=req.profile_id,
+        bracket_id=req.bracket_id,
+        taxonomy_version=None,
+        format=canonical_deck_input_dict.get("format") if isinstance(canonical_deck_input_dict.get("format"), str) else "commander",
+        commander=canonical_deck_input_dict.get("commander") if isinstance(canonical_deck_input_dict.get("commander"), str) else "",
+        cards=[name for name in canonical_deck_input_dict.get("cards", []) if isinstance(name, str)],
+        engine_patches_v0=[],
+    )
+    baseline_build_started_at = perf_counter()
+    baseline_build_payload = run_build_pipeline(req=build_req, conn=None, repo_root_path=REPO_ROOT)
+    baseline_build_ms = _round6(max((perf_counter() - baseline_build_started_at) * 1000.0, 0.0))
+
+    tune_payload = run_deck_tune_engine_v1(
+        canonical_deck_input=canonical_deck_input_dict,
+        baseline_build_result=baseline_build_payload,
+        db_snapshot_id=build_req.db_snapshot_id,
+        bracket_id=req.bracket_id,
+        profile_id=req.profile_id,
+        mulligan_model_id=req.mulligan_model_id,
+        max_swaps=req.max_swaps,
+        collect_dev_metrics=dev_metrics_enabled,
+    )
+
+    tune_dev_metrics = tune_payload.get("dev_metrics_v1") if isinstance(tune_payload.get("dev_metrics_v1"), dict) else {}
+    candidate_pool_breakdown_raw = (
+        tune_dev_metrics.get("candidate_pool_breakdown_v1")
+        if isinstance(tune_dev_metrics.get("candidate_pool_breakdown_v1"), dict)
+        else {}
+    )
+    candidate_pool_breakdown_v1 = {
+        "sql_query_ms": _round6(_coerce_nonnegative_float(candidate_pool_breakdown_raw.get("sql_query_ms"), default=0.0)),
+        "python_filter_ms": _round6(
+            _coerce_nonnegative_float(candidate_pool_breakdown_raw.get("python_filter_ms"), default=0.0)
+        ),
+        "color_check_ms": _round6(_coerce_nonnegative_float(candidate_pool_breakdown_raw.get("color_check_ms"), default=0.0)),
+        "gc_check_ms": _round6(_coerce_nonnegative_float(candidate_pool_breakdown_raw.get("gc_check_ms"), default=0.0)),
+        "total_candidates_seen": _coerce_nonnegative_int(candidate_pool_breakdown_raw.get("total_candidates_seen"), default=0),
+        "total_candidates_returned": _coerce_nonnegative_int(
+            candidate_pool_breakdown_raw.get("total_candidates_returned"),
+            default=0,
+        ),
+    }
+    swap_eval_count = _coerce_nonnegative_int(
+        tune_dev_metrics.get("swap_eval_count"),
+        default=_coerce_nonnegative_int(
+            (tune_payload.get("evaluation_summary_v1") if isinstance(tune_payload.get("evaluation_summary_v1"), dict) else {}).get(
+                "swap_evaluations_total"
+            ),
+            default=0,
+        ),
+    )
+    protected_cut_names_top10 = _clean_unique_strings_in_order(
+        tune_dev_metrics.get("protected_cut_names_top10"),
+        limit=10,
+    )
+    swap_eval_ms_total = _round6(_coerce_nonnegative_float(tune_dev_metrics.get("swap_eval_ms_total"), default=0.0))
+    candidate_pool_ms = _round6(_coerce_nonnegative_float(tune_dev_metrics.get("candidate_pool_ms"), default=0.0))
+    total_ms = _round6(max((perf_counter() - start_total_timer) * 1000.0, 0.0))
+
+    dev_metrics_v1 = None
+    if dev_metrics_enabled:
+        dev_metrics_v1 = {
+            "baseline_build_ms": baseline_build_ms,
+            "candidate_pool_ms": candidate_pool_ms,
+            "candidate_pool_breakdown_v1": candidate_pool_breakdown_v1,
+            "swap_eval_count": swap_eval_count,
+            "swap_eval_ms_total": swap_eval_ms_total,
+            "protected_cut_count": _coerce_nonnegative_int(tune_dev_metrics.get("protected_cut_count"), default=0),
+            "protected_cut_names_top10": protected_cut_names_top10,
+            "total_ms": total_ms,
+        }
+        print("TUNE DEBUG:")
+        print(f"baseline_build_ms={baseline_build_ms}")
+        print(f"candidate_pool_ms={candidate_pool_ms}")
+        print(f"swap_eval_count={swap_eval_count}")
+        print(f"swap_eval_ms_total={swap_eval_ms_total}")
+        print(f"total_ms={total_ms}")
+
+    tune_status = tune_payload.get("status") if isinstance(tune_payload.get("status"), str) else "WARN"
+    baseline_summary_v1 = tune_payload.get("baseline_summary_v1") if isinstance(tune_payload.get("baseline_summary_v1"), dict) else {}
+    swaps_raw = tune_payload.get("recommended_swaps_v1") if isinstance(tune_payload.get("recommended_swaps_v1"), list) else []
+
+    recommended_swaps_v1: List[DeckTuneSwapV1] = []
+    for row in swaps_raw:
+        if not isinstance(row, dict):
+            continue
+        delta_raw = row.get("delta_summary_v1") if isinstance(row.get("delta_summary_v1"), dict) else {}
+        reasons_raw = row.get("reasons_v1") if isinstance(row.get("reasons_v1"), list) else []
+        reasons = sorted(
+            {
+                _coerce_nonempty_str(reason)
+                for reason in reasons_raw
+                if isinstance(reason, str) and _coerce_nonempty_str(reason) != ""
+            }
+        )
+        cut_name = _coerce_nonempty_str(row.get("cut_name"))
+        add_name = _coerce_nonempty_str(row.get("add_name"))
+        if cut_name == "" or add_name == "":
+            continue
+
+        recommended_swaps_v1.append(
+            DeckTuneSwapV1(
+                cut_name=cut_name,
+                add_name=add_name,
+                reasons_v1=reasons,
+                delta_summary_v1=DeckTuneSwapDeltaSummaryV1(
+                    total_score_delta_v1=_coerce_float(delta_raw.get("total_score_delta_v1"), default=0.0),
+                    coherence_delta_v1=_coerce_float(delta_raw.get("coherence_delta_v1"), default=0.0),
+                    primitive_coverage_delta_v1=_coerce_nonnegative_int(
+                        delta_raw.get("primitive_coverage_delta_v1"),
+                        default=0,
+                    ),
+                    gc_compliance_preserved_v1=bool(delta_raw.get("gc_compliance_preserved_v1")),
+                ),
+            )
+        )
+
+    response = DeckTuneResponse(
+        status=tune_status,
+        db_snapshot_id=build_req.db_snapshot_id,
+        format=build_req.format,
+        baseline_summary_v1=baseline_summary_v1,
+        recommended_swaps_v1=recommended_swaps_v1,
+        request_hash_v1=request_hash_v1,
+        unknowns=unknowns,
+        violations_v1=violations_v1,
+        parse_version=ingest_payload.get("parse_version") if isinstance(ingest_payload.get("parse_version"), str) else "",
+        resolve_version=ingest_payload.get("resolve_version") if isinstance(ingest_payload.get("resolve_version"), str) else "",
+        ingest_version=ingest_payload.get("ingest_version") if isinstance(ingest_payload.get("ingest_version"), str) else "",
+        tune_engine_version=(
+            tune_payload.get("version")
+            if isinstance(tune_payload.get("version"), str)
+            else DECK_TUNE_ENGINE_V1_VERSION
+        ),
+    )
+
+    if dev_metrics_enabled and isinstance(dev_metrics_v1, dict):
+        payload = response.model_dump(mode="python")
+        payload["dev_metrics_v1"] = dev_metrics_v1
+        return JSONResponse(content=payload)
+
+    return response
+
+
+@app.post("/deck/complete_v1", response_model=DeckCompleteV1Response)
+def deck_complete_v1(req: DeckCompleteV1Request):
+    name_overrides_v1 = [
+        row.model_dump(mode="python")
+        for row in req.name_overrides_v1
+        if isinstance(row, DeckValidateNameOverrideV1)
+    ]
+
+    ingest_payload = ingest_decklist(
+        raw_text=req.raw_decklist_text,
+        db_snapshot_id=req.db_snapshot_id,
+        format=req.format,
+        commander_name_override=req.commander,
+        name_overrides_v1=name_overrides_v1,
+    )
+
+    canonical_from_ingest = (
+        ingest_payload.get("canonical_deck_input")
+        if isinstance(ingest_payload.get("canonical_deck_input"), dict)
+        else {}
+    )
+    canonical_commander = (
+        canonical_from_ingest.get("commander")
+        if isinstance(canonical_from_ingest.get("commander"), str)
+        else ""
+    )
+    canonical_cards = (
+        canonical_from_ingest.get("cards")
+        if isinstance(canonical_from_ingest.get("cards"), list)
+        else []
+    )
+
+    canonical_deck_input_dict = build_canonical_deck_input_v1(
+        db_snapshot_id=req.db_snapshot_id,
+        profile_id=req.profile_id,
+        bracket_id=req.bracket_id,
+        format=ingest_payload.get("format") if isinstance(ingest_payload.get("format"), str) else "commander",
+        commander=canonical_commander,
+        cards=[name for name in canonical_cards if isinstance(name, str)],
+        engine_patches_v0=[],
+        name_overrides_v1=name_overrides_v1,
+    )
+    request_hash_v1 = compute_request_hash_v1(canonical_deck_input_dict)
+
+    unknowns_raw = ingest_payload.get("unknowns") if isinstance(ingest_payload.get("unknowns"), list) else []
+    unknowns: List[DecklistUnknownV1] = []
+    for row in unknowns_raw:
+        if not isinstance(row, dict):
+            continue
+        candidates_raw = row.get("candidates") if isinstance(row.get("candidates"), list) else []
+        candidates: List[DecklistUnknownCandidateV1] = []
+        for candidate in candidates_raw:
+            if not isinstance(candidate, dict):
+                continue
+            oracle_id = _coerce_nonempty_str(candidate.get("oracle_id"))
+            name = _coerce_nonempty_str(candidate.get("name"))
+            if oracle_id == "" or name == "":
+                continue
+            candidates.append(
+                DecklistUnknownCandidateV1(
+                    oracle_id=oracle_id,
+                    name=name,
+                )
+            )
+
+        unknowns.append(
+            DecklistUnknownV1(
+                name_raw=_coerce_nonempty_str(row.get("name_raw")),
+                name_norm=_coerce_nonempty_str(row.get("name_norm")),
+                count=_coerce_positive_int(row.get("count"), default=1),
+                line_no=_coerce_nonnegative_int(row.get("line_no"), default=0),
+                reason_code=_coerce_nonempty_str(row.get("reason_code")),
+                candidates=candidates,
+            )
+        )
+
+    violations_raw = ingest_payload.get("violations_v1") if isinstance(ingest_payload.get("violations_v1"), list) else []
+    violations_v1: List[DeckValidateViolationV1] = []
+    for row in violations_raw:
+        if not isinstance(row, dict):
+            continue
+        line_nos_raw = row.get("line_nos") if isinstance(row.get("line_nos"), list) else []
+        line_nos = sorted(
+            {
+                _coerce_nonnegative_int(value, default=0)
+                for value in line_nos_raw
+                if isinstance(value, int) and not isinstance(value, bool)
+            }
+        )
+        violations_v1.append(
+            DeckValidateViolationV1(
+                code=_coerce_nonempty_str(row.get("code")),
+                card_name=_coerce_nonempty_str(row.get("card_name")),
+                count=_coerce_positive_int(row.get("count"), default=1),
+                line_nos=line_nos,
+                message=_coerce_nonempty_str(row.get("message")),
+            )
+        )
+
+    if len(unknowns) > 0:
+        return DeckCompleteV1Response(
+            status="UNKNOWN_PRESENT",
+            db_snapshot_id=req.db_snapshot_id,
+            format=canonical_deck_input_dict.get("format") if isinstance(canonical_deck_input_dict.get("format"), str) else "commander",
+            baseline_summary_v1={},
+            added_cards_v1=[],
+            completed_decklist_text_v1=_build_commander_decklist_text_v1(
+                commander=canonical_deck_input_dict.get("commander")
+                if isinstance(canonical_deck_input_dict.get("commander"), str)
+                else "",
+                cards=[name for name in canonical_deck_input_dict.get("cards", []) if isinstance(name, str)],
+            ),
+            request_hash_v1=request_hash_v1,
+            unknowns=unknowns,
+            violations_v1=violations_v1,
+            parse_version=ingest_payload.get("parse_version") if isinstance(ingest_payload.get("parse_version"), str) else "",
+            resolve_version=ingest_payload.get("resolve_version") if isinstance(ingest_payload.get("resolve_version"), str) else "",
+            ingest_version=ingest_payload.get("ingest_version") if isinstance(ingest_payload.get("ingest_version"), str) else "",
+            complete_engine_version=DECK_COMPLETE_ENGINE_V1_VERSION,
+        )
+
+    build_req = BuildRequest(
+        db_snapshot_id=(
+            canonical_deck_input_dict.get("db_snapshot_id")
+            if isinstance(canonical_deck_input_dict.get("db_snapshot_id"), str)
+            else req.db_snapshot_id
+        ),
+        profile_id=req.profile_id,
+        bracket_id=req.bracket_id,
+        taxonomy_version=None,
+        format=canonical_deck_input_dict.get("format") if isinstance(canonical_deck_input_dict.get("format"), str) else "commander",
+        commander=canonical_deck_input_dict.get("commander") if isinstance(canonical_deck_input_dict.get("commander"), str) else "",
+        cards=[name for name in canonical_deck_input_dict.get("cards", []) if isinstance(name, str)],
+        engine_patches_v0=[],
+    )
+    baseline_build_payload = run_build_pipeline(req=build_req, conn=None, repo_root_path=REPO_ROOT)
+
+    complete_payload = run_deck_complete_engine_v1(
+        canonical_deck_input=canonical_deck_input_dict,
+        baseline_build_result=baseline_build_payload,
+        db_snapshot_id=build_req.db_snapshot_id,
+        bracket_id=req.bracket_id,
+        profile_id=req.profile_id,
+        mulligan_model_id=req.mulligan_model_id,
+        target_deck_size=_coerce_positive_int(req.target_deck_size, default=100),
+        max_adds=_coerce_positive_int(req.max_adds, default=30),
+        allow_basic_lands=bool(req.allow_basic_lands),
+        land_target_mode=_coerce_nonempty_str(req.land_target_mode) if _coerce_nonempty_str(req.land_target_mode) != "" else "AUTO",
+    )
+
+    added_cards_raw = complete_payload.get("added_cards_v1") if isinstance(complete_payload.get("added_cards_v1"), list) else []
+    added_cards_v1: List[DeckCompleteAddedCardV1] = []
+    for row in added_cards_raw:
+        if not isinstance(row, dict):
+            continue
+        name = _coerce_nonempty_str(row.get("name"))
+        if name == "":
+            continue
+        reasons = sorted(
+            {
+                _coerce_nonempty_str(reason)
+                for reason in (row.get("reasons_v1") if isinstance(row.get("reasons_v1"), list) else [])
+                if _coerce_nonempty_str(reason) != ""
+            }
+        )
+        primitives_added = sorted(
+            {
+                _coerce_nonempty_str(primitive)
+                for primitive in (row.get("primitives_added_v1") if isinstance(row.get("primitives_added_v1"), list) else [])
+                if _coerce_nonempty_str(primitive) != ""
+            }
+        )
+        added_cards_v1.append(
+            DeckCompleteAddedCardV1(
+                name=name,
+                reasons_v1=reasons,
+                primitives_added_v1=primitives_added,
+            )
+        )
+
+    return DeckCompleteV1Response(
+        status=complete_payload.get("status") if isinstance(complete_payload.get("status"), str) else "WARN",
+        db_snapshot_id=build_req.db_snapshot_id,
+        format=build_req.format,
+        baseline_summary_v1=complete_payload.get("baseline_summary_v1") if isinstance(complete_payload.get("baseline_summary_v1"), dict) else {},
+        added_cards_v1=added_cards_v1,
+        completed_decklist_text_v1=(
+            complete_payload.get("completed_decklist_text_v1")
+            if isinstance(complete_payload.get("completed_decklist_text_v1"), str)
+            else _build_commander_decklist_text_v1(
+                commander=build_req.commander if isinstance(build_req.commander, str) else "",
+                cards=[name for name in canonical_deck_input_dict.get("cards", []) if isinstance(name, str)],
+            )
+        ),
+        request_hash_v1=request_hash_v1,
+        unknowns=unknowns,
+        violations_v1=violations_v1,
+        parse_version=ingest_payload.get("parse_version") if isinstance(ingest_payload.get("parse_version"), str) else "",
+        resolve_version=ingest_payload.get("resolve_version") if isinstance(ingest_payload.get("resolve_version"), str) else "",
+        ingest_version=ingest_payload.get("ingest_version") if isinstance(ingest_payload.get("ingest_version"), str) else "",
+        complete_engine_version=(
+            complete_payload.get("version")
+            if isinstance(complete_payload.get("version"), str)
+            else DECK_COMPLETE_ENGINE_V1_VERSION
+        ),
     )
 
 

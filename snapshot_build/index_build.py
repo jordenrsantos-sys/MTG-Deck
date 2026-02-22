@@ -21,6 +21,14 @@ def _json_list(raw: Any) -> List[str]:
     return sorted({item for item in parsed if isinstance(item, str) and item != ""})
 
 
+def _table_exists(con: sqlite3.Connection, table_name: str) -> bool:
+    row = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+        (str(table_name),),
+    ).fetchone()
+    return row is not None
+
+
 def ensure_runtime_tag_indices(con: sqlite3.Connection) -> None:
     con.executescript(
         """
@@ -50,6 +58,31 @@ def ensure_runtime_tag_indices(con: sqlite3.Connection) -> None:
           ON equiv_to_cards(snapshot_id, taxonomy_version, equiv_id);
         """
     )
+
+    if _table_exists(con, "primitive_to_cards"):
+        con.executescript(
+            """
+            CREATE INDEX IF NOT EXISTS idx_primitive_to_cards_oracle_lookup
+              ON primitive_to_cards(snapshot_id, taxonomy_version, oracle_id);
+
+            CREATE INDEX IF NOT EXISTS idx_primitive_to_cards_primitive_oracle
+              ON primitive_to_cards(snapshot_id, taxonomy_version, primitive_id, oracle_id);
+            """
+        )
+
+    if _table_exists(con, "cards"):
+        con.executescript(
+            """
+            CREATE INDEX IF NOT EXISTS idx_cards_snapshot_name_oracle
+              ON cards(snapshot_id, name, oracle_id);
+
+            CREATE INDEX IF NOT EXISTS idx_cards_snapshot_name_lower
+              ON cards(snapshot_id, LOWER(name));
+
+            CREATE INDEX IF NOT EXISTS idx_cards_oracle_id
+              ON cards(oracle_id);
+            """
+        )
 
 
 def rebuild_inverted_indices(

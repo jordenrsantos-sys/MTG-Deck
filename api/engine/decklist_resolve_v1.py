@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Iterable, List, Tuple
 
 from engine.db import connect as cards_db_connect
@@ -34,6 +35,7 @@ _ALIAS_SNAPSHOT_COLUMN_CANDIDATES = (
     "snapshot_id",
     "db_snapshot_id",
 )
+_DFC_DELIMITER_VARIANTS_RE = re.compile(r"\s*/{1,2}\s*")
 
 
 def _nonempty_str(value: Any) -> str | None:
@@ -125,7 +127,43 @@ def _pick_first(columns: List[str], candidates: Tuple[str, ...], *, exclude: set
     return None
 
 
-def _load_cards_index(con, db_snapshot_id: str) -> Tuple[Dict[str, Dict[str, str]], Dict[str, List[Dict[str, str]]], Dict[str, List[Dict[str, str]]]]:
+def _split_dfc_faces_from_card_name(card_name: str) -> Tuple[str, str] | None:
+    if "//" not in card_name:
+        return None
+    parts = card_name.split("//")
+    if len(parts) != 2:
+        return None
+    face_a = _nonempty_str(parts[0])
+    face_b = _nonempty_str(parts[1])
+    if face_a is None or face_b is None:
+        return None
+    return face_a, face_b
+
+
+def _normalize_dfc_combined_name(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    token = value.strip()
+    if token == "":
+        return None
+    parts = _DFC_DELIMITER_VARIANTS_RE.split(token)
+    if len(parts) != 2:
+        return None
+    face_a_norm = normalize_decklist_name(parts[0])
+    face_b_norm = normalize_decklist_name(parts[1])
+    if face_a_norm is None or face_b_norm is None:
+        return None
+    return f"{face_a_norm}//{face_b_norm}"
+
+
+def _load_cards_index(con, db_snapshot_id: str) -> Tuple[
+    Dict[str, Dict[str, str]],
+    Dict[str, List[Dict[str, str]]],
+    Dict[str, List[Dict[str, str]]],
+    Dict[str, List[Dict[str, str]]],
+    Dict[str, List[Dict[str, str]]],
+    Dict[str, List[Dict[str, str]]],
+]:
     rows = con.execute(
         """
         SELECT oracle_id, name
@@ -139,6 +177,9 @@ def _load_cards_index(con, db_snapshot_id: str) -> Tuple[Dict[str, Dict[str, str
     cards_by_oracle: Dict[str, Dict[str, str]] = {}
     exact_index: Dict[str, List[Dict[str, str]]] = {}
     normalized_index: Dict[str, List[Dict[str, str]]] = {}
+    dfc_combined_normalized_index: Dict[str, List[Dict[str, str]]] = {}
+    dfc_face_exact_index: Dict[str, List[Dict[str, str]]] = {}
+    dfc_face_normalized_index: Dict[str, List[Dict[str, str]]] = {}
 
     for row in rows:
         row_dict = dict(row)
@@ -157,12 +198,39 @@ def _load_cards_index(con, db_snapshot_id: str) -> Tuple[Dict[str, Dict[str, str
         if normalized_key is not None:
             normalized_index.setdefault(normalized_key, []).append(candidate)
 
+        dfc_faces = _split_dfc_faces_from_card_name(name)
+        if dfc_faces is None:
+            continue
+
+        combined_norm = _normalize_dfc_combined_name(name)
+        if combined_norm is not None:
+            dfc_combined_normalized_index.setdefault(combined_norm, []).append(candidate)
+
+        for face_name in dfc_faces:
+            dfc_face_exact_index.setdefault(face_name.casefold(), []).append(candidate)
+            face_name_norm = normalize_decklist_name(face_name)
+            if face_name_norm is not None:
+                dfc_face_normalized_index.setdefault(face_name_norm, []).append(candidate)
+
     for exact_key in list(exact_index.keys()):
         exact_index[exact_key] = _sort_candidates(exact_index[exact_key])
     for normalized_key in list(normalized_index.keys()):
         normalized_index[normalized_key] = _sort_candidates(normalized_index[normalized_key])
+    for combined_key in list(dfc_combined_normalized_index.keys()):
+        dfc_combined_normalized_index[combined_key] = _sort_candidates(dfc_combined_normalized_index[combined_key])
+    for face_exact_key in list(dfc_face_exact_index.keys()):
+        dfc_face_exact_index[face_exact_key] = _sort_candidates(dfc_face_exact_index[face_exact_key])
+    for face_norm_key in list(dfc_face_normalized_index.keys()):
+        dfc_face_normalized_index[face_norm_key] = _sort_candidates(dfc_face_normalized_index[face_norm_key])
 
-    return cards_by_oracle, exact_index, normalized_index
+    return (
+        cards_by_oracle,
+        exact_index,
+        normalized_index,
+        dfc_combined_normalized_index,
+        dfc_face_exact_index,
+        dfc_face_normalized_index,
+    )
 
 
 def _load_alias_index(
@@ -275,6 +343,38 @@ def _lookup_candidates(
     return candidates
 
 
+def _lookup_dfc_fallback_candidates(
+    *,
+    name_raw: str,
+    name_norm: str,
+    exact_index: Dict[str, List[Dict[str, str]]],
+    normalized_index: Dict[str, List[Dict[str, str]]],
+    dfc_combined_normalized_index: Dict[str, List[Dict[str, str]]],
+    dfc_face_exact_index: Dict[str, List[Dict[str, str]]],
+    dfc_face_normalized_index: Dict[str, List[Dict[str, str]]],
+) -> List[Dict[str, str]]:
+    full_exact = exact_index.get(name_raw.casefold(), [])
+    if len(full_exact) > 0:
+        return full_exact
+
+    face_exact = dfc_face_exact_index.get(name_raw.casefold(), [])
+    if len(face_exact) == 1:
+        return face_exact
+    if len(face_exact) > 1:
+        return face_exact
+
+    combined_norm = _normalize_dfc_combined_name(name_raw)
+    normalized_full_candidates = normalized_index.get(name_norm, [])
+    if combined_norm is not None:
+        normalized_full_candidates = _sort_candidates(
+            list(normalized_full_candidates) + list(dfc_combined_normalized_index.get(combined_norm, []))
+        )
+    if len(normalized_full_candidates) > 0:
+        return normalized_full_candidates
+
+    return dfc_face_normalized_index.get(name_norm, [])
+
+
 def _normalize_name_overrides_v1_for_resolution(name_overrides_v1: Any) -> Dict[str, Dict[str, str]]:
     rows = name_overrides_v1 if isinstance(name_overrides_v1, list) else []
 
@@ -385,7 +485,14 @@ def resolve_parsed_decklist(parsed: Any, db_snapshot_id: str, name_overrides_v1:
 
     con = cards_db_connect()
     try:
-        cards_by_oracle, exact_index, normalized_index = _load_cards_index(con, db_snapshot_id)
+        (
+            cards_by_oracle,
+            exact_index,
+            normalized_index,
+            dfc_combined_normalized_index,
+            dfc_face_exact_index,
+            dfc_face_normalized_index,
+        ) = _load_cards_index(con, db_snapshot_id)
         alias_index = _load_alias_index(
             con,
             db_snapshot_id=db_snapshot_id,
@@ -427,6 +534,16 @@ def resolve_parsed_decklist(parsed: Any, db_snapshot_id: str, name_overrides_v1:
             normalized_index=normalized_index,
             alias_index=alias_index,
         )
+        if len(candidates) == 0:
+            candidates = _lookup_dfc_fallback_candidates(
+                name_raw=name_raw,
+                name_norm=name_norm,
+                exact_index=exact_index,
+                normalized_index=normalized_index,
+                dfc_combined_normalized_index=dfc_combined_normalized_index,
+                dfc_face_exact_index=dfc_face_exact_index,
+                dfc_face_normalized_index=dfc_face_normalized_index,
+            )
 
         if len(candidates) != 1 and name_norm in overrides_by_name_norm:
             override_row = overrides_by_name_norm[name_norm]

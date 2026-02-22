@@ -179,6 +179,51 @@ INSERT INTO cards (
   '[]',
   '{"commander":"legal"}',
   '[]'
+),
+(
+  'DECKLIST_TEST_SNAPSHOT',
+  'ORA_DFC_001',
+  'Bala Ged Recovery // Bala Ged Sanctuary',
+  '{2}{G}',
+  3,
+  'Sorcery // Land',
+  NULL,
+  '["G"]',
+  '["G"]',
+  '["G"]',
+  '[]',
+  '{"commander":"legal"}',
+  '[]'
+),
+(
+  'DECKLIST_TEST_SNAPSHOT',
+  'ORA_DFC_AMB_001',
+  'Mirror Front // Mirror Back',
+  '{1}{U}',
+  2,
+  'Instant // Land',
+  NULL,
+  '["U"]',
+  '["U"]',
+  '["U"]',
+  '[]',
+  '{"commander":"legal"}',
+  '[]'
+),
+(
+  'DECKLIST_TEST_SNAPSHOT',
+  'ORA_DFC_AMB_002',
+  'Mirror Front // Mirror Lake',
+  '{1}{U}',
+  2,
+  'Instant // Land',
+  NULL,
+  '["U"]',
+  '["U"]',
+  '["U"]',
+  '[]',
+  '{"commander":"legal"}',
+  '[]'
 );
 
 INSERT INTO card_aliases (snapshot_id, alias_name, oracle_id)

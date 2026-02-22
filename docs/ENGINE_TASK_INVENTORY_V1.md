@@ -1,5 +1,5 @@
 # ENGINE TASK INVENTORY V1
-Version: inventory_v1_20
+Version: inventory_v1_22
 
 ---------------------------------------------------------------------
 DOCUMENT GOVERNANCE RULES
@@ -189,6 +189,33 @@ SECTION 2 — PHASE 3: SUFFICIENCY ENGINE (SPEC-ALIGNED)
     - cross_engine_overlap_score_v1 / structural_asymmetry_index_v1 reporting
     - optional bridge_amplification_bonus_v1 sourced from profile_thresholds_v1 coherence domain
 
+2.16 Guardrails Core V1
+[x] color_identity_constraints_v1  (COMPLETE - implementation_plan_v1_19 reference)
+    - snapshot-locked commander/card color identity retrieval
+    - deterministic identity normalization to {W,U,B,R,G}
+    - UNKNOWN/COLOR_IDENTITY_UNAVAILABLE guardrail signaling (no guessing)
+
+[x] bracket_gc_enforcement_v1  (COMPLETE - implementation_plan_v1_19 reference)
+    - deterministic Game Changer counting against local GC list
+    - bracket limit projection checks for candidate additions
+    - UNKNOWN_BRACKET_RULES guardrail signaling when rules are unavailable
+
+[x] candidate_pool_v1  (COMPLETE - implementation_plan_v1_19 reference)
+    - snapshot-only candidate retrieval and deterministic ranking
+    - color identity + Game Changer gate enforcement before ranking
+    - hard-capped deterministic output ordering for repeatability
+
+2.17 Deck Tune Engine V1
+[x] deck_tune_engine_v1  (COMPLETE - implementation_plan_v1_20 reference)
+    - deterministic cut/add swap ranking using baseline structural + redundancy signals
+    - candidate_pool_v1-backed add discovery constrained by color identity and bracket GC limits
+    - bounded deterministic swap evaluation loop (top cuts/adds + hard evaluation cap)
+
+[x] deck_tune_endpoint_v1  (COMPLETE - implementation_plan_v1_20 reference)
+    - POST /deck/tune_v1 endpoint (ingest -> baseline /build -> tune engine)
+    - UNKNOWN_PRESENT short-circuit before baseline build/tuning
+    - deterministic tune response envelope with baseline_summary_v1 + recommended_swaps_v1 + request_hash_v1
+
 ---------------------------------------------------------------------
 SECTION 3 — DATA PACKS REQUIRED
 ---------------------------------------------------------------------
@@ -273,6 +300,8 @@ SECTION 7 — EXECUTION ORDER
 12) sufficiency_summary_v1
 13) combo_pack_pipeline_v1
 14) primitive_bridge_explorer_v1
+15) guardrails_core_v1 (color_identity_constraints_v1 + bracket_gc_enforcement_v1 + candidate_pool_v1)
+16) deck_tune_engine_v1 (deck_tune_engine_v1 + deck_tune_endpoint_v1)
 
 ---------------------------------------------------------------------
 
@@ -379,3 +408,13 @@ No deletions.
 - Marked Phase 3 Step 15 primitive_bridge_explorer_v1 (Structural Discovery V2) complete, including deterministic bounded bridge discovery, latent engine cluster extraction, profile-weighted bridge amplification bonus support, panel gate integration, and pipeline version pinning.
 - Needed to expose structural connector discovery signals and asymmetry metrics while preserving frozen runtime schema contracts.
 - Impacts inventory/spec/plan/runtime governance traceability.
+
+## [inventory_v1_21] - 2026-02-21
+- Marked Guardrails Core v1 components complete (color_identity_constraints_v1, bracket_gc_enforcement_v1, candidate_pool_v1) with hermetic fixture tests and deterministic ordering checks.
+- Needed to establish deterministic, snapshot-locked legality/safety primitives before deck completion or tuning features.
+- Impacts inventory/plan/runtime governance traceability while preserving frozen schema contracts.
+
+## [inventory_v1_22] - 2026-02-21
+- Marked Deck Tune Engine v1 complete (deck_tune_engine_v1 + /deck/tune_v1 endpoint), including deterministic bounded swap evaluation and Guardrails Core v1-constrained candidate selection.
+- Needed to provide deterministic local-only deck refinement recommendations without invoking deck completion behaviors.
+- Impacts inventory/plan/runtime governance traceability while preserving frozen schema contracts.

@@ -1,7 +1,7 @@
 ---------------------------------------------------------------------
 
 # ENGINE IMPLEMENTATION PLAN V1
-Version: implementation_plan_v1_18
+Version: implementation_plan_v1_20
 
 ---------------------------------------------------------------------
 DOCUMENT GOVERNANCE RULES
@@ -19,7 +19,7 @@ No silent edits allowed.
 ---------------------------------------------------------------------
 
 Governed by:
-- docs/ENGINE_TASK_INVENTORY_V1.md (inventory_v1_20)
+- docs/ENGINE_TASK_INVENTORY_V1.md (inventory_v1_22)
 - docs/SUFFICIENCY_SPEC_V1.md (sufficiency_spec_v1_16)
 
 Rule: Implement one step at a time. No step begins until prior step passes tests.
@@ -620,6 +620,70 @@ Implementation Notes (2026-02-21):
 - deterministic warning codes introduced:
   - NO_BRIDGES_DETECTED
 
+STEP 16 — Guardrails Core v1 (Deterministic Legality Primitives)
+Goal:
+- Add deterministic, snapshot-locked legality guardrails required before deck completion/tuning automation.
+
+Acceptance:
+- color_identity_constraints_v1 resolves commander/card color identity from snapshot DB only (no guessing, no oracle parsing).
+- bracket_gc_enforcement_v1 enforces deterministic Game Changer limit projection using local bracket definitions.
+- candidate_pool_v1 returns deterministic candidate ordering with color + GC guardrails and hard cap enforcement.
+- No modifications to frozen schemas: ui_contract_v1, structural_snapshot_v1, graph_v1.
+
+Implementation Notes (2026-02-21):
+- files added:
+  - api/engine/color_identity_constraints_v1.py
+  - api/engine/bracket_gc_enforcement_v1.py
+  - api/engine/candidate_pool_v1.py
+  - tests/fixtures/guardrails_core_v1_fixture.sql
+  - tests/guardrails_fixture_harness.py
+  - tests/test_color_identity_constraints_v1.py
+  - tests/test_bracket_gc_enforcement_v1.py
+  - tests/test_candidate_pool_v1.py
+- files modified:
+  - docs/ENGINE_TASK_INVENTORY_V1.md
+  - docs/ENGINE_IMPLEMENTATION_PLAN_V1.md
+- tests added:
+  - tests/test_color_identity_constraints_v1.py
+  - tests/test_bracket_gc_enforcement_v1.py
+  - tests/test_candidate_pool_v1.py
+- pipeline_versions additions:
+  - none (import-only prerequisite modules; no /build wiring in this step)
+- deterministic warning codes introduced:
+  - COLOR_IDENTITY_UNAVAILABLE
+  - UNKNOWN_COLOR_IDENTITY
+  - UNKNOWN_BRACKET_RULES
+
+STEP 17 — Deck Tune Engine v1 (Deterministic Swap Recommendations)
+Goal:
+- Add deterministic, local-only cut/add swap recommendation flow for already-ingested commander decks without invoking deck completion behavior.
+
+Acceptance:
+- POST /deck/tune_v1 runs ingest -> baseline /build -> deck_tune_engine_v1 and short-circuits on UNKNOWN_PRESENT.
+- deck_tune_engine_v1 produces deterministic bounded swap recommendations (top cuts/adds + hard evaluation cap).
+- Add candidates are sourced from candidate_pool_v1 and preserve color identity + bracket GC constraints.
+- No frozen schema changes (ui_contract_v1, structural_snapshot_v1, graph_v1 unchanged).
+
+Implementation Notes (2026-02-21):
+- files added:
+  - api/engine/deck_tune_engine_v1.py
+  - tests/test_deck_tune_engine_v1.py
+  - tests/test_deck_tune_endpoint_v1.py
+- files modified:
+  - api/main.py
+  - docs/ENGINE_TASK_INVENTORY_V1.md
+  - docs/ENGINE_IMPLEMENTATION_PLAN_V1.md
+- tests added:
+  - tests/test_deck_tune_engine_v1.py
+  - tests/test_deck_tune_endpoint_v1.py
+- pipeline_versions additions:
+  - none (new endpoint + standalone tuning module, no /build pipeline version schema changes)
+- deterministic warning/error codes introduced:
+  - BASELINE_BUILD_UNAVAILABLE
+  - COMMANDER_MISSING
+  - COLOR_IDENTITY_UNAVAILABLE
+  - UNKNOWN_COLOR_IDENTITY
+
 ---------------------------------------------------------------------
 1A) ARCHITECTURE HARDENING PASS COMPLETED (2026-02-20)
 ---------------------------------------------------------------------
@@ -839,3 +903,13 @@ No deletions.
 - Marked Step 15 (primitive_bridge_explorer_v1 / Structural Discovery V2) complete with deterministic bounded bridge-chain discovery, latent engine cluster detection, cross-engine overlap/asymmetry scoring, and profile-threshold bridge amplification bonus integration.
 - Needed to expose structural connector discovery signals without modifying frozen ui_contract_v1, graph_v1, or structural_snapshot_v1 schemas.
 - Impacts inventory/spec/plan/runtime governance traceability.
+
+## [implementation_plan_v1_19] - 2026-02-21
+- Marked Step 16 (Guardrails Core v1) complete with deterministic color-identity enforcement, Game Changer bracket-limit projection checks, and candidate_pool_v1 deterministic ranking/filtering.
+- Needed to establish local-first, snapshot-locked legality/safety primitives before enabling deterministic deckbuilding assistant completion/tuning workflows.
+- Impacts inventory/plan/runtime governance traceability while preserving frozen schema contracts.
+
+## [implementation_plan_v1_20] - 2026-02-21
+- Marked Step 17 (Deck Tune Engine v1) complete with new /deck/tune_v1 endpoint wiring, deterministic bounded cut/add swap evaluation, and Guardrails Core v1-constrained candidate sourcing.
+- Needed to provide deterministic local-only deck tuning recommendations while explicitly avoiding deck completion behavior and frozen schema modifications.
+- Impacts inventory/plan/runtime governance traceability while preserving frozen schema contracts.

@@ -30,6 +30,34 @@ _ALLOWED_CARD_LOOKUP_FIELDS = {
 }
 
 
+def list_cards_table_columns(*, table_name: str = "cards") -> List[str]:
+    safe_table_name = table_name.strip() if isinstance(table_name, str) else "cards"
+    if safe_table_name == "":
+        safe_table_name = "cards"
+
+    # Keep introspection deterministic and safe for SQLite identifiers.
+    if not all(ch.isalnum() or ch == "_" for ch in safe_table_name):
+        return []
+
+    with cards_db_connect() as con:
+        try:
+            rows = con.execute(f"PRAGMA table_info({safe_table_name})").fetchall()
+        except Exception:
+            return []
+
+    out: List[str] = []
+    for row in rows:
+        row_dict = dict(row)
+        col = row_dict.get("name")
+        if not isinstance(col, str):
+            continue
+        token = col.strip()
+        if token == "":
+            continue
+        out.append(token)
+    return sorted(set(out))
+
+
 def _normalize_requested_fields(requested_fields: List[str] | None) -> List[str]:
     if requested_fields is None:
         requested = list(_DEFAULT_CARD_LOOKUP_FIELDS)
