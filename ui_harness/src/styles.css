@@ -814,7 +814,44 @@ pre {
 
 .phase1-build-actions {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+.phase1-button-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.phase1-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(4, 16, 28, 0.34);
+  border-top-color: #04101c;
+  animation: phase1-spin 0.75s linear infinite;
+}
+
+@keyframes phase1-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.phase1-deck-preview-block {
+  margin-top: 12px;
+}
+
+.phase1-deck-preview-block h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.phase1-deck-preview-block pre {
+  margin: 0;
+  max-height: 280px;
 }
 
 .phase1-main button {

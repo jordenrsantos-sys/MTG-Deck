@@ -1,12 +1,14 @@
 import json
 import os
 from datetime import datetime
+from pathlib import Path
 from time import perf_counter
 from typing import Optional, Dict, Any, List
+from uuid import UUID
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from engine.db import DB_PATH as CARDS_DB_PATH, connect as cards_db_connect, list_snapshots
@@ -296,6 +298,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+CARD_IMAGE_SIZE_EXTENSIONS: Dict[str, str] = {
+    "small": ".jpg",
+    "normal": ".jpg",
+    "large": ".jpg",
+    "png": ".png",
+    "art_crop": ".jpg",
+    "border_crop": ".jpg",
+}
+DEFAULT_CARD_IMAGE_CACHE_DIR = (Path(REPO_ROOT) / "data" / "card_images").resolve()
+CARD_IMAGE_CACHE_DIR_ENV = "MTG_ENGINE_IMAGE_CACHE_DIR"
+CARD_IMAGE_CACHE_CONTROL = "public, max-age=31536000"
+
 
 @app.get("/health")
 def health():
@@ -444,6 +458,33 @@ def cards_suggest(q: str, snapshot_id: Optional[str] = None, limit: int = 20):
     }
 
 
+@app.get("/cards/image/{oracle_id}")
+def cards_image(oracle_id: str, size: str = "normal"):
+    normalized_size = _normalize_card_image_size(size)
+    normalized_oracle_id = _normalize_oracle_id(oracle_id)
+    cache_dir = _resolve_card_image_cache_dir()
+    image_path = _resolve_cached_card_image_path(
+        cache_dir=cache_dir,
+        size=normalized_size,
+        oracle_id=normalized_oracle_id,
+    )
+
+    if not image_path.is_file():
+        return JSONResponse(
+            status_code=404,
+            content={
+                "status": "MISSING_IMAGE",
+                "oracle_id": normalized_oracle_id,
+                "size": normalized_size,
+            },
+        )
+
+    media_type = "image/png" if image_path.suffix.lower() == ".png" else "image/jpeg"
+    response = FileResponse(path=str(image_path), media_type=media_type)
+    response.headers["Cache-Control"] = CARD_IMAGE_CACHE_CONTROL
+    return response
+
+
 @app.post("/build", response_model=BuildResponse)
 def build(req: BuildRequest):
     canonical_request = build_canonical_deck_input_v1(
@@ -551,6 +592,47 @@ def _latest_snapshot_id() -> str:
     if not isinstance(first_row, dict):
         return ""
     return _coerce_nonempty_str(first_row.get("snapshot_id"))
+
+
+def _resolve_card_image_cache_dir() -> Path:
+    env_value = os.getenv(CARD_IMAGE_CACHE_DIR_ENV, "")
+    if isinstance(env_value, str) and env_value.strip() != "":
+        candidate = Path(env_value.strip()).expanduser()
+        if not candidate.is_absolute():
+            candidate = (Path(REPO_ROOT) / candidate).resolve()
+        return candidate.resolve()
+    return DEFAULT_CARD_IMAGE_CACHE_DIR
+
+
+def _normalize_card_image_size(size: Any) -> str:
+    normalized = _coerce_nonempty_str(size).lower()
+    if normalized not in CARD_IMAGE_SIZE_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid size '{size}'. Allowed: {sorted(CARD_IMAGE_SIZE_EXTENSIONS.keys())}",
+        )
+    return normalized
+
+
+def _normalize_oracle_id(oracle_id: Any) -> str:
+    token = _coerce_nonempty_str(oracle_id)
+    if token == "":
+        raise HTTPException(status_code=400, detail="Invalid oracle_id.")
+    try:
+        return str(UUID(token))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid oracle_id.") from exc
+
+
+def _resolve_cached_card_image_path(*, cache_dir: Path, size: str, oracle_id: str) -> Path:
+    extension = CARD_IMAGE_SIZE_EXTENSIONS[size]
+    cache_root = cache_dir.resolve()
+    candidate = (cache_root / size / f"{oracle_id}{extension}").resolve()
+    try:
+        candidate.relative_to(cache_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid image cache path.") from exc
+    return candidate
 
 
 def _extract_image_uri_from_card_row(card_row: Dict[str, Any]) -> str | None:

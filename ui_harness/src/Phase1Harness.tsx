@@ -35,9 +35,22 @@ type PrimitiveExplorerGroup = {
   cards: PrimitiveExplorerCardRow[];
 };
 
+type ParsedDecklistRow = {
+  name: string;
+  count: number;
+  source_order: number;
+};
+
 const DEFAULT_API_BASE = String(import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").trim();
 const SUGGEST_LIMIT_MAX = 20;
 const FIXTURE_PATH_LABEL = "./ui_harness/fixtures/build_result.json";
+const COMMANDER_SUGGEST_LIMIT = 12;
+const MAX_DECK_COUNT_PER_LINE = 250;
+
+const FIXTURE_ROOT = asRecord(fixtureBuildResult);
+const FIXTURE_DEFAULT_SNAPSHOT_ID = firstNonEmptyString(FIXTURE_ROOT?.db_snapshot_id) || "";
+const DEFAULT_PROFILE_ID = firstNonEmptyString(FIXTURE_ROOT?.profile_id) === "focused" ? "focused" : "default";
+const DEFAULT_BRACKET_ID = firstNonEmptyString(FIXTURE_ROOT?.bracket_id) || "B3";
 
 function asRecord(value: unknown): JsonRecord | null {
   if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -141,6 +154,11 @@ function normalizeApiBase(raw: string): string {
   return token.endsWith("/") ? token.slice(0, -1) : token;
 }
 
+function buildLocalCardImageUrl(apiBaseUrl: string, oracleId: string, size: "normal" | "small" | "large" | "png" | "art_crop" | "border_crop" = "normal"): string {
+  const base = normalizeApiBase(apiBaseUrl);
+  return `${base}/cards/image/${encodeURIComponent(oracleId)}?size=${encodeURIComponent(size)}`;
+}
+
 function clampSuggestLimit(value: number): number {
   if (!Number.isFinite(value)) {
     return SUGGEST_LIMIT_MAX;
@@ -236,11 +254,116 @@ function mapPrimitiveCardToSuggestRow(row: PrimitiveExplorerCardRow): CardSugges
   };
 }
 
-function normalizeCardsInput(rawCards: string): string[] {
-  return rawCards
-    .split(/\r?\n|,/)
-    .map((value: string) => value.trim())
-    .filter((value: string) => value !== "");
+function parseDecklistInput(rawDecklist: string): ParsedDecklistRow[] {
+  const lines = rawDecklist.split(/\r?\n/);
+  const rows: ParsedDecklistRow[] = [];
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith("//")) {
+      continue;
+    }
+
+    let count = 1;
+    let name = trimmed;
+
+    const countMatch = trimmed.match(/^(\d+)(?:\s*[xX])?\s+(.+)$/);
+    if (countMatch) {
+      const parsedCount = Number(countMatch[1]);
+      const parsedName = countMatch[2].trim();
+      if (Number.isFinite(parsedCount) && parsedCount >= 1 && parsedCount <= MAX_DECK_COUNT_PER_LINE && parsedName !== "") {
+        count = Math.trunc(parsedCount);
+        name = parsedName;
+      }
+    }
+
+    if (name === "") {
+      continue;
+    }
+
+    rows.push({
+      name,
+      count,
+      source_order: rows.length,
+    });
+  }
+
+  return rows;
+}
+
+function expandDecklistRowsInInputOrder(rows: ParsedDecklistRow[]): string[] {
+  const cards: string[] = [];
+  for (const row of rows) {
+    const safeCount = Number.isFinite(row.count) ? Math.max(1, Math.trunc(row.count)) : 1;
+    for (let i = 0; i < safeCount; i += 1) {
+      cards.push(row.name);
+    }
+  }
+  return cards;
+}
+
+function buildNormalizedDeckPreviewLines(cardsInPayloadOrder: string[]): string[] {
+  return cardsInPayloadOrder
+    .map((name: string, index: number) => ({
+      name,
+      source_order: index,
+    }))
+    .sort((a: { name: string; source_order: number }, b: { name: string; source_order: number }) => {
+      const byName = cardNameSortKey(a.name).localeCompare(cardNameSortKey(b.name));
+      if (byName !== 0) {
+        return byName;
+      }
+      const byLiteral = a.name.localeCompare(b.name);
+      if (byLiteral !== 0) {
+        return byLiteral;
+      }
+      return a.source_order - b.source_order;
+    })
+    .map((row: { name: string }) => `1 ${row.name}`);
+}
+
+function extractLatestSnapshotId(payload: unknown): string {
+  const root = asRecord(payload);
+  const rows = asArray(root?.snapshots);
+  for (const rawRow of rows) {
+    const asText = asOptionalString(rawRow);
+    if (asText !== null) {
+      return asText;
+    }
+
+    const row = asRecord(rawRow);
+    if (!row) {
+      continue;
+    }
+
+    const snapshotId = firstNonEmptyString(row.snapshot_id, row.id, row.db_snapshot_id);
+    if (snapshotId !== null) {
+      return snapshotId;
+    }
+  }
+
+  return "";
+}
+
+async function fetchLatestSnapshotIdFromApi(base: string): Promise<string> {
+  const response = await fetch(`${base}/snapshots?limit=1`, {
+    method: "GET",
+  });
+  const text = await response.text();
+  const parsed = safeParseJson(text);
+
+  if (!response.ok) {
+    const responseSnippet = toSingleLineSnippet(text);
+    const debugResponse = responseSnippet === "" ? "(empty response body)" : responseSnippet;
+    throw new Error(`HTTP ${response.status} from /snapshots | response=${debugResponse}`);
+  }
+
+  const latestSnapshotId = extractLatestSnapshotId(parsed);
+  if (latestSnapshotId === "") {
+    throw new Error("No snapshots returned from /snapshots.");
+  }
+
+  return latestSnapshotId;
 }
 
 function parseCardSuggestRows(payload: unknown): CardSuggestRow[] {
@@ -274,30 +397,6 @@ function parseCardSuggestRows(payload: unknown): CardSuggestRow[] {
   return rows;
 }
 
-function isLocalImageUri(value: string | null): boolean {
-  if (value === null) {
-    return false;
-  }
-  const token = value.trim();
-  if (token === "") {
-    return false;
-  }
-
-  const lower = token.toLowerCase();
-  if (lower.startsWith("http://") || lower.startsWith("https://")) {
-    return false;
-  }
-
-  return (
-    lower.startsWith("/") ||
-    lower.startsWith("./") ||
-    lower.startsWith("../") ||
-    lower.startsWith("file://") ||
-    lower.startsWith("data:image/") ||
-    /^[a-z]:\\/.test(lower)
-  );
-}
-
 function yesNoUnknown(value: unknown): string {
   if (value === true) {
     return "YES";
@@ -311,9 +410,9 @@ function yesNoUnknown(value: unknown): string {
 export default function Phase1Harness() {
   const [mode, setMode] = useState<DataMode>("file");
   const [apiBase, setApiBase] = useState(DEFAULT_API_BASE);
-  const [dbSnapshotId, setDbSnapshotId] = useState("20260217_190902");
-  const [profileId, setProfileId] = useState("focused");
-  const [bracketId, setBracketId] = useState("B2");
+  const [dbSnapshotId, setDbSnapshotId] = useState(FIXTURE_DEFAULT_SNAPSHOT_ID);
+  const [profileId, setProfileId] = useState(DEFAULT_PROFILE_ID);
+  const [bracketId, setBracketId] = useState(DEFAULT_BRACKET_ID);
   const [commander, setCommander] = useState("Krenko, Mob Boss");
   const [cardsInput, setCardsInput] = useState("");
 
@@ -330,14 +429,29 @@ export default function Phase1Harness() {
   const [searchResults, setSearchResults] = useState<CardSuggestRow[]>([]);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const [selectedSuggestion, setSelectedSuggestion] = useState<CardSuggestRow | null>(null);
+  const [commanderSuggestLoading, setCommanderSuggestLoading] = useState(false);
+  const [commanderSuggestError, setCommanderSuggestError] = useState<string | null>(null);
+  const [commanderSuggestRows, setCommanderSuggestRows] = useState<CardSuggestRow[]>([]);
   const [selectedPrimitiveId, setSelectedPrimitiveId] = useState<string | null>(null);
   const [hoverSuggestion, setHoverSuggestion] = useState<CardSuggestRow | null>(null);
   const [hoverPreviewSource, setHoverPreviewSource] = useState<"search" | "primitive" | null>(null);
   const [hoverPrimitiveTags, setHoverPrimitiveTags] = useState<string[]>([]);
   const [hoverVisible, setHoverVisible] = useState(false);
+  const [previewImageFailures, setPreviewImageFailures] = useState<Record<string, true>>({});
 
   const hoverDelayTimerRef = useRef<number | null>(null);
   const suggestRequestIdRef = useRef(0);
+  const commanderSuggestRequestIdRef = useRef(0);
+
+  const parsedDecklistRows = useMemo(() => parseDecklistInput(cardsInput), [cardsInput]);
+  const deckCardsInPayloadOrder = useMemo(
+    () => expandDecklistRowsInInputOrder(parsedDecklistRows),
+    [parsedDecklistRows],
+  );
+  const normalizedDeckPreviewLines = useMemo(
+    () => buildNormalizedDeckPreviewLines(deckCardsInPayloadOrder),
+    [deckCardsInPayloadOrder],
+  );
 
   function clearHoverTimer() {
     if (hoverDelayTimerRef.current !== null) {
@@ -373,21 +487,27 @@ export default function Phase1Harness() {
   }
 
   async function runBuildApi() {
-    const requestBody = {
-      db_snapshot_id: dbSnapshotId.trim(),
-      profile_id: profileId.trim(),
-      bracket_id: bracketId.trim(),
-      format: "commander",
-      commander: commander.trim(),
-      cards: normalizeCardsInput(cardsInput),
-      engine_patches_v0: [],
-    };
-
     setLoadingBuild(true);
     setRuntimeError(null);
 
     try {
       const base = normalizeApiBase(apiBase);
+      let snapshotId = dbSnapshotId.trim();
+      if (snapshotId === "") {
+        snapshotId = await fetchLatestSnapshotIdFromApi(base);
+        setDbSnapshotId(snapshotId);
+      }
+
+      const requestBody = {
+        db_snapshot_id: snapshotId,
+        profile_id: profileId.trim(),
+        bracket_id: bracketId.trim(),
+        format: "commander",
+        commander: commander.trim(),
+        cards: deckCardsInPayloadOrder,
+        engine_patches_v0: [],
+      };
+
       const response = await fetch(`${base}/build`, {
         method: "POST",
         headers: {
@@ -399,7 +519,9 @@ export default function Phase1Harness() {
       const text = await response.text();
       const parsed = safeParseJson(text);
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status} from /build`);
+        const responseSnippet = toSingleLineSnippet(text);
+        const debugResponse = responseSnippet === "" ? "(empty response body)" : responseSnippet;
+        throw new Error(`HTTP ${response.status} from /build | response=${debugResponse}`);
       }
 
       const root = asRecord(parsed);
@@ -412,7 +534,16 @@ export default function Phase1Harness() {
       setRawPayload(toPrettyJson(payload));
       setPayloadSource(`API mode (${base}/build)`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown /build runtime error";
+      let message = "Unknown /build runtime error";
+      if (error instanceof TypeError) {
+        message = [
+          "Failed to fetch /build",
+          `apiBaseUrl=${normalizeApiBase(apiBase)}`,
+          "API not reachable (backend unavailable or CORS blocked).",
+        ].join(" | ");
+      } else if (error instanceof Error) {
+        message = error.message;
+      }
       setRuntimeError(message);
     } finally {
       setLoadingBuild(false);
@@ -484,28 +615,60 @@ export default function Phase1Harness() {
     clearHoverTimer();
   }
 
+  function markPreviewImageFailure(imageUrl: string): void {
+    setPreviewImageFailures((previous: Record<string, true>) => {
+      if (previous[imageUrl]) {
+        return previous;
+      }
+      return {
+        ...previous,
+        [imageUrl]: true,
+      };
+    });
+  }
+
   useEffect(() => {
     if (mode === "file") {
       loadFixturePayload();
+      if (FIXTURE_DEFAULT_SNAPSHOT_ID !== "") {
+        setDbSnapshotId(FIXTURE_DEFAULT_SNAPSHOT_ID);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
+
+  useEffect(() => {
+    if (mode !== "api") {
+      return;
+    }
+    if (dbSnapshotId.trim() !== "") {
+      return;
+    }
+
+    const base = normalizeApiBase(apiBase);
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const latestSnapshotId = await fetchLatestSnapshotIdFromApi(base);
+        if (!cancelled && latestSnapshotId !== "") {
+          setDbSnapshotId(latestSnapshotId);
+        }
+      } catch {
+        // Leave blank; runBuildApi will report a detailed error if snapshot resolution fails.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase, dbSnapshotId, mode]);
 
   useEffect(() => {
     return () => {
       clearHoverTimer();
     };
   }, []);
-
-  useEffect(() => {
-    for (const row of searchResults) {
-      if (!isLocalImageUri(row.image_uri)) {
-        continue;
-      }
-      const image = new Image();
-      image.src = row.image_uri as string;
-    }
-  }, [searchResults]);
 
   useEffect(() => {
     const query = searchQuery.trim();
@@ -588,6 +751,76 @@ export default function Phase1Harness() {
       window.clearTimeout(timerId);
     };
   }, [apiBase, dbSnapshotId, searchQuery]);
+
+  useEffect(() => {
+    if (mode !== "api") {
+      setCommanderSuggestLoading(false);
+      setCommanderSuggestError(null);
+      setCommanderSuggestRows([]);
+      return;
+    }
+
+    const query = commander.trim();
+    if (query.length < 2) {
+      setCommanderSuggestLoading(false);
+      setCommanderSuggestError(null);
+      setCommanderSuggestRows([]);
+      return;
+    }
+
+    const requestId = commanderSuggestRequestIdRef.current + 1;
+    commanderSuggestRequestIdRef.current = requestId;
+    const controller = new AbortController();
+    const base = normalizeApiBase(apiBase);
+    const safeLimit = clampSuggestLimit(COMMANDER_SUGGEST_LIMIT);
+    const snapshotPart = dbSnapshotId.trim() !== "" ? `&snapshot_id=${encodeURIComponent(dbSnapshotId.trim())}` : "";
+    const url = `${base}/cards/suggest?q=${encodeURIComponent(query)}${snapshotPart}&limit=${safeLimit}`;
+
+    setCommanderSuggestLoading(true);
+    setCommanderSuggestError(null);
+
+    const timerId = window.setTimeout(async () => {
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          signal: controller.signal,
+        });
+        const text = await response.text();
+        const parsed = safeParseJson(text);
+        if (!response.ok) {
+          const responseSnippet = toSingleLineSnippet(text);
+          const debugResponse = responseSnippet === "" ? "(empty response body)" : responseSnippet;
+          throw new Error(`Failed to fetch /cards/suggest (HTTP ${response.status}) | response=${debugResponse}`);
+        }
+
+        if (requestId !== commanderSuggestRequestIdRef.current) {
+          return;
+        }
+
+        setCommanderSuggestRows(parseCardSuggestRows(parsed));
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        if (requestId !== commanderSuggestRequestIdRef.current) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : "Unknown commander autocomplete error";
+        setCommanderSuggestRows([]);
+        setCommanderSuggestError(message);
+      } finally {
+        if (requestId === commanderSuggestRequestIdRef.current) {
+          setCommanderSuggestLoading(false);
+        }
+      }
+    }, 60);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timerId);
+    };
+  }, [apiBase, commander, dbSnapshotId, mode]);
 
   const result = asRecord(buildPayload?.result);
   const unknowns = asArray(buildPayload?.unknowns);
@@ -908,7 +1141,11 @@ export default function Phase1Harness() {
   }, [primitiveExplorer.groups, selectedPrimitiveId]);
 
   const selectedPreviewRow = hoverVisible ? hoverSuggestion : null;
-  const selectedPreviewHasLocalArt = isLocalImageUri(selectedPreviewRow?.image_uri || null);
+  const selectedPreviewOracleId = firstNonEmptyString(selectedPreviewRow?.oracle_id) || "";
+  const selectedPreviewImageUrl =
+    selectedPreviewOracleId !== "" ? buildLocalCardImageUrl(apiBase, selectedPreviewOracleId, "normal") : "";
+  const selectedPreviewImageFailed = selectedPreviewImageUrl !== "" && Boolean(previewImageFailures[selectedPreviewImageUrl]);
+  const selectedPreviewCanRenderImage = selectedPreviewImageUrl !== "" && !selectedPreviewImageFailed;
   const selectedPreviewPrimitiveTags =
     hoverVisible && hoverPreviewSource === "primitive" ? hoverPrimitiveTags : [];
 
@@ -918,6 +1155,10 @@ export default function Phase1Harness() {
         <a className="phase1-rail-link" href="#phase1-control">
           <span className="phase1-rail-icon">C</span>
           <span className="phase1-rail-text">Control</span>
+        </a>
+        <a className="phase1-rail-link" href="#phase1-build-runner">
+          <span className="phase1-rail-icon">B</span>
+          <span className="phase1-rail-text">Build Runner</span>
         </a>
         <a className="phase1-rail-link" href="#phase1-search">
           <span className="phase1-rail-icon">S</span>
@@ -988,59 +1229,8 @@ export default function Phase1Harness() {
                 </button>
               </div>
             ) : (
-              <div className="phase1-build-form-grid">
-                <label>
-                  Snapshot ID
-                  <input
-                    value={dbSnapshotId}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                      setDbSnapshotId(event.target.value);
-                    }}
-                  />
-                </label>
-                <label>
-                  Profile ID
-                  <input
-                    value={profileId}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                      setProfileId(event.target.value);
-                    }}
-                  />
-                </label>
-                <label>
-                  Bracket ID
-                  <input
-                    value={bracketId}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                      setBracketId(event.target.value);
-                    }}
-                  />
-                </label>
-                <label>
-                  Commander
-                  <input
-                    value={commander}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => {
-                      setCommander(event.target.value);
-                    }}
-                  />
-                </label>
-                <label className="phase1-span-2">
-                  Cards (one per line or comma-separated)
-                  <textarea
-                    rows={4}
-                    value={cardsInput}
-                    onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
-                      setCardsInput(event.target.value);
-                    }}
-                    placeholder="Card A\nCard B\nCard C"
-                  />
-                </label>
-                <div className="phase1-build-actions">
-                  <button type="button" onClick={runBuildApi} disabled={loadingBuild}>
-                    {loadingBuild ? "Running /build..." : "Run /build"}
-                  </button>
-                </div>
+              <div className="phase1-file-mode-box">
+                <p>API mode enabled. Use the Deck input + build runner panel below.</p>
               </div>
             )}
           </div>
@@ -1048,6 +1238,125 @@ export default function Phase1Harness() {
           <div className="phase1-source-row">
             <span className="phase1-chip">Source: {payloadSource}</span>
             {runtimeError ? <span className="phase1-chip phase1-chip-error">{runtimeError}</span> : null}
+          </div>
+        </section>
+
+        <section className="phase1-panel" id="phase1-build-runner">
+          <h2>Deck input + build runner</h2>
+
+          <div className="phase1-build-form-grid">
+            <label>
+              Commander
+              <input
+                value={commander}
+                list="phase1-commander-suggest"
+                onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                  setCommander(event.target.value);
+                }}
+                placeholder="Krenko, Mob Boss"
+              />
+              <datalist id="phase1-commander-suggest">
+                {commanderSuggestRows.map((row: CardSuggestRow, index: number) => (
+                  <option key={`${row.oracle_id}-${row.name}-${index}`} value={row.name} />
+                ))}
+              </datalist>
+            </label>
+
+            <label>
+              Snapshot ID
+              <input
+                value={dbSnapshotId}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                  setDbSnapshotId(event.target.value);
+                }}
+                placeholder={mode === "file" ? FIXTURE_DEFAULT_SNAPSHOT_ID : "latest snapshot (if blank)"}
+              />
+            </label>
+
+            <label>
+              Profile ID
+              <input
+                value={profileId}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                  setProfileId(event.target.value);
+                }}
+                placeholder={DEFAULT_PROFILE_ID}
+              />
+            </label>
+
+            <label>
+              Bracket ID
+              <input
+                value={bracketId}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                  setBracketId(event.target.value);
+                }}
+                placeholder={DEFAULT_BRACKET_ID}
+              />
+            </label>
+
+            <label className="phase1-span-2">
+              Decklist
+              <textarea
+                rows={9}
+                value={cardsInput}
+                onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
+                  setCardsInput(event.target.value);
+                }}
+                placeholder={[
+                  "1 Sol Ring",
+                  "1x Arcane Signet",
+                  "Mountain",
+                  "# comments are ignored",
+                  "// comments are ignored",
+                ].join("\n")}
+              />
+            </label>
+
+            <div className="phase1-build-actions phase1-span-2">
+              <button type="button" onClick={runBuildApi} disabled={loadingBuild || mode !== "api"}>
+                {loadingBuild ? (
+                  <span className="phase1-button-inline">
+                    <span className="phase1-spinner" aria-hidden="true" />
+                    Running /build...
+                  </span>
+                ) : (
+                  "Run build"
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="phase1-source-row">
+            <span className="phase1-chip">Parsed cards (payload order): {deckCardsInPayloadOrder.length}</span>
+            <span className="phase1-chip">Normalized preview lines: {normalizedDeckPreviewLines.length}</span>
+            {mode !== "api" ? <span className="phase1-chip">Switch to API mode to run /build.</span> : null}
+            <span className="phase1-chip">
+              commander autocomplete: {commanderSuggestLoading ? "loading..." : `${commanderSuggestRows.length} result(s)`}
+            </span>
+          </div>
+
+          {commanderSuggestError ? (
+            <div className="phase1-search-error-banner" role="status">
+              <strong>Commander autocomplete error</strong>
+              <code>{commanderSuggestError}</code>
+            </div>
+          ) : null}
+
+          {runtimeError ? (
+            <div className="phase1-search-error-banner" role="status">
+              <strong>Build request failed</strong>
+              <code>{runtimeError}</code>
+            </div>
+          ) : null}
+
+          <div className="phase1-deck-preview-block">
+            <h3>Normalized preview (deterministic sort)</h3>
+            {normalizedDeckPreviewLines.length > 0 ? (
+              <pre>{normalizedDeckPreviewLines.join("\n")}</pre>
+            ) : (
+              <div className="phase1-preview-placeholder">No deck cards parsed yet.</div>
+            )}
           </div>
         </section>
 
@@ -1126,11 +1435,19 @@ export default function Phase1Harness() {
                 <>
                   <p className="phase1-preview-title">{selectedPreviewRow.name}</p>
                   <p className="phase1-preview-subtitle">{selectedPreviewRow.type_line || "Type unavailable"}</p>
-                  {selectedPreviewHasLocalArt ? (
-                    <img src={selectedPreviewRow.image_uri || undefined} alt={selectedPreviewRow.name} />
+                  {selectedPreviewCanRenderImage ? (
+                    <img
+                      src={selectedPreviewImageUrl}
+                      alt={selectedPreviewRow.name}
+                      onError={() => {
+                        markPreviewImageFailure(selectedPreviewImageUrl);
+                      }}
+                    />
                   ) : (
                     <div className="phase1-preview-placeholder">
-                      No local image URI available in snapshot metadata.
+                      {selectedPreviewOracleId === ""
+                        ? "No oracle_id available for this card in current payload."
+                        : "Not cached in local image cache."}
                     </div>
                   )}
                 </>
@@ -1219,10 +1536,20 @@ export default function Phase1Harness() {
                         <>
                           <p className="phase1-preview-title">{selectedPreviewRow.name}</p>
                           <p className="phase1-preview-subtitle">{selectedPreviewRow.type_line || "Type unavailable"}</p>
-                          {selectedPreviewHasLocalArt ? (
-                            <img src={selectedPreviewRow.image_uri || undefined} alt={selectedPreviewRow.name} />
+                          {selectedPreviewCanRenderImage ? (
+                            <img
+                              src={selectedPreviewImageUrl}
+                              alt={selectedPreviewRow.name}
+                              onError={() => {
+                                markPreviewImageFailure(selectedPreviewImageUrl);
+                              }}
+                            />
                           ) : (
-                            <div className="phase1-preview-placeholder">No local image URI available in snapshot metadata.</div>
+                            <div className="phase1-preview-placeholder">
+                              {selectedPreviewOracleId === ""
+                                ? "No oracle_id available for this card in current payload."
+                                : "Not cached in local image cache."}
+                            </div>
                           )}
 
                           {selectedPreviewPrimitiveTags.length > 0 ? (
