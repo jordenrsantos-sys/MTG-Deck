@@ -1,0 +1,1381 @@
+{
+  "engine_version": "0.2.3",
+  "ruleset_version": "ruleset_v0",
+  "bracket_definition_version": "bracket_v0",
+  "game_changers_version": "gc_v0_userlist_2025-11-20",
+  "db_snapshot_id": "20260217_190902",
+  "profile_id": "focused",
+  "bracket_id": "B2",
+  "status": "OK",
+  "deck_size_total": 1,
+  "deck_status": "UNDER_100",
+  "cards_needed": 99,
+  "cards_to_cut": null,
+  "cut_order": null,
+  "build_hash_v1": "9ae31f10b8a40b93a5a99fd5693c372ac77f5afd825863bf579c6c5e98df1acb",
+  "graph_hash_v1": "dd5efeb948cf64be58aabaa20a6af4c8741ae49a61183f0bb17a431f52125667",
+  "graph_hash_v2": "d277024c429e90749e39e3217b8727efa98769bcb5f92adef702ba5f95161bdb",
+  "motif_hash_v1": "879c94439906525b999f45adc2273d8a660485911c2710ed8a5abc3c86cf749c",
+  "disruption_hash_v1": "4601627a991a1dc73e924700a4acacbe4316a79daa99c9bd29190c383ade96b8",
+  "pathways_hash_v1": "fd61b1574aa2893ebdefa451d50048e962cae9fe62221a654b20d76ce2dea303",
+  "combo_skeleton_hash_v1": "650012a3a59137ad050ab7eb7b206acc0350d98cce7c32f376c2dd1fff1a61ef",
+  "combo_candidates_hash_v1": "643bfc4ac16a45f68270b86171b5615bb44b2d8d839ac775ce6595a288fccfcc",
+  "proof_scaffolds_hash_v1": "e1f49e743729e151f73fa7dd60d11fae88eaa76c3cc78ba9ed46fc997603117e",
+  "proof_scaffolds_hash_v2": "b628f8e0a57738fecad11d06ef0531fc0c0008f4dd9336baea073b6a3f9ad6ad",
+  "proof_scaffolds_hash_v3": "0ffc1b7c92c82a4df1aed985135ce890e6bcd51c86fb44a5bf887933a4ee93bd",
+  "unknowns": [],
+  "result": {
+    "format": "commander",
+    "snapshot_id": "20260217_190902",
+    "taxonomy_version": "taxonomy_v1_23",
+    "taxonomy_ruleset_version": "taxonomy_v1_23",
+    "ruleset_version": "ruleset_v0",
+    "commander": "Krenko, Mob Boss",
+    "commander_resolved": {
+      "snapshot_id": "20260217_190902",
+      "oracle_id": "68418069-f615-40ef-ae0d-764192acae00",
+      "name": "Krenko, Mob Boss",
+      "mana_cost": "{2}{R}{R}",
+      "cmc": 4,
+      "type_line": "Legendary Creature \u2014 Goblin Warrior",
+      "colors": "[\"R\"]",
+      "color_identity": "[\"R\"]",
+      "legalities_json": "{\"standard\": \"legal\", \"future\": \"legal\", \"historic\": \"legal\", \"timeless\": \"legal\", \"gladiator\": \"legal\", \"pioneer\": \"legal\", \"modern\": \"legal\", \"legacy\": \"legal\", \"pauper\": \"not_legal\", \"vintage\": \"legal\", \"penny\": \"legal\", \"commander\": \"legal\", \"oathbreaker\": \"legal\", \"standardbrawl\": \"legal\", \"brawl\": \"legal\", \"alchemy\": \"legal\", \"paupercommander\": \"not_legal\", \"duel\": \"legal\", \"oldschool\": \"not_legal\", \"premodern\": \"not_legal\", \"predh\": \"not_legal\"}",
+      "primitives_json": "[]",
+      "legalities": {
+        "standard": "legal",
+        "future": "legal",
+        "historic": "legal",
+        "timeless": "legal",
+        "gladiator": "legal",
+        "pioneer": "legal",
+        "modern": "legal",
+        "legacy": "legal",
+        "pauper": "not_legal",
+        "vintage": "legal",
+        "penny": "legal",
+        "commander": "legal",
+        "oathbreaker": "legal",
+        "standardbrawl": "legal",
+        "brawl": "legal",
+        "alchemy": "legal",
+        "paupercommander": "not_legal",
+        "duel": "legal",
+        "oldschool": "not_legal",
+        "premodern": "not_legal",
+        "predh": "not_legal"
+      },
+      "primitives": [],
+      "tag_facets": {
+        "activated_ability": [
+          "true"
+        ],
+        "commander_eligible": [
+          "true"
+        ],
+        "is_creature": [
+          "true"
+        ],
+        "is_legendary": [
+          "true"
+        ],
+        "is_legendary_creature": [
+          "true"
+        ],
+        "tap_ability": [
+          "true"
+        ]
+      },
+      "taxonomy_version": "taxonomy_v1_23"
+    },
+    "cards_input": [],
+    "cards_resolved": [],
+    "game_changers_path": "E:\\mtg-engine\\repo\\data\\game_changers\\gc_v0_userlist_2025-11-20.json",
+    "game_changers_found": [],
+    "game_changers_count": 0,
+    "canonical_layer_version": "canonical_v1",
+    "primitive_index_version": "primitive_index_v1",
+    "structural_reporting_version": "structural_v1",
+    "build_pipeline_stage": "PROOF_ATTEMPT_V3_EVIDENCE",
+    "graph_layer_version": "graph_v3_typed",
+    "graph_ruleset_version": "graph_rules_v2_typed_edges",
+    "graph_fingerprint_version": "graph_fingerprint_v2",
+    "graph_hash_v1": "dd5efeb948cf64be58aabaa20a6af4c8741ae49a61183f0bb17a431f52125667",
+    "graph_hash_v2": "d277024c429e90749e39e3217b8727efa98769bcb5f92adef702ba5f95161bdb",
+    "graph_fingerprint_payload_v1": {
+      "graph_layer_version": "graph_v3_typed",
+      "graph_ruleset_version": "graph_rules_v2_typed_edges",
+      "db_snapshot_id": "20260217_190902",
+      "format": "commander",
+      "bracket_id": "B2",
+      "profile_id": "focused",
+      "nodes_compact": [
+        {
+          "slot_id": "C0",
+          "resolved_oracle_id": "68418069-f615-40ef-ae0d-764192acae00",
+          "primitives": []
+        }
+      ],
+      "edges_compact": []
+    },
+    "graph_fingerprint_payload_v2": {
+      "graph_layer_version": "graph_v3_typed",
+      "graph_ruleset_version": "graph_rules_v2_typed_edges",
+      "db_snapshot_id": "20260217_190902",
+      "format": "commander",
+      "bracket_id": "B2",
+      "profile_id": "focused",
+      "nodes_compact": [
+        {
+          "slot_id": "C0",
+          "resolved_oracle_id": "68418069-f615-40ef-ae0d-764192acae00",
+          "primitives": []
+        }
+      ],
+      "edges_compact": [],
+      "typed_edges_compact": []
+    },
+    "motif_layer_version": "motif_v1",
+    "motif_ruleset_version": "motif_rules_v0",
+    "motifs": [
+      {
+        "motif_id": "M1_COMMANDER_CONNECTED_TO_DECK",
+        "motif_type": "COMPONENT_RELATION",
+        "label": "Commander Connected To Deck",
+        "present": false,
+        "count": 0,
+        "evidence": {
+          "commander_component_id": "G0",
+          "deck_nodes_in_commander_component": [],
+          "commander_isolated": true
+        }
+      },
+      {
+        "motif_id": "M2_GRAPH_FRAGMENTED",
+        "motif_type": "COMPONENT_STATS",
+        "label": "Graph Fragmented",
+        "present": false,
+        "count": 1,
+        "evidence": {
+          "components": [
+            {
+              "component_id": "G0",
+              "nodes_total": 1
+            }
+          ],
+          "isolated_nodes_total": 1,
+          "largest_component_id": "G0",
+          "largest_component_size": 1
+        }
+      },
+      {
+        "motif_id": "M3_OVERLAP_DENSITY",
+        "motif_type": "GRAPH_STATS",
+        "label": "Primitive Overlap Density",
+        "present": true,
+        "count": 0,
+        "evidence": {
+          "avg_degree": 0,
+          "max_degree": 0,
+          "edges_total": 0,
+          "nodes_total": 1
+        }
+      }
+    ],
+    "motif_totals": {
+      "motifs_total": 3,
+      "motifs_present_total": 1,
+      "typed_edge_types_total": 0,
+      "typed_matches_total": 0
+    },
+    "motif_fingerprint_version": "motif_fingerprint_v1",
+    "motif_hash_v1": "879c94439906525b999f45adc2273d8a660485911c2710ed8a5abc3c86cf749c",
+    "motif_fingerprint_payload_v1": {
+      "motif_layer_version": "motif_v1",
+      "motif_ruleset_version": "motif_rules_v0",
+      "graph_hash_v2": "d277024c429e90749e39e3217b8727efa98769bcb5f92adef702ba5f95161bdb",
+      "motifs_compact": [
+        {
+          "motif_id": "M1_COMMANDER_CONNECTED_TO_DECK",
+          "present": false,
+          "count": 0
+        },
+        {
+          "motif_id": "M2_GRAPH_FRAGMENTED",
+          "present": false,
+          "count": 1
+        },
+        {
+          "motif_id": "M3_OVERLAP_DENSITY",
+          "present": true,
+          "count": 0
+        }
+      ]
+    },
+    "disruption_layer_version": "disruption_v1",
+    "disruption_ruleset_version": "disruption_rules_v0_graph_theory",
+    "disruption_articulation_nodes": [],
+    "disruption_articulation_nodes_total": 0,
+    "disruption_bridge_edges": [],
+    "disruption_bridge_edges_total": 0,
+    "disruption_node_impact": [
+      {
+        "slot_id": "C0",
+        "node_type": "COMMANDER",
+        "degree": 0,
+        "components_after_removal": 0,
+        "delta_components": -1,
+        "isolated_nodes_after_removal": 0,
+        "largest_component_size_after_removal": 0
+      }
+    ],
+    "disruption_node_impact_total": 1,
+    "disruption_commander_risk": {
+      "commander_slot_id": "C0",
+      "commander_is_playable": true,
+      "commander_is_isolated": true,
+      "commander_component_id": "G0",
+      "deck_nodes_in_commander_component": 0,
+      "risk_flags": [
+        "COMMANDER_ISOLATED"
+      ]
+    },
+    "disruption_totals": {
+      "baseline_components": 1,
+      "articulation_nodes_total": 0,
+      "bridge_edges_total": 0,
+      "max_delta_components_node": -1,
+      "max_delta_components_edge": 0,
+      "commander_isolated": true
+    },
+    "disruption_fingerprint_version": "disruption_fingerprint_v1",
+    "disruption_hash_v1": "4601627a991a1dc73e924700a4acacbe4316a79daa99c9bd29190c383ade96b8",
+    "disruption_fingerprint_payload_v1": {
+      "disruption_layer_version": "disruption_v1",
+      "disruption_ruleset_version": "disruption_rules_v0_graph_theory",
+      "graph_hash_v2": "d277024c429e90749e39e3217b8727efa98769bcb5f92adef702ba5f95161bdb",
+      "articulation_nodes_compact": [],
+      "bridge_edges_compact": [],
+      "commander_risk_flags": [
+        "COMMANDER_ISOLATED"
+      ]
+    },
+    "pathways_layer_version": "pathways_v1",
+    "pathways_ruleset_version": "pathways_rules_v0_shortest_paths",
+    "pathways_commander_distances": [],
+    "pathways_commander_reachable_slots": [],
+    "pathways_commander_unreachable_slots": [],
+    "pathways_commander_reachable_total": 0,
+    "pathways_commander_unreachable_total": 0,
+    "pathways_hubs": [
+      {
+        "slot_id": "C0",
+        "node_type": "COMMANDER",
+        "degree": 0,
+        "primitive_count": 0,
+        "resolved_name": "Krenko, Mob Boss",
+        "resolved_oracle_id": "68418069-f615-40ef-ae0d-764192acae00"
+      }
+    ],
+    "pathways_hubs_total": 1,
+    "pathways_commander_bridge_candidates": [],
+    "pathways_totals": {
+      "commander_in_graph": true,
+      "commander_playable": true,
+      "deck_nodes_total": 0,
+      "reachable_deck_nodes_total": 0,
+      "unreachable_deck_nodes_total": 0,
+      "max_distance_to_deck": null,
+      "hubs_total": 1,
+      "bridge_candidates_total": 0
+    },
+    "pathways_fingerprint_version": "pathways_fingerprint_v1",
+    "pathways_hash_v1": "fd61b1574aa2893ebdefa451d50048e962cae9fe62221a654b20d76ce2dea303",
+    "pathways_fingerprint_payload_v1": {
+      "pathways_layer_version": "pathways_v1",
+      "pathways_ruleset_version": "pathways_rules_v0_shortest_paths",
+      "graph_hash_v2": "d277024c429e90749e39e3217b8727efa98769bcb5f92adef702ba5f95161bdb",
+      "distances_compact": [],
+      "hubs_compact": [
+        {
+          "slot_id": "C0",
+          "degree": 0
+        }
+      ],
+      "bridge_candidates_compact": []
+    },
+    "combo_skeleton_layer_version": "combo_skeleton_v0",
+    "combo_skeleton_ruleset_version": "combo_skeleton_rules_v0_graph_cycles",
+    "combo_skeleton_components": [
+      {
+        "component_id": "G0",
+        "nodes_total": 1,
+        "edges_total": 0,
+        "has_cycle": false,
+        "cyclomatic_number": 0,
+        "smallest_cycle_length": null,
+        "smallest_cycle_length_reason": null,
+        "small_cycles": [],
+        "small_cycles_total": 0
+      }
+    ],
+    "combo_skeleton_totals": {
+      "components_total": 1,
+      "components_with_cycles_total": 0,
+      "total_cyclomatic_number": 0,
+      "min_smallest_cycle_length": null,
+      "triangles_total": 0,
+      "cycles4_total": 0,
+      "small_cycles_emitted_total": 0
+    },
+    "combo_skeleton_fingerprint_version": "combo_skeleton_fingerprint_v1",
+    "combo_skeleton_hash_v1": "650012a3a59137ad050ab7eb7b206acc0350d98cce7c32f376c2dd1fff1a61ef",
+    "combo_skeleton_fingerprint_payload_v1": {
+      "combo_skeleton_layer_version": "combo_skeleton_v0",
+      "combo_skeleton_ruleset_version": "combo_skeleton_rules_v0_graph_cycles",
+      "graph_hash_v2": "d277024c429e90749e39e3217b8727efa98769bcb5f92adef702ba5f95161bdb",
+      "components_compact": [
+        {
+          "component_id": "G0",
+          "has_cycle": false,
+          "cyclomatic_number": 0,
+          "smallest_cycle_length": null,
+          "small_cycles_compact": []
+        }
+      ]
+    },
+    "combo_candidate_layer_version": "combo_candidate_v0",
+    "combo_candidate_ruleset_version": "combo_candidate_rules_v0_from_cycles",
+    "combo_candidates_v0": [],
+    "combo_candidates_v0_total": 0,
+    "combo_candidates_by_component": {},
+    "combo_candidates_by_cycle_len": {
+      "3": [],
+      "4": []
+    },
+    "combo_candidate_fingerprint_version": "combo_candidate_fingerprint_v1",
+    "combo_candidates_hash_v1": "643bfc4ac16a45f68270b86171b5615bb44b2d8d839ac775ce6595a288fccfcc",
+    "combo_candidate_fingerprint_payload_v1": {
+      "combo_candidate_layer_version": "combo_candidate_v0",
+      "combo_candidate_ruleset_version": "combo_candidate_rules_v0_from_cycles",
+      "combo_skeleton_hash_v1": "650012a3a59137ad050ab7eb7b206acc0350d98cce7c32f376c2dd1fff1a61ef",
+      "graph_hash_v2": "d277024c429e90749e39e3217b8727efa98769bcb5f92adef702ba5f95161bdb",
+      "candidates_compact": []
+    },
+    "proof_scaffold_layer_version": "proof_scaffold_v1",
+    "proof_scaffold_ruleset_version": "proof_scaffold_rules_v2_topic_preferences",
+    "proof_scaffold_rules_policy_version": "rules_context_v2_preferred_sections",
+    "combo_proof_scaffolds_v0": [],
+    "combo_proof_scaffolds_v0_total": 0,
+    "proof_attempt_layer_version": "proof_attempt_v3_snapshot_evidence_only",
+    "combo_proof_attempts_v0": [],
+    "combo_proof_attempts_v0_total": 0,
+    "proof_attempts_hash_v1": "6fc639524dcd64c55b0a2761715ed2ddf4110c849d0311075215dd8eea41b08c",
+    "proof_attempts_hash_v2": "e5587ba51cef75a00b50d336596838d6ba4f6ab81f3b978d0272bbba9e648ac2",
+    "proof_attempts_hash_v3": "c8c8b7a1534a37de62bd5fab080554a97cf0f07f323c69d3e069818eda9245b8",
+    "proof_scaffold_fingerprint_version": "proof_scaffold_fingerprint_v2",
+    "proof_scaffolds_hash_v1": "e1f49e743729e151f73fa7dd60d11fae88eaa76c3cc78ba9ed46fc997603117e",
+    "proof_scaffolds_hash_v2": "b628f8e0a57738fecad11d06ef0531fc0c0008f4dd9336baea073b6a3f9ad6ad",
+    "proof_scaffolds_hash_v3": "0ffc1b7c92c82a4df1aed985135ce890e6bcd51c86fb44a5bf887933a4ee93bd",
+    "proof_scaffold_fingerprint_payload_v1": {
+      "proof_scaffold_layer_version": "proof_scaffold_v1",
+      "proof_scaffold_ruleset_version": "proof_scaffold_rules_v2_topic_preferences",
+      "combo_candidates_hash_v1": "643bfc4ac16a45f68270b86171b5615bb44b2d8d839ac775ce6595a288fccfcc",
+      "disruption_hash_v1": "4601627a991a1dc73e924700a4acacbe4316a79daa99c9bd29190c383ade96b8",
+      "pathways_hash_v1": "fd61b1574aa2893ebdefa451d50048e962cae9fe62221a654b20d76ce2dea303",
+      "scaffolds_compact": []
+    },
+    "proof_scaffold_fingerprint_payload_v2": {
+      "proof_scaffold_layer_version": "proof_scaffold_v1",
+      "proof_scaffold_ruleset_version": "proof_scaffold_rules_v2_topic_preferences",
+      "proof_scaffold_rules_policy_version": "rules_context_v2_preferred_sections",
+      "ruleset_id": "cr_2026-01-16",
+      "combo_candidates_hash_v1": "643bfc4ac16a45f68270b86171b5615bb44b2d8d839ac775ce6595a288fccfcc",
+      "disruption_hash_v1": "4601627a991a1dc73e924700a4acacbe4316a79daa99c9bd29190c383ade96b8",
+      "pathways_hash_v1": "fd61b1574aa2893ebdefa451d50048e962cae9fe62221a654b20d76ce2dea303",
+      "scaffolds_compact": []
+    },
+    "proof_scaffold_fingerprint_payload_v3": {
+      "proof_scaffold_layer_version": "proof_scaffold_v1",
+      "proof_scaffold_ruleset_version": "proof_scaffold_rules_v2_topic_preferences",
+      "combo_candidates_hash_v1": "643bfc4ac16a45f68270b86171b5615bb44b2d8d839ac775ce6595a288fccfcc",
+      "disruption_hash_v1": "4601627a991a1dc73e924700a4acacbe4316a79daa99c9bd29190c383ade96b8",
+      "pathways_hash_v1": "fd61b1574aa2893ebdefa451d50048e962cae9fe62221a654b20d76ce2dea303",
+      "topic_selection_rules_version": "builtin_default",
+      "selection_policy_id": "PREFER_SECTIONS_THEN_SORT_(section_id,rule_id)_TAKE_N",
+      "scaffolds_compact": []
+    },
+    "proof_scaffold_hash_version": "proof_scaffold_hash_v3",
+    "rules_db_path": "E:\\mtg-engine\\repo\\data\\rules\\rules.sqlite",
+    "rules_db_available": true,
+    "ruleset_id_default": "cr_2026-01-16",
+    "overrides_path": "E:\\mtg-engine\\repo\\data\\overrides\\overrides_v0.json",
+    "overrides_available": false,
+    "overrides_version": "none",
+    "patch_loop_v0": {
+      "patches_total": 0,
+      "patches_applied_total": 0,
+      "patch_ids_sorted": [],
+      "patch_effect_summary": [],
+      "patch_hash_v1": null
+    },
+    "patch_error_v0": null,
+    "repro_v1": {
+      "db_snapshot_id": "20260217_190902",
+      "taxonomy_version": "taxonomy_v1_23",
+      "taxonomy_ruleset_version": "taxonomy_v1_23",
+      "ruleset_id": "cr_2026-01-16",
+      "game_changers_version": "gc_v0_userlist_2025-11-20",
+      "overrides_version": "none",
+      "request_hash_v1": "8034f06c2fb4e096ebd734bc3b876b91180d3e7e0ceb3ef1686e272ec57e7323",
+      "build_hash_v1": "9ae31f10b8a40b93a5a99fd5693c372ac77f5afd825863bf579c6c5e98df1acb",
+      "proof_scaffolds_hash_v2": "b628f8e0a57738fecad11d06ef0531fc0c0008f4dd9336baea073b6a3f9ad6ad",
+      "proof_scaffolds_hash_v3": "0ffc1b7c92c82a4df1aed985135ce890e6bcd51c86fb44a5bf887933a4ee93bd",
+      "graph_hash_v2": "d277024c429e90749e39e3217b8727efa98769bcb5f92adef702ba5f95161bdb"
+    },
+    "trace_v1": {
+      "inputs": {
+        "commander": "Krenko, Mob Boss",
+        "cards_input_total": 0,
+        "db_snapshot_id": "20260217_190902",
+        "taxonomy_version": "taxonomy_v1_23",
+        "taxonomy_ruleset_version": "taxonomy_v1_23",
+        "profile_id": "focused",
+        "bracket_id": "B2",
+        "format": "commander"
+      },
+      "playability_summary": {
+        "playable_slots_total": 0,
+        "nonplayable_slots_total": 0,
+        "unknown_slots_total": 0,
+        "nonplayable_by_code": {}
+      },
+      "duplicate_enforcement": {
+        "exempt_names_count": 10,
+        "first_copy_slot_by_name": {},
+        "duplicate_exclusions": []
+      },
+      "primitive_overrides": {
+        "overrides_available": false,
+        "overrides_version": "none",
+        "overrides_path": "E:\\mtg-engine\\repo\\data\\overrides\\overrides_v0.json",
+        "overrides_scope_db_snapshot_id": null,
+        "applied_patches_total": 0,
+        "applied_patches": [],
+        "oracle_primitive_deltas": []
+      },
+      "rules_citations": {
+        "rules_db_available": false,
+        "rules_db_path": "E:\\mtg-engine\\repo\\data\\rules\\rules.sqlite",
+        "ruleset_id_default": "cr_2026-01-16",
+        "total_citations_attached_to_first_scaffold": 0
+      },
+      "rules_topic_selection": {
+        "applies_to_scaffolds": "ALL",
+        "rules_db_available": true,
+        "rules_db_path": "E:\\mtg-engine\\repo\\data\\rules\\rules.sqlite",
+        "ruleset_id": "cr_2026-01-16",
+        "topic_selection_rules_version": "builtin_default",
+        "policy_id": "PREFER_SECTIONS_THEN_SORT_(section_id,rule_id)_TAKE_N",
+        "take_final": 5,
+        "fts_fetch_raw": 25,
+        "topics_total": 5,
+        "topics_with_any_match_total": 4,
+        "topics_selected_preferred_only_total": 3,
+        "topics_with_fallback_total": 1,
+        "topics_no_matches_total": 1,
+        "total_selected_rule_ids_final": 20,
+        "topic_traces": [
+          {
+            "topic_id": "PRIORITY",
+            "fts_query": "priority",
+            "fts_fetch_limit_raw": 25,
+            "prefer_sections_applied": [
+              "117"
+            ],
+            "fts_returned_rule_ids_raw": [
+              "104.3b",
+              "104.3c",
+              "104.3d",
+              "106.4b",
+              "113.3b",
+              "113.3c",
+              "116.2a",
+              "116.2b",
+              "116.2c",
+              "116.2d",
+              "116.2e",
+              "116.2f",
+              "116.2g",
+              "116.2h",
+              "116.2i",
+              "116.2j",
+              "116.2k",
+              "116.2m",
+              "117.1a",
+              "117.1b",
+              "117.1c",
+              "117.1d",
+              "117.2a",
+              "117.2b",
+              "117.2c"
+            ],
+            "selected_rule_ids_sorted": [
+              "104.3b",
+              "104.3c",
+              "104.3d",
+              "106.4b",
+              "113.3b",
+              "113.3c",
+              "116.2a",
+              "116.2b",
+              "116.2c",
+              "116.2d",
+              "116.2e",
+              "116.2f",
+              "116.2g",
+              "116.2h",
+              "116.2i",
+              "116.2j",
+              "116.2k",
+              "116.2m",
+              "117.1a",
+              "117.1b",
+              "117.1c",
+              "117.1d",
+              "117.2a",
+              "117.2b",
+              "117.2c"
+            ],
+            "preferred_rule_ids_sorted": [
+              "117.1a",
+              "117.1b",
+              "117.1c",
+              "117.1d",
+              "117.2a",
+              "117.2b",
+              "117.2c"
+            ],
+            "nonpreferred_rule_ids_sorted": [
+              "104.3b",
+              "104.3c",
+              "104.3d",
+              "106.4b",
+              "113.3b",
+              "113.3c",
+              "116.2a",
+              "116.2b",
+              "116.2c",
+              "116.2d",
+              "116.2e",
+              "116.2f",
+              "116.2g",
+              "116.2h",
+              "116.2i",
+              "116.2j",
+              "116.2k",
+              "116.2m"
+            ],
+            "selected_rule_ids_final": [
+              "117.1a",
+              "117.1b",
+              "117.1c",
+              "117.1d",
+              "117.2a"
+            ],
+            "preferred_hits_total": 7,
+            "nonpreferred_hits_total": 18,
+            "selected_rule_ids_final_total": 5,
+            "selected_preferred_total": 5,
+            "selected_nonpreferred_total": 0,
+            "selected_all_preferred": true,
+            "fallback_used": false,
+            "preferred_sections_missing_in_results": false,
+            "selection_status": "OK_PREFERRED_ONLY"
+          },
+          {
+            "topic_id": "STATE_BASED_ACTIONS",
+            "fts_query": "state-based action",
+            "fts_fetch_limit_raw": 25,
+            "prefer_sections_applied": [],
+            "fts_returned_rule_ids_raw": [],
+            "selected_rule_ids_sorted": [],
+            "preferred_rule_ids_sorted": [],
+            "nonpreferred_rule_ids_sorted": [],
+            "selected_rule_ids_final": [],
+            "preferred_hits_total": 0,
+            "nonpreferred_hits_total": 0,
+            "selected_rule_ids_final_total": 0,
+            "selected_preferred_total": 0,
+            "selected_nonpreferred_total": 0,
+            "selected_all_preferred": false,
+            "fallback_used": false,
+            "preferred_sections_missing_in_results": false,
+            "selection_status": "NO_MATCHES"
+          },
+          {
+            "topic_id": "TRIGGERED_ABILITIES",
+            "fts_query": "triggered ability",
+            "fts_fetch_limit_raw": 25,
+            "prefer_sections_applied": [
+              "603"
+            ],
+            "fts_returned_rule_ids_raw": [
+              "106.6a",
+              "107.3m",
+              "107.3n",
+              "109.4b",
+              "113.1c",
+              "113.3a",
+              "113.3c",
+              "113.6k",
+              "113.6m",
+              "113.7a",
+              "115.1a",
+              "115.1b",
+              "115.1d",
+              "115.1e",
+              "116.2c",
+              "117.2a",
+              "122.1g",
+              "122.1i",
+              "309.4c",
+              "400.7e",
+              "400.7k",
+              "603.1a",
+              "603.1b",
+              "603.2d",
+              "603.2f"
+            ],
+            "selected_rule_ids_sorted": [
+              "106.6a",
+              "107.3m",
+              "107.3n",
+              "109.4b",
+              "113.1c",
+              "113.3a",
+              "113.3c",
+              "113.6k",
+              "113.6m",
+              "113.7a",
+              "115.1a",
+              "115.1b",
+              "115.1d",
+              "115.1e",
+              "116.2c",
+              "117.2a",
+              "122.1g",
+              "122.1i",
+              "309.4c",
+              "400.7e",
+              "400.7k",
+              "603.1a",
+              "603.1b",
+              "603.2d",
+              "603.2f"
+            ],
+            "preferred_rule_ids_sorted": [
+              "603.1a",
+              "603.1b",
+              "603.2d",
+              "603.2f"
+            ],
+            "nonpreferred_rule_ids_sorted": [
+              "106.6a",
+              "107.3m",
+              "107.3n",
+              "109.4b",
+              "113.1c",
+              "113.3a",
+              "113.3c",
+              "113.6k",
+              "113.6m",
+              "113.7a",
+              "115.1a",
+              "115.1b",
+              "115.1d",
+              "115.1e",
+              "116.2c",
+              "117.2a",
+              "122.1g",
+              "122.1i",
+              "309.4c",
+              "400.7e",
+              "400.7k"
+            ],
+            "selected_rule_ids_final": [
+              "603.1a",
+              "603.1b",
+              "603.2d",
+              "603.2f",
+              "106.6a"
+            ],
+            "preferred_hits_total": 4,
+            "nonpreferred_hits_total": 21,
+            "selected_rule_ids_final_total": 5,
+            "selected_preferred_total": 4,
+            "selected_nonpreferred_total": 1,
+            "selected_all_preferred": false,
+            "fallback_used": true,
+            "preferred_sections_missing_in_results": false,
+            "selection_status": "OK_MIXED_FALLBACK"
+          },
+          {
+            "topic_id": "REPLACEMENT_EFFECTS",
+            "fts_query": "replacement effect",
+            "fts_fetch_limit_raw": 25,
+            "prefer_sections_applied": [
+              "614",
+              "616"
+            ],
+            "fts_returned_rule_ids_raw": [
+              "106.6a",
+              "106.12b",
+              "107.3m",
+              "121.6b",
+              "121.6c",
+              "122.1c",
+              "122.1d",
+              "122.1h",
+              "208.2b",
+              "306.5b",
+              "310.4b",
+              "603.7a",
+              "603.7f",
+              "607.2b",
+              "609.7a",
+              "614.7a",
+              "614.11a",
+              "614.11b",
+              "614.12a",
+              "614.13c",
+              "614.17c",
+              "616.1f",
+              "616.1g",
+              "701.7b",
+              "701.10g"
+            ],
+            "selected_rule_ids_sorted": [
+              "106.12b",
+              "106.6a",
+              "107.3m",
+              "121.6b",
+              "121.6c",
+              "122.1c",
+              "122.1d",
+              "122.1h",
+              "208.2b",
+              "306.5b",
+              "310.4b",
+              "603.7a",
+              "603.7f",
+              "607.2b",
+              "609.7a",
+              "614.11a",
+              "614.11b",
+              "614.12a",
+              "614.13c",
+              "614.17c",
+              "614.7a",
+              "616.1f",
+              "616.1g",
+              "701.10g",
+              "701.7b"
+            ],
+            "preferred_rule_ids_sorted": [
+              "614.11a",
+              "614.11b",
+              "614.12a",
+              "614.13c",
+              "614.17c",
+              "614.7a",
+              "616.1f",
+              "616.1g"
+            ],
+            "nonpreferred_rule_ids_sorted": [
+              "106.12b",
+              "106.6a",
+              "107.3m",
+              "121.6b",
+              "121.6c",
+              "122.1c",
+              "122.1d",
+              "122.1h",
+              "208.2b",
+              "306.5b",
+              "310.4b",
+              "603.7a",
+              "603.7f",
+              "607.2b",
+              "609.7a",
+              "701.10g",
+              "701.7b"
+            ],
+            "selected_rule_ids_final": [
+              "614.11a",
+              "614.11b",
+              "614.12a",
+              "614.13c",
+              "614.17c"
+            ],
+            "preferred_hits_total": 8,
+            "nonpreferred_hits_total": 17,
+            "selected_rule_ids_final_total": 5,
+            "selected_preferred_total": 5,
+            "selected_nonpreferred_total": 0,
+            "selected_all_preferred": true,
+            "fallback_used": false,
+            "preferred_sections_missing_in_results": false,
+            "selection_status": "OK_PREFERRED_ONLY"
+          },
+          {
+            "topic_id": "TARGETING",
+            "fts_query": "target",
+            "fts_fetch_limit_raw": 25,
+            "prefer_sections_applied": [
+              "115"
+            ],
+            "fts_returned_rule_ids_raw": [
+              "111.10s",
+              "113.7a",
+              "115.1a",
+              "115.1b",
+              "115.1c",
+              "115.1d",
+              "115.1e",
+              "115.7a",
+              "115.7b",
+              "115.9a",
+              "115.9b",
+              "115.9c",
+              "115.10a",
+              "115.10b",
+              "303.4a",
+              "601.2c",
+              "603.1a",
+              "605.1a",
+              "605.1b",
+              "605.5a",
+              "608.2b",
+              "608.2c",
+              "608.2d",
+              "608.3b",
+              "700.2d"
+            ],
+            "selected_rule_ids_sorted": [
+              "111.10s",
+              "113.7a",
+              "115.10a",
+              "115.10b",
+              "115.1a",
+              "115.1b",
+              "115.1c",
+              "115.1d",
+              "115.1e",
+              "115.7a",
+              "115.7b",
+              "115.9a",
+              "115.9b",
+              "115.9c",
+              "303.4a",
+              "601.2c",
+              "603.1a",
+              "605.1a",
+              "605.1b",
+              "605.5a",
+              "608.2b",
+              "608.2c",
+              "608.2d",
+              "608.3b",
+              "700.2d"
+            ],
+            "preferred_rule_ids_sorted": [
+              "115.10a",
+              "115.10b",
+              "115.1a",
+              "115.1b",
+              "115.1c",
+              "115.1d",
+              "115.1e",
+              "115.7a",
+              "115.7b",
+              "115.9a",
+              "115.9b",
+              "115.9c"
+            ],
+            "nonpreferred_rule_ids_sorted": [
+              "111.10s",
+              "113.7a",
+              "303.4a",
+              "601.2c",
+              "603.1a",
+              "605.1a",
+              "605.1b",
+              "605.5a",
+              "608.2b",
+              "608.2c",
+              "608.2d",
+              "608.3b",
+              "700.2d"
+            ],
+            "selected_rule_ids_final": [
+              "115.10a",
+              "115.10b",
+              "115.1a",
+              "115.1b",
+              "115.1c"
+            ],
+            "preferred_hits_total": 12,
+            "nonpreferred_hits_total": 13,
+            "selected_rule_ids_final_total": 5,
+            "selected_preferred_total": 5,
+            "selected_nonpreferred_total": 0,
+            "selected_all_preferred": true,
+            "fallback_used": false,
+            "preferred_sections_missing_in_results": false,
+            "selection_status": "OK_PREFERRED_ONLY"
+          }
+        ]
+      }
+    },
+    "build_fingerprint_version": "build_fingerprint_v1",
+    "build_hash_v1": "9ae31f10b8a40b93a5a99fd5693c372ac77f5afd825863bf579c6c5e98df1acb",
+    "build_fingerprint_payload_v1": {
+      "engine_version": "0.2.3",
+      "ruleset_version": "ruleset_v0",
+      "bracket_definition_version": "bracket_v0",
+      "game_changers_version": "gc_v0_userlist_2025-11-20",
+      "taxonomy_version": "taxonomy_v1_23",
+      "taxonomy_ruleset_version": "taxonomy_v1_23",
+      "canonical_layer_version": "canonical_v1",
+      "primitive_index_version": "primitive_index_v1",
+      "structural_reporting_version": "structural_v1",
+      "build_pipeline_stage": "PROOF_ATTEMPT_V0",
+      "db_snapshot_id": "20260217_190902",
+      "profile_id": "focused",
+      "bracket_id": "B2",
+      "format": "commander",
+      "commander_input": "Krenko, Mob Boss",
+      "commander_resolved_name": "Krenko, Mob Boss",
+      "commander_oracle_id": "68418069-f615-40ef-ae0d-764192acae00",
+      "canonical_slots_compact": [
+        {
+          "slot_id": "C0",
+          "input": "Krenko, Mob Boss",
+          "resolved_name": "Krenko, Mob Boss",
+          "resolved_oracle_id": "68418069-f615-40ef-ae0d-764192acae00",
+          "status": "PLAYABLE",
+          "codes": []
+        }
+      ],
+      "unknowns_canonical_compact": [],
+      "game_changers_count": 0,
+      "game_changers_found": [],
+      "bracket_floor_from_game_changers": null,
+      "bracket_conflict": false,
+      "patch_hash_v1": "null",
+      "primitive_index_totals": {
+        "total_slots": 1,
+        "slots_with_primitives": 0,
+        "unique_primitives_total": 0
+      },
+      "structural_snapshot_v1": {
+        "snapshot_id": "20260217_190902",
+        "taxonomy_version": "taxonomy_v1_23",
+        "ruleset_version": "taxonomy_v1_23",
+        "profile_id": "focused",
+        "bracket_id": "B2",
+        "required_primitives_v1": [
+          "BOARD_WIPE",
+          "CARD_DRAW",
+          "PROTECTION",
+          "RAMP_MANA",
+          "REMOVAL_SINGLE"
+        ],
+        "present_primitives_v1": [],
+        "missing_primitives_v1": [
+          "BOARD_WIPE",
+          "CARD_DRAW",
+          "PROTECTION",
+          "RAMP_MANA",
+          "REMOVAL_SINGLE"
+        ],
+        "primitive_counts_by_id": {},
+        "primitive_concentration_index_v1": 0,
+        "dead_slot_ids_v1": [],
+        "commander_dependency_signal_v1": 0,
+        "structural_health_summary_v1": {
+          "dead_slot_count": 0,
+          "missing_required_count": 5,
+          "top_primitives": []
+        }
+      }
+    },
+    "invariants_v1": {
+      "all_slot_ids_unique": true,
+      "playable_slot_ids_consistent": true,
+      "unknowns_canonical_consistent": true,
+      "graph_edges_consistent_with_adjacency": true,
+      "combo_candidates_edges_exist": true,
+      "canonical_slots_total": 1,
+      "playable_slots_total": 1,
+      "graph_nodes_total": 1,
+      "graph_edges_total": 0,
+      "combo_candidates_total": 0,
+      "proof_scaffolds_total": 0,
+      "proof_scaffolds_rules_context_consistent": true,
+      "proof_attempts_total_matches_scaffolds": true,
+      "proof_attempt_hash_stable": true,
+      "patch_ids_unique": true,
+      "patch_hash_consistent": true,
+      "patch_hash_in_build_hash": true
+    },
+    "invariants_debug_v1": {
+      "passed": [
+        "all_slot_ids_unique",
+        "combo_candidates_edges_exist",
+        "graph_edges_consistent_with_adjacency",
+        "patch_hash_consistent",
+        "patch_hash_in_build_hash",
+        "patch_ids_unique",
+        "playable_slot_ids_consistent",
+        "proof_attempt_hash_stable",
+        "proof_attempts_total_matches_scaffolds",
+        "proof_scaffolds_rules_context_consistent",
+        "unknowns_canonical_consistent"
+      ],
+      "failed": [],
+      "failed_total": 0,
+      "passed_total": 11
+    },
+    "invariants_all_pass_bool_only": true,
+    "pipeline_versions": {
+      "engine_version": "0.2.3",
+      "ruleset_version": "ruleset_v0",
+      "bracket_definition_version": "bracket_v0",
+      "game_changers_version": "gc_v0_userlist_2025-11-20",
+      "taxonomy_version": "taxonomy_v1_23",
+      "taxonomy_ruleset_version": "taxonomy_v1_23",
+      "canonical_layer_version": "canonical_v1",
+      "primitive_index_version": "primitive_index_v1",
+      "structural_reporting_version": "structural_v1",
+      "build_pipeline_stage": "PROOF_ATTEMPT_V0",
+      "graph_layer_version": "graph_v3_typed",
+      "graph_ruleset_version": "graph_rules_v2_typed_edges",
+      "graph_fingerprint_version": "graph_fingerprint_v2",
+      "graph_typed_rules_version": "typed_edge_rules_v0",
+      "motif_layer_version": "motif_v1",
+      "motif_ruleset_version": "motif_rules_v0",
+      "motif_fingerprint_version": "motif_fingerprint_v1",
+      "disruption_layer_version": "disruption_v1",
+      "disruption_ruleset_version": "disruption_rules_v0_graph_theory",
+      "disruption_fingerprint_version": "disruption_fingerprint_v1",
+      "pathways_layer_version": "pathways_v1",
+      "pathways_ruleset_version": "pathways_rules_v0_shortest_paths",
+      "pathways_fingerprint_version": "pathways_fingerprint_v1",
+      "combo_skeleton_layer_version": "combo_skeleton_v0",
+      "combo_skeleton_ruleset_version": "combo_skeleton_rules_v0_graph_cycles",
+      "combo_skeleton_fingerprint_version": "combo_skeleton_fingerprint_v1",
+      "combo_candidate_layer_version": "combo_candidate_v0",
+      "combo_candidate_ruleset_version": "combo_candidate_rules_v0_from_cycles",
+      "combo_candidate_fingerprint_version": "combo_candidate_fingerprint_v1",
+      "proof_scaffold_layer_version": "proof_scaffold_v1",
+      "proof_scaffold_ruleset_version": "proof_scaffold_rules_v2_topic_preferences",
+      "proof_scaffold_fingerprint_version": "proof_scaffold_fingerprint_v2",
+      "build_fingerprint_version": "build_fingerprint_v1"
+    },
+    "drift_guard": {
+      "hash_algo": "sha256",
+      "canonicalization": "stable_json_dumps(sort_keys=True,separators)"
+    },
+    "bracket_floor_from_game_changers": null,
+    "bracket_conflict": false,
+    "deck_cards_playable": [],
+    "deck_cards_playable_total": 0,
+    "deck_cards_nonplayable": [],
+    "deck_cards_unknown": [],
+    "deck_cards_canonical_input_order": [],
+    "deck_cards_canonical_input_order_total": 0,
+    "deck_cards_canonical_playable_slots_total": 0,
+    "deck_cards_canonical_nonplayable_slots_total": 0,
+    "deck_cards_slot_ids_playable": [],
+    "deck_cards_slot_ids_nonplayable": [],
+    "deck_cards_unknowns_by_slot": {},
+    "commander_canonical_slot": {
+      "slot_id": "C0",
+      "input": "Krenko, Mob Boss",
+      "resolved_name": "Krenko, Mob Boss",
+      "resolved_oracle_id": "68418069-f615-40ef-ae0d-764192acae00",
+      "status": "PLAYABLE",
+      "codes": [],
+      "unknown_refs": [],
+      "ci_violation_detail": null,
+      "format_legality_detail": null,
+      "duplicate_detail": null,
+      "playable_slot": true,
+      "playable_index": null,
+      "nonplayable_slot": false,
+      "nonplayable_index": null
+    },
+    "canonical_slots_all": [
+      {
+        "slot_id": "C0",
+        "input": "Krenko, Mob Boss",
+        "resolved_name": "Krenko, Mob Boss",
+        "resolved_oracle_id": "68418069-f615-40ef-ae0d-764192acae00",
+        "status": "PLAYABLE",
+        "codes": [],
+        "unknown_refs": [],
+        "ci_violation_detail": null,
+        "format_legality_detail": null,
+        "duplicate_detail": null,
+        "playable_slot": true,
+        "playable_index": null,
+        "nonplayable_slot": false,
+        "nonplayable_index": null
+      }
+    ],
+    "canonical_slots_all_total": 1,
+    "primitive_index_by_slot": {
+      "C0": []
+    },
+    "slot_ids_by_primitive": {},
+    "primitive_index_totals": {
+      "total_slots": 1,
+      "slots_with_primitives": 0,
+      "unique_primitives_total": 0
+    },
+    "graph_nodes": [
+      {
+        "slot_id": "C0",
+        "resolved_name": "Krenko, Mob Boss",
+        "resolved_oracle_id": "68418069-f615-40ef-ae0d-764192acae00",
+        "primitives": [],
+        "node_type": "COMMANDER",
+        "degree": 0,
+        "primitive_count": 0,
+        "is_isolated": true
+      }
+    ],
+    "graph_nodes_total": 1,
+    "graph_edges": [],
+    "graph_edges_total": 0,
+    "graph_edge_index": {},
+    "graph_typed_edges_total": 0,
+    "graph_typed_match_counts_by_type": {},
+    "graph_typed_edges_by_type": {},
+    "graph_rules_meta": {
+      "graph_typed_rules_version": "typed_edge_rules_v0",
+      "typed_rules_total": 2,
+      "graph_ruleset_version": "graph_rules_v2_typed_edges"
+    },
+    "graph_adjacency": {
+      "C0": []
+    },
+    "graph_node_degrees": {
+      "C0": 0
+    },
+    "graph_components": [
+      {
+        "component_id": "G0",
+        "nodes": [
+          "C0"
+        ],
+        "nodes_total": 1
+      }
+    ],
+    "graph_component_by_node": {
+      "C0": "G0"
+    },
+    "graph_totals": {
+      "connected_components_total": 1,
+      "isolated_nodes_total": 1,
+      "max_degree": 0,
+      "avg_degree": 0,
+      "largest_component_size": 1,
+      "largest_component_id": "G0"
+    },
+    "primitive_counts_by_scope": {
+      "commander_only": {},
+      "deck_all_slots": {},
+      "deck_playable_slots": {},
+      "commander_plus_deck_playable": {}
+    },
+    "primitive_counts_by_scope_totals": {
+      "commander_slots": 1,
+      "deck_slots_total": 0,
+      "deck_slots_playable_total": 0,
+      "combined_slots_total": 1
+    },
+    "structural_snapshot_v1": {
+      "snapshot_id": "20260217_190902",
+      "taxonomy_version": "taxonomy_v1_23",
+      "ruleset_version": "taxonomy_v1_23",
+      "profile_id": "focused",
+      "bracket_id": "B2",
+      "required_primitives_v1": [
+        "BOARD_WIPE",
+        "CARD_DRAW",
+        "PROTECTION",
+        "RAMP_MANA",
+        "REMOVAL_SINGLE"
+      ],
+      "present_primitives_v1": [],
+      "missing_primitives_v1": [
+        "BOARD_WIPE",
+        "CARD_DRAW",
+        "PROTECTION",
+        "RAMP_MANA",
+        "REMOVAL_SINGLE"
+      ],
+      "primitive_counts_by_id": {},
+      "primitive_concentration_index_v1": 0,
+      "dead_slot_ids_v1": [],
+      "commander_dependency_signal_v1": 0,
+      "structural_health_summary_v1": {
+        "dead_slot_count": 0,
+        "missing_required_count": 5,
+        "top_primitives": []
+      }
+    },
+    "graph_v1": {
+      "bipartite": {
+        "nodes": [],
+        "edges": [],
+        "stats": {
+          "slot_nodes_total": 0,
+          "primitive_nodes_total": 0,
+          "bipartite_nodes_total": 0,
+          "bipartite_edges_total": 0,
+          "slots_with_primitives_total": 0,
+          "max_primitives_per_slot": 0
+        }
+      },
+      "candidate_edges": [],
+      "bounds": {
+        "MAX_PRIMS_PER_SLOT": 24,
+        "MAX_SLOTS_PER_PRIM": 80,
+        "MAX_CARD_CARD_EDGES_TOTAL": 5000
+      },
+      "stats": {
+        "n_slot_nodes": 0,
+        "n_prim_nodes": 0,
+        "n_bipartite_edges": 0,
+        "n_candidate_edges": 0,
+        "caps_hit": {
+          "max_prims_per_slot": false,
+          "max_slots_per_prim": false,
+          "max_edges_total": false
+        }
+      }
+    },
+    "unknowns_canonical": [],
+    "unknowns_canonical_total": 0,
+    "primitive_counts": {},
+    "primitives_present": [],
+    "display_title": "Krenko, Mob Boss \u2014 COMMANDER",
+    "display_subtitle": "Snapshot 20260217_190902 \u2022 Bracket B2 \u2022 OK",
+    "ui_contract_version": "ui_contract_v1",
+    "available_panels_v1": {
+      "has_canonical_slots": false,
+      "has_unknowns_canonical": false,
+      "has_deck_cards_summary": true,
+      "has_rules_db": true,
+      "has_rules_topic_selection_trace": true,
+      "has_proof_scaffolds": false,
+      "has_primitive_index": true,
+      "has_structural_reporting": true,
+      "has_graph": true,
+      "has_motifs": true,
+      "has_disruption": true,
+      "has_pathways": true,
+      "has_combo_skeleton": true,
+      "has_combo_candidates": false,
+      "has_patch_loop": true
+    },
+    "ui_index_v1": {
+      "primary_ids": {
+        "commander_slot_id": "C0",
+        "first_deck_slot_id": null,
+        "first_component_id": "G0",
+        "first_candidate_id": null
+      },
+      "totals": {
+        "canonical_slots_all_total": 1,
+        "playable_slots_total": 0,
+        "nonplayable_slots_total": 0,
+        "unknowns_total": 0,
+        "unknowns_canonical_total": 0,
+        "unique_primitives_total": 0,
+        "slots_with_primitives": 0,
+        "graph_nodes_total": 1,
+        "graph_edges_total": 0,
+        "graph_components_total": 1,
+        "combo_candidates_total": 0,
+        "proof_scaffolds_total": 0
+      },
+      "versions": {
+        "canonical_layer_version": "canonical_v1",
+        "primitive_index_version": "primitive_index_v1",
+        "structural_reporting_version": "structural_v1",
+        "graph_layer_version": "graph_v3_typed",
+        "graph_ruleset_version": "graph_rules_v2_typed_edges",
+        "motif_layer_version": "motif_v1",
+        "disruption_layer_version": "disruption_v1",
+        "pathways_layer_version": "pathways_v1",
+        "combo_skeleton_layer_version": "combo_skeleton_v0",
+        "combo_candidate_layer_version": "combo_candidate_v0",
+        "proof_scaffold_layer_version": "proof_scaffold_v1"
+      },
+      "hashes": {
+        "build_hash_v1": "9ae31f10b8a40b93a5a99fd5693c372ac77f5afd825863bf579c6c5e98df1acb",
+        "graph_hash_v1": "dd5efeb948cf64be58aabaa20a6af4c8741ae49a61183f0bb17a431f52125667",
+        "graph_hash_v2": "d277024c429e90749e39e3217b8727efa98769bcb5f92adef702ba5f95161bdb",
+        "motif_hash_v1": "879c94439906525b999f45adc2273d8a660485911c2710ed8a5abc3c86cf749c",
+        "disruption_hash_v1": "4601627a991a1dc73e924700a4acacbe4316a79daa99c9bd29190c383ade96b8",
+        "pathways_hash_v1": "fd61b1574aa2893ebdefa451d50048e962cae9fe62221a654b20d76ce2dea303",
+        "combo_skeleton_hash_v1": "650012a3a59137ad050ab7eb7b206acc0350d98cce7c32f376c2dd1fff1a61ef",
+        "combo_candidates_hash_v1": "643bfc4ac16a45f68270b86171b5615bb44b2d8d839ac775ce6595a288fccfcc",
+        "proof_scaffolds_hash_v2": "b628f8e0a57738fecad11d06ef0531fc0c0008f4dd9336baea073b6a3f9ad6ad",
+        "proof_scaffolds_hash_v3": "0ffc1b7c92c82a4df1aed985135ce890e6bcd51c86fb44a5bf887933a4ee93bd"
+      }
+    },
+    "deck_profile": {
+      "total_valid_cards": 0,
+      "primitive_density": {}
+    },
+    "needs": [
+      {
+        "primitive": "BOARD_WIPE",
+        "have": 0,
+        "min": 2,
+        "need": 2
+      },
+      {
+        "primitive": "CARD_DRAW",
+        "have": 0,
+        "min": 8,
+        "need": 8
+      },
+      {
+        "primitive": "PROTECTION",
+        "have": 0,
+        "min": 3,
+        "need": 3
+      },
+      {
+        "primitive": "RAMP_MANA",
+        "have": 0,
+        "min": 8,
+        "need": 8
+      },
+      {
+        "primitive": "REMOVAL_SINGLE",
+        "have": 0,
+        "min": 8,
+        "need": 8
+      }
+    ],
+    "note": "DB lookup v1: snapshot gating + exact-name resolution."
+  }
+}
