@@ -42,6 +42,7 @@ tmp_*.json
 *.ndjson
 dumps/
 exports/
+logs/
 taxonomy/packs/
 
 # --- IDE / OS ---

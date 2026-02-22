@@ -30,6 +30,14 @@ type UnknownRow = {
   candidates?: UnknownCandidate[];
 };
 
+type DeckValidateViolationV1 = {
+  code?: string;
+  card_name?: string;
+  count?: number;
+  line_nos?: number[];
+  message?: string;
+};
+
 type ValidateResponsePayload = {
   status?: string;
   db_snapshot_id?: string;
@@ -94,6 +102,8 @@ type DeckTuneResponseV1 = {
   dev_metrics_v1?: Record<string, unknown>;
 };
 
+type DeckCompleteLandMode = "AUTO" | "NONE";
+
 type DeckCompleteRequestV1 = {
   db_snapshot_id: string;
   raw_decklist_text: string;
@@ -104,7 +114,7 @@ type DeckCompleteRequestV1 = {
   target_deck_size: number;
   max_adds: number;
   allow_basic_lands: boolean;
-  land_target_mode: "AUTO";
+  land_target_mode: DeckCompleteLandMode;
   commander?: string;
   name_overrides_v1?: NameOverrideV1[];
 };
@@ -124,10 +134,19 @@ type DeckCompleteResponseV1 = {
   completed_decklist_text_v1?: string;
   request_hash_v1?: string;
   unknowns?: UnknownRow[];
+  violations_v1?: DeckValidateViolationV1[];
   parse_version?: string;
   resolve_version?: string;
   ingest_version?: string;
   complete_engine_version?: string;
+  dev_metrics_v1?: Record<string, unknown>;
+};
+
+type CompleteRequestConfig = {
+  target_deck_size: number;
+  max_adds: number;
+  allow_basic_lands: boolean;
+  land_target_mode: DeckCompleteLandMode;
 };
 
 type InFlightAction = "VALIDATE" | "BUILD" | "TUNE" | "COMPLETE";
@@ -193,9 +212,12 @@ const DEFAULT_FORM = {
 
 const MULLIGAN_MODEL_OPTIONS = ["NORMAL"] as const;
 type MulliganModelId = (typeof MULLIGAN_MODEL_OPTIONS)[number];
+const COMPLETE_LAND_MODE_OPTIONS = ["AUTO", "NONE"] as const;
 const DEFAULT_MAX_SWAPS = 5;
 const DEFAULT_COMPLETE_TARGET_DECK_SIZE = 100;
-const DEFAULT_COMPLETE_MAX_ADDS = 30;
+const DEFAULT_COMPLETE_MAX_ADDS = 200;
+const DEFAULT_COMPLETE_ALLOW_BASIC_LANDS = true;
+const DEFAULT_COMPLETE_LAND_TARGET_MODE: DeckCompleteLandMode = "AUTO";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -213,6 +235,13 @@ function asUnknownRows(value: unknown): UnknownRow[] {
     return [];
   }
   return value.filter((entry: unknown) => Boolean(asRecord(entry))) as UnknownRow[];
+}
+
+function asDeckValidateViolations(value: unknown): DeckValidateViolationV1[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((entry: unknown) => Boolean(asRecord(entry))) as DeckValidateViolationV1[];
 }
 
 function asStringArray(value: unknown): string[] {
@@ -527,6 +556,12 @@ export default function EngineViewerV0() {
   const [rawDecklistText, setRawDecklistText] = useState(DEFAULT_FORM.raw_decklist_text);
   const [mulliganModelId, setMulliganModelId] = useState<MulliganModelId>(MULLIGAN_MODEL_OPTIONS[0]);
   const [maxSwaps, setMaxSwaps] = useState(DEFAULT_MAX_SWAPS);
+  const [completeTargetDeckSize, setCompleteTargetDeckSize] = useState(DEFAULT_COMPLETE_TARGET_DECK_SIZE);
+  const [completeMaxAdds, setCompleteMaxAdds] = useState(DEFAULT_COMPLETE_MAX_ADDS);
+  const [completeAllowBasicLands, setCompleteAllowBasicLands] = useState(DEFAULT_COMPLETE_ALLOW_BASIC_LANDS);
+  const [completeLandTargetMode, setCompleteLandTargetMode] = useState<DeckCompleteLandMode>(
+    DEFAULT_COMPLETE_LAND_TARGET_MODE,
+  );
 
   const [validateResponse, setValidateResponse] = useState<ValidateResponsePayload | null>(null);
   const [buildResponse, setBuildResponse] = useState<BuildResponsePayload | null>(null);
@@ -544,6 +579,7 @@ export default function EngineViewerV0() {
   const [copySwapCount, setCopySwapCount] = useState(0);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const [copyCompleteNotice, setCopyCompleteNotice] = useState<string | null>(null);
+  const [lastCompleteRequestConfig, setLastCompleteRequestConfig] = useState<CompleteRequestConfig | null>(null);
   const [inFlight, setInFlight] = useState<InFlightState | null>(null);
   const [inFlightElapsedMs, setInFlightElapsedMs] = useState(0);
   const [lastActionElapsedMs, setLastActionElapsedMs] = useState(0);
@@ -580,6 +616,9 @@ export default function EngineViewerV0() {
   const completeAddedRows = asDeckCompleteAddedRows(deckCompleteResponse?.added_cards_v1);
   const completeStatus = asString(deckCompleteResponse?.status);
   const completedDecklistText = asString(deckCompleteResponse?.completed_decklist_text_v1);
+  const completeUnknowns = asUnknownRows(deckCompleteResponse?.unknowns);
+  const completeViolations = asDeckValidateViolations(deckCompleteResponse?.violations_v1);
+  const completeDevMetrics = asRecord(deckCompleteResponse?.dev_metrics_v1);
   const completeDecklistCounts = useMemo(
     () => parseCompletedDecklistCounts(completedDecklistText),
     [completedDecklistText],
@@ -588,6 +627,12 @@ export default function EngineViewerV0() {
     () => completeAddedRows.filter((row: DeckCompleteAddedCardV1) => isLikelyLandAddition(row)).length,
     [completeAddedRows],
   );
+  const requestedCompleteTargetDeckSize =
+    lastCompleteRequestConfig?.target_deck_size ??
+    clampInteger(asInteger(completeTargetDeckSize, DEFAULT_COMPLETE_TARGET_DECK_SIZE), 1, 300);
+  const completeNeedsAttention =
+    deckCompleteResponse !== null &&
+    (completeStatus !== "OK" || completeDecklistCounts.totalCount < requestedCompleteTargetDeckSize);
 
   useEffect(() => {
     setCopySwapCount(tuneSwapRows.length);
@@ -726,6 +771,9 @@ export default function EngineViewerV0() {
   }
 
   function buildCompletePayload(nameOverrides: NameOverrideV1[]): DeckCompleteRequestV1 {
+    const targetDeckSize = clampInteger(asInteger(completeTargetDeckSize, DEFAULT_COMPLETE_TARGET_DECK_SIZE), 1, 300);
+    const maxAdds = clampInteger(asInteger(completeMaxAdds, DEFAULT_COMPLETE_MAX_ADDS), 1, 500);
+    const landTargetMode: DeckCompleteLandMode = completeLandTargetMode === "NONE" ? "NONE" : "AUTO";
     const payload: DeckCompleteRequestV1 = {
       db_snapshot_id: dbSnapshotId,
       raw_decklist_text: rawDecklistText,
@@ -733,10 +781,10 @@ export default function EngineViewerV0() {
       profile_id: profileId,
       bracket_id: bracketId,
       mulligan_model_id: mulliganModelId,
-      target_deck_size: DEFAULT_COMPLETE_TARGET_DECK_SIZE,
-      max_adds: DEFAULT_COMPLETE_MAX_ADDS,
-      allow_basic_lands: true,
-      land_target_mode: "AUTO",
+      target_deck_size: targetDeckSize,
+      max_adds: maxAdds,
+      allow_basic_lands: Boolean(completeAllowBasicLands),
+      land_target_mode: landTargetMode,
     };
 
     const commander = commanderOverride.trim();
@@ -980,6 +1028,12 @@ export default function EngineViewerV0() {
 
       updateInFlightStage("Filling missing slots...");
       const completePayload = buildCompletePayload(nameOverridesV1);
+      setLastCompleteRequestConfig({
+        target_deck_size: completePayload.target_deck_size,
+        max_adds: completePayload.max_adds,
+        allow_basic_lands: completePayload.allow_basic_lands,
+        land_target_mode: completePayload.land_target_mode,
+      });
       const completeParsed = await postJson("/deck/complete_v1", completePayload);
       const completePayloadParsed = (asRecord(completeParsed) ?? {}) as DeckCompleteResponseV1;
       setDeckCompleteResponse(completePayloadParsed);
@@ -1098,6 +1152,53 @@ export default function EngineViewerV0() {
                 disabled={loadingValidate || loadingBuild || loadingTune || loadingComplete}
               />
             </label>
+            <label className="inline-control">
+              Complete Target Size
+              <input
+                type="number"
+                min={1}
+                max={300}
+                value={completeTargetDeckSize}
+                onChange={(event) =>
+                  setCompleteTargetDeckSize(clampInteger(Number(event.target.value), 1, 300))
+                }
+                disabled={loadingValidate || loadingBuild || loadingTune || loadingComplete}
+              />
+            </label>
+            <label className="inline-control">
+              Complete Max Adds
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={completeMaxAdds}
+                onChange={(event) => setCompleteMaxAdds(clampInteger(Number(event.target.value), 1, 500))}
+                disabled={loadingValidate || loadingBuild || loadingTune || loadingComplete}
+              />
+            </label>
+            <label className="inline-control">
+              Land Fill Mode
+              <select
+                value={completeLandTargetMode}
+                onChange={(event) => setCompleteLandTargetMode(event.target.value as DeckCompleteLandMode)}
+                disabled={loadingValidate || loadingBuild || loadingTune || loadingComplete}
+              >
+                {COMPLETE_LAND_MODE_OPTIONS.map((option: DeckCompleteLandMode) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="inline-control complete-checkbox-control">
+              Allow Basic Lands
+              <input
+                type="checkbox"
+                checked={completeAllowBasicLands}
+                onChange={(event) => setCompleteAllowBasicLands(event.target.checked)}
+                disabled={loadingValidate || loadingBuild || loadingTune || loadingComplete}
+              />
+            </label>
             <button
               type="button"
               onClick={() => void handleTune()}
@@ -1110,7 +1211,7 @@ export default function EngineViewerV0() {
               onClick={() => void handleComplete()}
               disabled={loadingValidate || loadingBuild || loadingTune || loadingComplete || !canTune}
             >
-              {loadingComplete ? "Completing..." : "Complete Deck"}
+              {loadingComplete ? "Completing..." : "Complete to Target"}
             </button>
             {!canTune && tuneBlockedReason !== "" ? <span className="muted">{tuneBlockedReason}</span> : null}
           </div>
@@ -1366,10 +1467,79 @@ export default function EngineViewerV0() {
               <div className="tune-chip-grid">
                 <span className="tune-chip">cards_added: {completeAddedRows.length}</span>
                 <span className="tune-chip">lands_added: {completeLandsAdded}</span>
+                <span className="tune-chip">target_deck_size: {requestedCompleteTargetDeckSize}</span>
+                <span className="tune-chip">
+                  max_adds: {lastCompleteRequestConfig?.max_adds ?? clampInteger(asInteger(completeMaxAdds, DEFAULT_COMPLETE_MAX_ADDS), 1, 500)}
+                </span>
+                <span className="tune-chip">
+                  allow_basic_lands: {(lastCompleteRequestConfig?.allow_basic_lands ?? completeAllowBasicLands) ? "true" : "false"}
+                </span>
+                <span className="tune-chip">
+                  land_target_mode: {lastCompleteRequestConfig?.land_target_mode ?? completeLandTargetMode}
+                </span>
                 <span className="tune-chip">commander_cards: {completeDecklistCounts.commanderCount}</span>
                 <span className="tune-chip">deck_cards: {completeDecklistCounts.deckCount}</span>
                 <span className="tune-chip">final_deck_size: {completeDecklistCounts.totalCount}</span>
               </div>
+
+              {completeNeedsAttention ? (
+                <div className="complete-warning-box" role="alert">
+                  <strong>Completion warning</strong>
+                  <ul>
+                    <li>status: {completeStatus || "(missing)"}</li>
+                    <li>final_deck_size: {completeDecklistCounts.totalCount}</li>
+                    <li>target_deck_size: {requestedCompleteTargetDeckSize}</li>
+                    <li>cards_added: {completeAddedRows.length}</li>
+                    <li>lands_added: {completeLandsAdded}</li>
+                  </ul>
+
+                  {completeUnknowns.length > 0 ? (
+                    <div>
+                      <strong>unknowns</strong>
+                      <ul>
+                        {completeUnknowns.map((row: UnknownRow, idx: number) => (
+                          <li key={`complete-unknown-${idx}`}>
+                            {(asString(row.reason_code) || "UNKNOWN") +
+                              (asString(row.name_raw) ? ` :: ${asString(row.name_raw)}` : "")}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {completeViolations.length > 0 ? (
+                    <div>
+                      <strong>violations</strong>
+                      <ul>
+                        {completeViolations.map((row: DeckValidateViolationV1, idx: number) => {
+                          const code = asString(row.code) || "UNKNOWN";
+                          const message = asString(row.message);
+                          const lineNos = Array.isArray(row.line_nos)
+                            ? row.line_nos
+                                .filter((value: unknown) => typeof value === "number")
+                                .map((value: number) => value)
+                                .join(", ")
+                            : "";
+                          return (
+                            <li key={`complete-violation-${idx}`}>
+                              {code}
+                              {message ? ` :: ${message}` : ""}
+                              {lineNos ? ` (lines: ${lineNos})` : ""}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {completeDevMetrics ? (
+                <details className="complete-details-block">
+                  <summary>Details (DEV metrics)</summary>
+                  <JsonViewer value={completeDevMetrics} />
+                </details>
+              ) : null}
 
               <label className="complete-decklist-label">
                 Completed decklist text

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -61,12 +62,13 @@ class DeckCompleteEndpointV1Tests(unittest.TestCase):
             "bracket_id": "B2",
             "mulligan_model_id": "NORMAL",
             "target_deck_size": 100,
-            "max_adds": 30,
+            "max_adds": 200,
             "allow_basic_lands": True,
             "land_target_mode": "AUTO",
         }
 
         with (
+            patch.dict(os.environ, {"MTG_ENGINE_DEV_METRICS": "0"}, clear=False),
             patch("api.main.run_build_pipeline") as mocked_run_build,
             patch("api.main.run_deck_complete_engine_v1") as mocked_run_complete,
             TestClient(app, raise_server_exceptions=False) as client,
@@ -99,7 +101,7 @@ Deck
             "bracket_id": "B2",
             "mulligan_model_id": "NORMAL",
             "target_deck_size": 100,
-            "max_adds": 30,
+            "max_adds": 200,
             "allow_basic_lands": True,
             "land_target_mode": "AUTO",
         }
@@ -127,6 +129,7 @@ Deck
         }
 
         with (
+            patch.dict(os.environ, {"MTG_ENGINE_DEV_METRICS": "0"}, clear=False),
             patch("api.main.run_build_pipeline", return_value=mocked_build_payload) as mocked_run_build,
             patch("api.main.run_deck_complete_engine_v1", return_value=mocked_complete_payload) as mocked_run_complete,
             TestClient(app, raise_server_exceptions=False) as client,
@@ -143,6 +146,139 @@ Deck
 
         mocked_run_build.assert_called_once()
         mocked_run_complete.assert_called_once()
+
+    def test_complete_dev_metrics_include_stop_reason_when_flag_enabled(self) -> None:
+        if _IMPORT_ERROR is not None:
+            self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")
+
+        payload = {
+            "db_snapshot_id": DECKLIST_FIXTURE_SNAPSHOT_ID,
+            "raw_decklist_text": """
+Commander
+1 Krenko, Mob Boss
+Deck
+1 Sol Ring
+1 Arcane Signet
+""",
+            "format": "commander",
+            "profile_id": "focused",
+            "bracket_id": "B2",
+            "mulligan_model_id": "NORMAL",
+            "target_deck_size": 100,
+            "max_adds": 200,
+            "allow_basic_lands": True,
+            "land_target_mode": "AUTO",
+        }
+
+        mocked_build_payload = {
+            "status": "OK",
+            "deck_size_total": 3,
+            "result": {},
+        }
+        mocked_complete_payload = {
+            "version": "deck_complete_engine_v1",
+            "status": "OK",
+            "baseline_summary_v1": {
+                "build_status": "OK",
+                "deck_size_total": 3,
+            },
+            "added_cards_v1": [
+                {
+                    "name": "Mountain",
+                    "reasons_v1": ["ADD_BASIC_LAND_FILL_AUTO", "COMPLETE_TO_TARGET_SIZE"],
+                    "primitives_added_v1": [],
+                }
+            ],
+            "completed_decklist_text_v1": "Commander\n1 Krenko, Mob Boss\nDeck\n1 Sol Ring\n1 Arcane Signet\n1 Mountain",
+            "dev_metrics_v1": {
+                "stop_reason_v1": "LAND_FILL_APPLIED",
+                "nonland_added_count": 0,
+                "land_fill_needed": 97,
+                "land_fill_applied": 97,
+                "candidate_pool_last_returned": 0,
+            },
+        }
+
+        with (
+            patch.dict(os.environ, {"MTG_ENGINE_DEV_METRICS": "1"}, clear=False),
+            patch("api.main.run_build_pipeline", return_value=mocked_build_payload),
+            patch("api.main.run_deck_complete_engine_v1", return_value=mocked_complete_payload),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            response = client.post("/deck/complete_v1", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIsInstance(body.get("dev_metrics_v1"), dict)
+        metrics = body.get("dev_metrics_v1")
+        self.assertEqual(metrics.get("stop_reason_v1"), "LAND_FILL_APPLIED")
+        self.assertEqual(metrics.get("land_fill_applied"), 97)
+        self.assertEqual(metrics.get("land_fill_needed"), 97)
+        self.assertIn("baseline_build_ms", metrics)
+        self.assertIn("total_ms", metrics)
+
+    def test_complete_warn_codes_promote_to_violations(self) -> None:
+        if _IMPORT_ERROR is not None:
+            self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")
+
+        payload = {
+            "db_snapshot_id": DECKLIST_FIXTURE_SNAPSHOT_ID,
+            "raw_decklist_text": """
+Commander
+1 Krenko, Mob Boss
+Deck
+1 Sol Ring
+1 Arcane Signet
+""",
+            "format": "commander",
+            "profile_id": "focused",
+            "bracket_id": "B2",
+            "mulligan_model_id": "NORMAL",
+            "target_deck_size": 100,
+            "max_adds": 200,
+            "allow_basic_lands": False,
+            "land_target_mode": "AUTO",
+        }
+
+        mocked_build_payload = {
+            "status": "OK",
+            "deck_size_total": 3,
+            "result": {},
+        }
+        mocked_complete_payload = {
+            "version": "deck_complete_engine_v1",
+            "status": "WARN",
+            "codes": ["BASIC_LANDS_DISALLOWED", "CANDIDATE_POOL_EMPTY", "TARGET_SIZE_NOT_REACHED"],
+            "baseline_summary_v1": {
+                "build_status": "OK",
+                "deck_size_total": 3,
+            },
+            "added_cards_v1": [],
+            "completed_decklist_text_v1": "Commander\n1 Krenko, Mob Boss\nDeck\n1 Sol Ring\n1 Arcane Signet",
+        }
+
+        with (
+            patch.dict(os.environ, {"MTG_ENGINE_DEV_METRICS": "0"}, clear=False),
+            patch("api.main.run_build_pipeline", return_value=mocked_build_payload),
+            patch("api.main.run_deck_complete_engine_v1", return_value=mocked_complete_payload),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            response = client.post("/deck/complete_v1", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body.get("status"), "WARN")
+        violations = body.get("violations_v1") if isinstance(body.get("violations_v1"), list) else []
+        violation_codes = sorted(
+            {
+                row.get("code")
+                for row in violations
+                if isinstance(row, dict) and isinstance(row.get("code"), str)
+            }
+        )
+        self.assertIn("BASIC_LANDS_DISALLOWED", violation_codes)
+        self.assertIn("CANDIDATE_POOL_EMPTY", violation_codes)
+        self.assertIn("TARGET_SIZE_NOT_REACHED", violation_codes)
 
 
 if __name__ == "__main__":

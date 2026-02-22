@@ -8,6 +8,7 @@ from api.engine.color_identity_constraints_v1 import (
     COLOR_IDENTITY_UNAVAILABLE,
     UNKNOWN_COLOR_IDENTITY,
     VERSION,
+    get_commander_color_identity_union_v1,
     get_commander_color_identity_v1,
     is_card_color_legal_v1,
 )
@@ -90,6 +91,13 @@ class ColorIdentityConstraintsV1Tests(unittest.TestCase):
             commander_name="Commander That Does Not Exist",
         )
         self.assertEqual(unavailable, COLOR_IDENTITY_UNAVAILABLE)
+
+    def test_partner_union_color_identity(self) -> None:
+        colors = get_commander_color_identity_union_v1(
+            db_snapshot_id=GUARDRAILS_FIXTURE_SNAPSHOT_ID,
+            commander_names=["Esior, Wardwing Familiar", "Ishai, Ojutai Dragonspeaker"],
+        )
+        self.assertEqual(colors, {"W", "U"})
 
 
 if __name__ == "__main__":

@@ -96,6 +96,29 @@ Arcane Signet
         self.assertEqual(canonical.get("cards"), ["Sol Ring"])
         self.assertEqual(payload.get("violations_v1"), [])
 
+    def test_ingest_supports_partner_commander_section(self) -> None:
+        payload = ingest_decklist(
+            raw_text="""
+Commander
+1 Esior, Wardwing Familiar
+1 Ishai, Ojutai Dragonspeaker
+Deck
+1 Sol Ring
+""",
+            db_snapshot_id=DECKLIST_FIXTURE_SNAPSHOT_ID,
+            format="commander",
+        )
+
+        self.assertEqual(payload.get("status"), "OK")
+        self.assertEqual(payload.get("unknowns"), [])
+        canonical = payload.get("canonical_deck_input") if isinstance(payload.get("canonical_deck_input"), dict) else {}
+        self.assertEqual(canonical.get("commander"), "Esior, Wardwing Familiar")
+        self.assertEqual(
+            canonical.get("commander_list_v1"),
+            ["Esior, Wardwing Familiar", "Ishai, Ojutai Dragonspeaker"],
+        )
+        self.assertEqual(canonical.get("cards"), ["Sol Ring"])
+
     def test_ingest_duplicate_basic_land_is_allowed(self) -> None:
         payload = ingest_decklist(
             raw_text="""

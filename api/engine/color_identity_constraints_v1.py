@@ -51,6 +51,30 @@ def _parse_color_identity_field(raw: Any) -> tuple[bool, Set[str]]:
     return True, _normalize_color_set(parsed)
 
 
+def _normalize_commander_names(values: Any) -> list[str]:
+    if isinstance(values, str):
+        raw_values: Iterable[Any] = [values]
+    elif isinstance(values, (list, tuple, set)):
+        raw_values = values
+    else:
+        return []
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in raw_values:
+        if not isinstance(value, str):
+            continue
+        token = value.strip()
+        if token == "":
+            continue
+        token_key = token.casefold()
+        if token_key in seen:
+            continue
+        seen.add(token_key)
+        out.append(token)
+    return out
+
+
 def _fetch_color_identity(db_snapshot_id: str, card_name: str) -> tuple[bool, Set[str]]:
     snapshot_id = db_snapshot_id.strip() if isinstance(db_snapshot_id, str) else ""
     name = card_name.strip() if isinstance(card_name, str) else ""
@@ -77,11 +101,23 @@ def _fetch_color_identity(db_snapshot_id: str, card_name: str) -> tuple[bool, Se
     return _parse_color_identity_field(color_identity_raw)
 
 
-def get_commander_color_identity_v1(db_snapshot_id: str, commander_name: str) -> Set[str] | str:
-    available, commander_colors = _fetch_color_identity(db_snapshot_id=db_snapshot_id, card_name=commander_name)
-    if not available:
+def get_commander_color_identity_union_v1(db_snapshot_id: str, commander_names: Any) -> Set[str] | str:
+    names = _normalize_commander_names(commander_names)
+    if len(names) == 0:
         return COLOR_IDENTITY_UNAVAILABLE
-    return set(commander_colors)
+
+    out: Set[str] = set()
+    for commander_name in names:
+        available, commander_colors = _fetch_color_identity(db_snapshot_id=db_snapshot_id, card_name=commander_name)
+        if not available:
+            return COLOR_IDENTITY_UNAVAILABLE
+        out.update(commander_colors)
+
+    return set(out)
+
+
+def get_commander_color_identity_v1(db_snapshot_id: str, commander_name: str) -> Set[str] | str:
+    return get_commander_color_identity_union_v1(db_snapshot_id=db_snapshot_id, commander_names=[commander_name])
 
 
 def is_card_color_legal_v1(card_name: str, commander_color_set: Set[str], db_snapshot_id: str) -> bool | str:

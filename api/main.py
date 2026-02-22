@@ -819,6 +819,9 @@ def deck_tune_v1(req: DeckTuneRequest):
 
 @app.post("/deck/complete_v1", response_model=DeckCompleteV1Response)
 def deck_complete_v1(req: DeckCompleteV1Request):
+    dev_metrics_enabled = os.getenv("MTG_ENGINE_DEV_METRICS") == "1"
+    start_total_timer = perf_counter()
+
     name_overrides_v1 = [
         row.model_dump(mode="python")
         for row in req.name_overrides_v1
@@ -848,6 +851,12 @@ def deck_complete_v1(req: DeckCompleteV1Request):
         if isinstance(canonical_from_ingest.get("cards"), list)
         else []
     )
+    canonical_commander_list_raw = (
+        canonical_from_ingest.get("commander_list_v1")
+        if isinstance(canonical_from_ingest.get("commander_list_v1"), list)
+        else []
+    )
+    canonical_commander_list = _clean_unique_strings_in_order(canonical_commander_list_raw)
 
     canonical_deck_input_dict = build_canonical_deck_input_v1(
         db_snapshot_id=req.db_snapshot_id,
@@ -859,6 +868,8 @@ def deck_complete_v1(req: DeckCompleteV1Request):
         engine_patches_v0=[],
         name_overrides_v1=name_overrides_v1,
     )
+    if len(canonical_commander_list) > 0:
+        canonical_deck_input_dict["commander_list_v1"] = list(canonical_commander_list)
     request_hash_v1 = compute_request_hash_v1(canonical_deck_input_dict)
 
     unknowns_raw = ingest_payload.get("unknowns") if isinstance(ingest_payload.get("unknowns"), list) else []
@@ -952,7 +963,9 @@ def deck_complete_v1(req: DeckCompleteV1Request):
         cards=[name for name in canonical_deck_input_dict.get("cards", []) if isinstance(name, str)],
         engine_patches_v0=[],
     )
+    baseline_build_started_at = perf_counter()
     baseline_build_payload = run_build_pipeline(req=build_req, conn=None, repo_root_path=REPO_ROOT)
+    baseline_build_ms = _round6(max((perf_counter() - baseline_build_started_at) * 1000.0, 0.0))
 
     complete_payload = run_deck_complete_engine_v1(
         canonical_deck_input=canonical_deck_input_dict,
@@ -965,6 +978,7 @@ def deck_complete_v1(req: DeckCompleteV1Request):
         max_adds=_coerce_positive_int(req.max_adds, default=30),
         allow_basic_lands=bool(req.allow_basic_lands),
         land_target_mode=_coerce_nonempty_str(req.land_target_mode) if _coerce_nonempty_str(req.land_target_mode) != "" else "AUTO",
+        collect_dev_metrics=dev_metrics_enabled,
     )
 
     added_cards_raw = complete_payload.get("added_cards_v1") if isinstance(complete_payload.get("added_cards_v1"), list) else []
@@ -997,8 +1011,33 @@ def deck_complete_v1(req: DeckCompleteV1Request):
             )
         )
 
-    return DeckCompleteV1Response(
-        status=complete_payload.get("status") if isinstance(complete_payload.get("status"), str) else "WARN",
+    complete_status = complete_payload.get("status") if isinstance(complete_payload.get("status"), str) else "WARN"
+    complete_codes = sorted(
+        {
+            _coerce_nonempty_str(code)
+            for code in (complete_payload.get("codes") if isinstance(complete_payload.get("codes"), list) else [])
+            if _coerce_nonempty_str(code) != ""
+        }
+    )
+    if complete_status == "WARN":
+        if len(complete_codes) == 0:
+            complete_codes = ["TARGET_SIZE_NOT_REACHED"]
+        existing_codes = {row.code for row in violations_v1}
+        for code in complete_codes:
+            if code in existing_codes:
+                continue
+            violations_v1.append(
+                DeckValidateViolationV1(
+                    code=code,
+                    card_name="",
+                    count=1,
+                    line_nos=[],
+                    message=f"Deck completion warning: {code}",
+                )
+            )
+
+    response = DeckCompleteV1Response(
+        status=complete_status,
         db_snapshot_id=build_req.db_snapshot_id,
         format=build_req.format,
         baseline_summary_v1=complete_payload.get("baseline_summary_v1") if isinstance(complete_payload.get("baseline_summary_v1"), dict) else {},
@@ -1023,6 +1062,45 @@ def deck_complete_v1(req: DeckCompleteV1Request):
             else DECK_COMPLETE_ENGINE_V1_VERSION
         ),
     )
+
+    if dev_metrics_enabled:
+        complete_dev_metrics_raw = complete_payload.get("dev_metrics_v1") if isinstance(complete_payload.get("dev_metrics_v1"), dict) else {}
+        stop_reason = _coerce_nonempty_str(complete_dev_metrics_raw.get("stop_reason_v1"))
+        if stop_reason == "":
+            stop_reason = "FILL_FAILED"
+
+        dev_metrics_v1: Dict[str, Any] = {
+            "stop_reason_v1": stop_reason,
+            "nonland_added_count": _coerce_nonnegative_int(complete_dev_metrics_raw.get("nonland_added_count"), default=0),
+            "land_fill_needed": _coerce_nonnegative_int(complete_dev_metrics_raw.get("land_fill_needed"), default=0),
+            "land_fill_applied": _coerce_nonnegative_int(complete_dev_metrics_raw.get("land_fill_applied"), default=0),
+            "candidate_pool_last_returned": _coerce_nonnegative_int(
+                complete_dev_metrics_raw.get("candidate_pool_last_returned"),
+                default=0,
+            ),
+            "baseline_build_ms": baseline_build_ms,
+            "total_ms": _round6(max((perf_counter() - start_total_timer) * 1000.0, 0.0)),
+        }
+        filtered_illegal_count = complete_dev_metrics_raw.get("candidate_pool_filtered_illegal_count")
+        if isinstance(filtered_illegal_count, int) and not isinstance(filtered_illegal_count, bool):
+            dev_metrics_v1["candidate_pool_filtered_illegal_count"] = _coerce_nonnegative_int(filtered_illegal_count, default=0)
+
+        print("COMPLETE DEBUG:")
+        print(f"stop_reason_v1={dev_metrics_v1['stop_reason_v1']}")
+        print(f"nonland_added_count={dev_metrics_v1['nonland_added_count']}")
+        print(f"land_fill_needed={dev_metrics_v1['land_fill_needed']}")
+        print(f"land_fill_applied={dev_metrics_v1['land_fill_applied']}")
+        print(f"candidate_pool_last_returned={dev_metrics_v1['candidate_pool_last_returned']}")
+        if "candidate_pool_filtered_illegal_count" in dev_metrics_v1:
+            print(f"candidate_pool_filtered_illegal_count={dev_metrics_v1['candidate_pool_filtered_illegal_count']}")
+        print(f"baseline_build_ms={dev_metrics_v1['baseline_build_ms']}")
+        print(f"total_ms={dev_metrics_v1['total_ms']}")
+
+        payload = response.model_dump(mode="python")
+        payload["dev_metrics_v1"] = dev_metrics_v1
+        return JSONResponse(content=payload)
+
+    return response
 
 
 @app.post("/strategy_hypothesis_v0")

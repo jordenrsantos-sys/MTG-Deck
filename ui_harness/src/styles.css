@@ -148,6 +148,15 @@ textarea {
   min-width: 140px;
 }
 
+.complete-checkbox-control {
+  justify-content: flex-end;
+}
+
+.complete-checkbox-control input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
+
 button {
   border: 1px solid #2f5d91;
   border-radius: 6px;
@@ -578,6 +587,33 @@ pre {
   border: 1px solid #d9e2ee;
   border-radius: 8px;
   resize: vertical;
+}
+
+.complete-warning-box {
+  border: 1px solid #dc2626;
+  border-radius: 8px;
+  background: #feeceb;
+  color: #7f1d1d;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.complete-warning-box ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+
+.complete-details-block {
+  border: 1px solid #d9e2ee;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px;
+  margin-bottom: 10px;
+}
+
+.complete-details-block summary {
+  cursor: pointer;
+  font-weight: 600;
 }
 
 .progress-indicator {

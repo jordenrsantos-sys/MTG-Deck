@@ -6,12 +6,10 @@ from api.engine.candidate_pool_v1 import get_candidate_pool_v1
 from api.engine.color_identity_constraints_v1 import (
     COLOR_IDENTITY_UNAVAILABLE,
     UNKNOWN_COLOR_IDENTITY,
-    get_commander_color_identity_v1,
-    is_card_color_legal_v1,
+    get_commander_color_identity_union_v1,
 )
-from api.engine.constants import BASIC_NAMES, GAME_CHANGERS_SET, GENERIC_MINIMUMS, SNOW_BASIC_NAMES
+from api.engine.constants import BASIC_NAMES, GENERIC_MINIMUMS, SNOW_BASIC_NAMES
 from api.engine.utils import normalize_primitives_source
-from engine.db import connect as cards_db_connect
 
 VERSION = "deck_complete_engine_v1"
 
@@ -22,13 +20,6 @@ _COLOR_TO_BASIC = {
     "B": "Swamp",
     "R": "Mountain",
     "G": "Forest",
-}
-_COLOR_TO_SNOW_BASIC = {
-    "W": "Snow-Covered Plains",
-    "U": "Snow-Covered Island",
-    "B": "Snow-Covered Swamp",
-    "R": "Snow-Covered Mountain",
-    "G": "Snow-Covered Forest",
 }
 _SINGLETON_EXEMPT_NAMES = set(BASIC_NAMES).union(set(SNOW_BASIC_NAMES)).union({"Wastes"})
 
@@ -101,6 +92,24 @@ def _normalize_card_list(values: Any) -> List[str]:
         token = _nonempty_str(value)
         if token == "":
             continue
+        out.append(token)
+    return out
+
+
+def _normalize_commander_name_list(values: Any) -> List[str]:
+    if not isinstance(values, list):
+        return []
+
+    out: List[str] = []
+    seen: Set[str] = set()
+    for value in values:
+        token = _nonempty_str(value)
+        if token == "":
+            continue
+        token_key = token.casefold()
+        if token_key in seen:
+            continue
+        seen.add(token_key)
         out.append(token)
     return out
 
@@ -297,32 +306,78 @@ def _is_singleton_exempt_name(card_name: str) -> bool:
     return card_name in _SINGLETON_EXEMPT_NAMES
 
 
+def _attach_dev_metrics(
+    payload: Dict[str, Any],
+    *,
+    collect_dev_metrics: bool,
+    stop_reason_v1: str,
+    nonland_added_count: int,
+    land_fill_needed: int,
+    land_fill_applied: int,
+    candidate_pool_last_returned: int,
+    candidate_pool_filtered_illegal_count: int | None,
+) -> Dict[str, Any]:
+    if not collect_dev_metrics:
+        return payload
+
+    metrics: Dict[str, Any] = {
+        "stop_reason_v1": _nonempty_str(stop_reason_v1),
+        "nonland_added_count": int(max(nonland_added_count, 0)),
+        "land_fill_needed": int(max(land_fill_needed, 0)),
+        "land_fill_applied": int(max(land_fill_applied, 0)),
+        "candidate_pool_last_returned": int(max(candidate_pool_last_returned, 0)),
+    }
+    if (
+        isinstance(candidate_pool_filtered_illegal_count, int)
+        and not isinstance(candidate_pool_filtered_illegal_count, bool)
+        and int(candidate_pool_filtered_illegal_count) >= 0
+    ):
+        metrics["candidate_pool_filtered_illegal_count"] = int(candidate_pool_filtered_illegal_count)
+
+    payload["dev_metrics_v1"] = metrics
+    return payload
+
+
 def _pick_round_additions(
     *,
     round_reason: str,
     include_primitives: List[str],
     db_snapshot_id: str,
     bracket_id: str,
-    commander_name: str,
+    commander_names: List[str],
     commander_color_set: Set[str],
     current_cards: List[str],
     max_to_add: int,
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    diagnostics: Dict[str, Any] = {
+        "pool_called": False,
+        "candidate_pool_returned_count": 0,
+        "candidate_pool_filtered_illegal_count": None,
+    }
+
     if max_to_add <= 0:
-        return []
+        return [], diagnostics
+
     include_primitives_clean = sorted(set(_clean_sorted_unique_strings(include_primitives)))
     if len(include_primitives_clean) == 0:
-        return []
+        return [], diagnostics
 
     candidate_limit = max(200, max_to_add * 20)
+    candidate_pool_dev_metrics: Dict[str, Any] = {}
     candidate_pool = get_candidate_pool_v1(
         db_snapshot_id=db_snapshot_id,
         include_primitives=include_primitives_clean,
-        exclude_card_names=[commander_name] + list(current_cards),
+        exclude_card_names=list(commander_names) + list(current_cards),
         commander_color_set=commander_color_set,
         bracket_id=bracket_id,
         limit=candidate_limit,
+        dev_metrics_out=candidate_pool_dev_metrics,
     )
+    diagnostics["pool_called"] = True
+    diagnostics["candidate_pool_returned_count"] = int(len(candidate_pool))
+    filtered_illegal_count = candidate_pool_dev_metrics.get("filtered_illegal_count_v1")
+    if isinstance(filtered_illegal_count, int) and not isinstance(filtered_illegal_count, bool):
+        diagnostics["candidate_pool_filtered_illegal_count"] = int(filtered_illegal_count)
 
     include_set = set(include_primitives_clean)
     seen_names = set(current_cards)
@@ -354,7 +409,7 @@ def _pick_round_additions(
         if not _is_singleton_exempt_name(name):
             seen_names.add(name)
 
-    return additions
+    return additions, diagnostics
 
 
 def _apply_primitive_counts(primitive_counts_by_id: Dict[str, int], primitive_ids: List[str]) -> None:
@@ -365,89 +420,50 @@ def _apply_primitive_counts(primitive_counts_by_id: Dict[str, int], primitive_id
         primitive_counts_by_id[primitive_clean] = int(primitive_counts_by_id.get(primitive_clean, 0)) + 1
 
 
-def _resolve_existing_land_name_map(db_snapshot_id: str, candidate_names: List[str]) -> Dict[str, str]:
-    snapshot_id = _nonempty_str(db_snapshot_id)
-    if snapshot_id == "":
-        return {}
-
-    name_keys = sorted({name.lower() for name in candidate_names if isinstance(name, str) and name.strip() != ""})
-    if len(name_keys) == 0:
-        return {}
-
-    placeholders = ",".join("?" for _ in name_keys)
-    rows = []
-    with cards_db_connect() as con:
-        rows = con.execute(
-            (
-                "SELECT name "
-                "FROM cards "
-                "WHERE snapshot_id = ? "
-                f"AND LOWER(name) IN ({placeholders}) "
-                "ORDER BY oracle_id ASC, name ASC"
-            ),
-            (snapshot_id, *name_keys),
-        ).fetchall()
-
-    out: Dict[str, str] = {}
-    for row in rows:
-        name = row["name"] if isinstance(row["name"], str) else ""
-        if name == "":
-            continue
-        key = name.lower()
-        if key in out:
-            continue
-        out[key] = name
-    return out
-
-
 def _build_land_fill_sequence(
     *,
-    db_snapshot_id: str,
     commander_color_set: Set[str],
-    current_cards: List[str],
     slots_needed: int,
 ) -> List[str]:
     if slots_needed <= 0:
         return []
 
     colors = [color for color in _COLOR_ORDER if color in commander_color_set]
-    preferred_name_keys: List[str] = []
-    for color in colors:
-        preferred_name_keys.append(_COLOR_TO_BASIC[color])
-        preferred_name_keys.append(_COLOR_TO_SNOW_BASIC[color])
-    preferred_name_keys.append("Wastes")
-
-    resolved_names = _resolve_existing_land_name_map(db_snapshot_id=db_snapshot_id, candidate_names=preferred_name_keys)
-
-    counts: Dict[str, int] = {}
-    for name in current_cards:
-        clean = _nonempty_str(name)
-        if clean == "":
-            continue
-        counts[clean] = int(counts.get(clean, 0)) + 1
-
-    cycle: List[str] = []
-    for color in colors:
-        regular_default = _COLOR_TO_BASIC[color]
-        snow_default = _COLOR_TO_SNOW_BASIC[color]
-        regular_name = resolved_names.get(regular_default.lower(), regular_default)
-        snow_name = resolved_names.get(snow_default.lower(), snow_default)
-
-        regular_count = int(counts.get(regular_name, 0))
-        snow_count = int(counts.get(snow_name, 0))
-        cycle.append(snow_name if snow_count > regular_count else regular_name)
-
-    if len(cycle) == 0:
-        cycle = [resolved_names.get("wastes", "Wastes")]
-
     out: List[str] = []
-    while len(out) < slots_needed:
-        out.append(cycle[len(out) % len(cycle)])
+    if len(colors) == 0:
+        return ["Wastes"] * int(slots_needed)
+
+    base = int(slots_needed) // len(colors)
+    remainder = int(slots_needed) % len(colors)
+
+    per_color_counts: Dict[str, int] = {
+        color: int(base)
+        for color in colors
+    }
+    for color in colors:
+        if remainder <= 0:
+            break
+        per_color_counts[color] = int(per_color_counts.get(color, 0)) + 1
+        remainder -= 1
+
+    for color in colors:
+        basic_name = _COLOR_TO_BASIC[color]
+        copies = int(per_color_counts.get(color, 0))
+        if copies <= 0:
+            continue
+        out.extend([basic_name] * copies)
+
     return out
 
 
-def _build_completed_decklist_text(commander_name: str, deck_cards: List[str]) -> str:
-    lines: List[str] = ["Commander", f"1 {commander_name}", "Deck"]
+def _build_completed_decklist_text(commander_names: List[str], deck_cards: List[str]) -> str:
+    lines: List[str] = ["Commander"]
+    for commander_name in commander_names:
+        token = _nonempty_str(commander_name)
+        if token == "":
+            continue
+        lines.append(f"1 {token}")
+    lines.append("Deck")
     for card_name in deck_cards:
         token = _nonempty_str(card_name)
         if token == "":
@@ -468,6 +484,7 @@ def run_deck_complete_engine_v1(
     max_adds: int,
     allow_basic_lands: bool,
     land_target_mode: str,
+    collect_dev_metrics: bool = False,
 ) -> Dict[str, Any]:
     canonical_payload = canonical_deck_input if isinstance(canonical_deck_input, dict) else {}
     baseline_payload = baseline_build_result if isinstance(baseline_build_result, dict) else {}
@@ -499,7 +516,11 @@ def run_deck_complete_engine_v1(
         }
 
     commander_name = _nonempty_str(canonical_payload.get("commander"))
-    if commander_name == "":
+    commander_names = _normalize_commander_name_list(canonical_payload.get("commander_list_v1"))
+    if commander_name != "" and commander_name.casefold() not in {token.casefold() for token in commander_names}:
+        commander_names.insert(0, commander_name)
+
+    if len(commander_names) == 0:
         return {
             "version": VERSION,
             "status": "SKIP",
@@ -509,48 +530,45 @@ def run_deck_complete_engine_v1(
             "completed_decklist_text_v1": "",
         }
 
-    commander_color_identity = get_commander_color_identity_v1(
-        db_snapshot_id=db_snapshot_id,
-        commander_name=commander_name,
-    )
-    if commander_color_identity == COLOR_IDENTITY_UNAVAILABLE:
-        return {
-            "version": VERSION,
-            "status": "WARN",
-            "codes": [COLOR_IDENTITY_UNAVAILABLE],
-            "baseline_summary_v1": baseline_summary_v1,
-            "added_cards_v1": [],
-            "completed_decklist_text_v1": _build_completed_decklist_text(commander_name, _normalize_card_list(canonical_payload.get("cards"))),
-        }
-    if not isinstance(commander_color_identity, set):
-        return {
-            "version": VERSION,
-            "status": "WARN",
-            "codes": [UNKNOWN_COLOR_IDENTITY],
-            "baseline_summary_v1": baseline_summary_v1,
-            "added_cards_v1": [],
-            "completed_decklist_text_v1": _build_completed_decklist_text(commander_name, _normalize_card_list(canonical_payload.get("cards"))),
-        }
-
-    commander_colors = _normalize_commander_colors(commander_color_identity)
-
     deck_cards = _normalize_card_list(canonical_payload.get("cards"))
     target_deck_size_clean = _coerce_positive_int(target_deck_size, default=100)
+    current_total = len(commander_names) + len(deck_cards)
+    slots_needed = max(target_deck_size_clean - current_total, 0)
+
+    commander_color_identity = get_commander_color_identity_union_v1(
+        db_snapshot_id=db_snapshot_id,
+        commander_names=commander_names,
+    )
+    commander_color_identity_warn_code = ""
+    if commander_color_identity == COLOR_IDENTITY_UNAVAILABLE:
+        commander_color_identity_warn_code = COLOR_IDENTITY_UNAVAILABLE
+        commander_colors = set()
+    elif not isinstance(commander_color_identity, set):
+        commander_color_identity_warn_code = UNKNOWN_COLOR_IDENTITY
+        commander_colors = set()
+    else:
+        commander_colors = _normalize_commander_colors(commander_color_identity)
     max_adds_clean = _coerce_positive_int(max_adds, default=30)
 
-    current_total = 1 + len(deck_cards)
-    slots_needed = max(target_deck_size_clean - current_total, 0)
-    add_budget = min(slots_needed, max_adds_clean)
-
-    if add_budget <= 0:
-        return {
+    if slots_needed <= 0:
+        return _attach_dev_metrics({
             "version": VERSION,
             "status": "OK",
             "codes": [],
             "baseline_summary_v1": baseline_summary_v1,
             "added_cards_v1": [],
-            "completed_decklist_text_v1": _build_completed_decklist_text(commander_name, deck_cards),
-        }
+            "completed_decklist_text_v1": _build_completed_decklist_text(commander_names, deck_cards),
+        },
+            collect_dev_metrics=bool(collect_dev_metrics),
+            stop_reason_v1="OK_REACHED_TARGET",
+            nonland_added_count=0,
+            land_fill_needed=0,
+            land_fill_applied=0,
+            candidate_pool_last_returned=0,
+            candidate_pool_filtered_illegal_count=None,
+        )
+
+    add_budget = min(slots_needed, max_adds_clean)
 
     primitive_counts_by_id = _extract_primitive_counts_by_id(structural_snapshot)
 
@@ -575,20 +593,34 @@ def run_deck_complete_engine_v1(
     remaining_budget = int(add_budget)
     working_cards = list(deck_cards)
     added_cards: List[Dict[str, Any]] = []
+    nonland_added_count = 0
+    nonland_pool_attempted = False
+    candidate_pool_empty_seen = False
+    candidate_pool_last_returned = 0
+    candidate_pool_filtered_illegal_count: int | None = None
 
     for round_reason, include_primitives in rounds:
         if remaining_budget <= 0:
             break
-        additions_for_round = _pick_round_additions(
+        additions_for_round, diagnostics = _pick_round_additions(
             round_reason=round_reason,
             include_primitives=include_primitives,
             db_snapshot_id=db_snapshot_id,
             bracket_id=bracket_id_clean,
-            commander_name=commander_name,
+            commander_names=commander_names,
             commander_color_set=commander_colors,
             current_cards=working_cards,
             max_to_add=remaining_budget,
         )
+
+        if bool(diagnostics.get("pool_called")):
+            nonland_pool_attempted = True
+            candidate_pool_last_returned = int(diagnostics.get("candidate_pool_returned_count") or 0)
+            if candidate_pool_last_returned <= 0:
+                candidate_pool_empty_seen = True
+            filtered_illegal = diagnostics.get("candidate_pool_filtered_illegal_count")
+            if isinstance(filtered_illegal, int) and not isinstance(filtered_illegal, bool):
+                candidate_pool_filtered_illegal_count = int(filtered_illegal)
 
         for row in additions_for_round:
             if remaining_budget <= 0:
@@ -610,35 +642,25 @@ def run_deck_complete_engine_v1(
                 }
             )
             remaining_budget -= 1
+            nonland_added_count += 1
 
-    land_mode = _nonempty_str(land_target_mode).upper()
-    if remaining_budget > 0 and bool(allow_basic_lands) and land_mode == "AUTO":
+    allow_basic_lands_clean = bool(allow_basic_lands)
+    land_target_mode_clean = _nonempty_str(land_target_mode).upper()
+    if land_target_mode_clean == "":
+        land_target_mode_clean = "AUTO"
+    auto_land_fill_enabled = allow_basic_lands_clean and land_target_mode_clean == "AUTO"
+
+    land_fill_needed = max(target_deck_size_clean - (len(commander_names) + len(working_cards)), 0)
+    land_fill_applied = 0
+    if land_fill_needed > 0 and auto_land_fill_enabled:
         land_fill_names = _build_land_fill_sequence(
-            db_snapshot_id=db_snapshot_id,
             commander_color_set=commander_colors,
-            current_cards=working_cards,
-            slots_needed=remaining_budget,
+            slots_needed=land_fill_needed,
         )
 
         for land_name in land_fill_names:
-            if remaining_budget <= 0:
-                break
             card_name = _nonempty_str(land_name)
             if card_name == "":
-                continue
-
-            color_legality = is_card_color_legal_v1(
-                card_name=card_name,
-                commander_color_set=commander_colors,
-                db_snapshot_id=db_snapshot_id,
-            )
-            if color_legality is not True:
-                continue
-
-            if card_name in GAME_CHANGERS_SET:
-                continue
-
-            if (not _is_singleton_exempt_name(card_name)) and card_name in working_cards:
                 continue
 
             working_cards.append(card_name)
@@ -649,22 +671,56 @@ def run_deck_complete_engine_v1(
                     "primitives_added_v1": [],
                 }
             )
-            remaining_budget -= 1
+            land_fill_applied += 1
 
-    target_reached = (1 + len(working_cards)) >= target_deck_size_clean
+    target_reached = (len(commander_names) + len(working_cards)) >= target_deck_size_clean
     status = "OK" if target_reached else "WARN"
+
+    stop_reason_v1 = "OK_REACHED_TARGET"
+    if target_reached and land_fill_applied > 0:
+        stop_reason_v1 = "LAND_FILL_APPLIED"
 
     codes: List[str] = []
     if not target_reached:
-        if int(max_adds_clean) < int(slots_needed):
-            codes.append("MAX_ADDS_REACHED")
+        if commander_color_identity_warn_code != "":
+            codes.append(commander_color_identity_warn_code)
+        if nonland_pool_attempted and candidate_pool_empty_seen:
+            codes.append("CANDIDATE_POOL_EMPTY")
+        if not allow_basic_lands_clean and int(land_fill_needed) > 0:
+            codes.append("BASIC_LANDS_DISALLOWED")
+        elif allow_basic_lands_clean and land_target_mode_clean != "AUTO" and int(land_fill_needed) > 0:
+            codes.append("LAND_MODE_DISABLED")
+
+        if int(land_fill_applied) <= 0 and auto_land_fill_enabled and int(land_fill_needed) > 0:
+            codes.append("LAND_FILL_FAILED")
+        if int(max_adds_clean) < int(slots_needed) and int(nonland_added_count) >= int(add_budget):
+            codes.append("MAX_ADDS_REACHED_BEFORE_TARGET")
         codes.append("TARGET_SIZE_NOT_REACHED")
 
-    return {
+        if "BASIC_LANDS_DISALLOWED" in codes:
+            stop_reason_v1 = "BASIC_LANDS_DISALLOWED"
+        elif "MAX_ADDS_REACHED_BEFORE_TARGET" in codes:
+            stop_reason_v1 = "MAX_ADDS_REACHED_BEFORE_TARGET"
+        elif "CANDIDATE_POOL_EMPTY" in codes:
+            stop_reason_v1 = "CANDIDATE_POOL_EMPTY"
+        elif "LAND_MODE_DISABLED" in codes:
+            stop_reason_v1 = "LAND_MODE_DISABLED"
+        else:
+            stop_reason_v1 = "FILL_FAILED"
+
+    return _attach_dev_metrics({
         "version": VERSION,
         "status": status,
         "codes": sorted(set(codes)),
         "baseline_summary_v1": baseline_summary_v1,
         "added_cards_v1": added_cards,
-        "completed_decklist_text_v1": _build_completed_decklist_text(commander_name, working_cards),
-    }
+        "completed_decklist_text_v1": _build_completed_decklist_text(commander_names, working_cards),
+    },
+        collect_dev_metrics=bool(collect_dev_metrics),
+        stop_reason_v1=stop_reason_v1,
+        nonland_added_count=nonland_added_count,
+        land_fill_needed=land_fill_needed,
+        land_fill_applied=land_fill_applied,
+        candidate_pool_last_returned=candidate_pool_last_returned,
+        candidate_pool_filtered_illegal_count=candidate_pool_filtered_illegal_count,
+    )

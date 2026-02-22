@@ -275,6 +275,23 @@ def _resolve_single_commander(name: str, db_snapshot_id: str) -> Dict[str, Any]:
     return resolve_parsed_decklist(parsed_payload, db_snapshot_id)
 
 
+def _sorted_commander_items(parsed_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    commander_items = [
+        item
+        for item in parsed_items
+        if isinstance(item, dict)
+        and _nonempty_str(item.get("section")) == "commander"
+    ]
+    return sorted(
+        commander_items,
+        key=lambda item: (
+            _safe_line_no(item.get("line_no")),
+            str(item.get("name_norm") or ""),
+            str(item.get("name_raw") or ""),
+        ),
+    )
+
+
 def ingest_decklist(
     raw_text: str,
     db_snapshot_id: str,
@@ -293,9 +310,16 @@ def ingest_decklist(
     resolved_rows = resolution.get("resolved_cards") if isinstance(resolution.get("resolved_cards"), list) else []
     unknowns = [entry for entry in (resolution.get("unknowns") if isinstance(resolution.get("unknowns"), list) else []) if isinstance(entry, dict)]
 
-    commander_name: str | None = None
-    commander_oracle_id: str | None = None
-    commander_line_no: int | None = None
+    commander_items = _sorted_commander_items(parsed_items)
+    commander_line_no_set = {
+        _safe_line_no(item.get("line_no"))
+        for item in commander_items
+    }
+
+    commander_names: List[str] = []
+    commander_oracle_ids: List[str] = []
+    seen_commander_names: set[str] = set()
+    seen_commander_oracle_ids: set[str] = set()
 
     override_name = _nonempty_str(commander_name_override)
     if override_name is not None:
@@ -314,32 +338,42 @@ def ingest_decklist(
         if len(commander_resolved_rows) == 1 and isinstance(commander_resolved_rows[0], dict):
             commander_name = _nonempty_str(commander_resolved_rows[0].get("name"))
             commander_oracle_id = _nonempty_str(commander_resolved_rows[0].get("oracle_id"))
+            if commander_name is not None:
+                commander_names.append(commander_name)
+                seen_commander_names.add(commander_name.casefold())
+            if commander_oracle_id is not None:
+                commander_oracle_ids.append(commander_oracle_id)
+                seen_commander_oracle_ids.add(commander_oracle_id)
 
         for unknown_row in commander_unknowns:
             if isinstance(unknown_row, dict):
                 unknowns.append(unknown_row)
     else:
-        commander_items = [
-            item
-            for item in parsed_items
-            if isinstance(item, dict)
-            and _nonempty_str(item.get("section")) == "commander"
-        ]
+        if len(commander_items) > 0:
+            for commander_item in commander_items:
+                commander_line_no = _safe_line_no(commander_item.get("line_no"))
+                commander_resolved = [
+                    row
+                    for row in resolved_rows
+                    if isinstance(row, dict)
+                    and isinstance(row.get("source_line_no"), int)
+                    and row.get("source_line_no") == commander_line_no
+                ]
+                if len(commander_resolved) != 1 or not isinstance(commander_resolved[0], dict):
+                    continue
 
-        if len(commander_items) == 1 and isinstance(commander_items[0], dict):
-            commander_line_no_raw = commander_items[0].get("line_no")
-            commander_line_no = commander_line_no_raw if isinstance(commander_line_no_raw, int) and commander_line_no_raw >= 0 else 0
-
-            commander_resolved = [
-                row
-                for row in resolved_rows
-                if isinstance(row, dict)
-                and isinstance(row.get("source_line_no"), int)
-                and row.get("source_line_no") == commander_line_no
-            ]
-            if len(commander_resolved) == 1 and isinstance(commander_resolved[0], dict):
                 commander_name = _nonempty_str(commander_resolved[0].get("name"))
                 commander_oracle_id = _nonempty_str(commander_resolved[0].get("oracle_id"))
+
+                if commander_name is not None:
+                    commander_name_key = commander_name.casefold()
+                    if commander_name_key not in seen_commander_names:
+                        commander_names.append(commander_name)
+                        seen_commander_names.add(commander_name_key)
+
+                if commander_oracle_id is not None and commander_oracle_id not in seen_commander_oracle_ids:
+                    commander_oracle_ids.append(commander_oracle_id)
+                    seen_commander_oracle_ids.add(commander_oracle_id)
         else:
             unknowns.append(
                 {
@@ -357,9 +391,8 @@ def ingest_decklist(
         for row in resolved_rows
         if isinstance(row, dict)
         and not (
-            commander_line_no is not None
-            and isinstance(row.get("source_line_no"), int)
-            and row.get("source_line_no") == commander_line_no
+            isinstance(row.get("source_line_no"), int)
+            and int(row.get("source_line_no")) in commander_line_no_set
         )
     ]
 
@@ -384,7 +417,8 @@ def ingest_decklist(
 
     canonical_deck_input = {
         "format": format_token,
-        "commander": commander_name or "",
+        "commander": commander_names[0] if len(commander_names) > 0 else "",
+        "commander_list_v1": list(commander_names),
         "cards": expanded_cards,
     }
 
@@ -401,5 +435,6 @@ def ingest_decklist(
         "ingest_version": DECKLIST_INGEST_VERSION,
         "parsed": parsed,
         "resolution": resolution,
-        "commander_oracle_id": commander_oracle_id,
+        "commander_oracle_id": commander_oracle_ids[0] if len(commander_oracle_ids) > 0 else None,
+        "commander_oracle_ids_v1": list(commander_oracle_ids),
     }
