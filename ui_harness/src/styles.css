@@ -984,6 +984,108 @@ pre {
   color: var(--muted);
 }
 
+.phase1-empty-state {
+  margin-top: 10px;
+  border: 1px dashed rgba(117, 215, 255, 0.32);
+  border-radius: 10px;
+  padding: 12px;
+  color: var(--muted);
+  background: rgba(4, 10, 20, 0.54);
+}
+
+.phase1-empty-state-compact {
+  min-height: 0;
+}
+
+.phase1-primitive-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.5fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.phase1-primitive-column {
+  min-width: 0;
+}
+
+.phase1-primitive-column h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.phase1-primitive-list,
+.phase1-primitive-card-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid rgba(117, 215, 255, 0.2);
+  border-radius: 10px;
+  max-height: 360px;
+  overflow: auto;
+  background: rgba(4, 10, 20, 0.76);
+}
+
+.phase1-primitive-list li,
+.phase1-primitive-card-list li {
+  border-bottom: 1px solid rgba(117, 215, 255, 0.14);
+}
+
+.phase1-primitive-list li:last-child,
+.phase1-primitive-card-list li:last-child {
+  border-bottom: 0;
+}
+
+.phase1-primitive-button {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  font-weight: 600;
+}
+
+.phase1-primitive-button:hover,
+.phase1-primitive-button.is-active {
+  background: rgba(117, 215, 255, 0.14);
+}
+
+.phase1-primitive-label {
+  min-width: 0;
+  word-break: break-word;
+}
+
+.phase1-primitive-count {
+  border: 1px solid rgba(117, 215, 255, 0.32);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.phase1-primitive-card-list li {
+  padding: 10px;
+  cursor: pointer;
+}
+
+.phase1-primitive-card-list li:hover {
+  background: rgba(117, 215, 255, 0.14);
+}
+
+.phase1-primitive-tag-wrap {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .phase1-card-preview {
   border: 1px solid rgba(117, 215, 255, 0.22);
   border-radius: 12px;
@@ -1111,6 +1213,7 @@ pre {
   }
 
   .phase1-search-grid,
+  .phase1-primitive-grid,
   .phase1-build-form-grid {
     grid-template-columns: 1fr;
   }

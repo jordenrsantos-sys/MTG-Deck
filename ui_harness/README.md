@@ -13,6 +13,7 @@ Desktop-first UI harness for viewing MTG Engine `/build` payloads using `UI_CONT
   - `stress_transform_engine_v2`
   - graph bounds caps-hit indicators
 - Canonical/debug slots panel
+- Primitive Explorer (scaffold, read-only)
 - Fast local card suggest search (`/cards/suggest`):
   - starts after 2 chars
   - 60ms debounce
@@ -30,11 +31,11 @@ npm install
 npm run dev
 ```
 
-Open the URL shown by Vite (default `http://localhost:5173`).
+Open the URL shown by Vite (default `http://127.0.0.1:5173`).
 
 ## API mode setup (optional)
 
-1. Run the backend locally (default expected base: `http://localhost:8000`).
+1. Run the backend locally (default expected base: `http://127.0.0.1:8000`).
 2. In the harness, switch to **API mode**.
 3. Confirm API base URL in the control panel.
 4. Fill snapshot/profile/bracket/commander and run `/build`.
@@ -42,7 +43,7 @@ Open the URL shown by Vite (default `http://localhost:5173`).
 You can also set:
 
 ```bash
-VITE_API_BASE_URL=http://localhost:8000
+VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
 in `ui_harness/.env`.
@@ -51,3 +52,4 @@ in `ui_harness/.env`.
 
 - The included fixture file is: `ui_harness/fixtures/build_result.json`
 - It is a real build payload extracted from a local repro bundle.
+- Primitive Explorer scaffold requires build outputs containing primitive index fields (`primitive_index_by_slot` and/or `slot_ids_by_primitive`).

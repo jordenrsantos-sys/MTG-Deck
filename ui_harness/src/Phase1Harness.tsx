@@ -19,6 +19,22 @@ type BuildResponsePayload = JsonRecord & {
   unknowns?: unknown[];
 };
 
+type PrimitiveExplorerCardRow = {
+  slot_id: string;
+  name: string;
+  oracle_id: string;
+  type_line: string | null;
+  image_uri: string | null;
+  primitive_tags: string[];
+};
+
+type PrimitiveExplorerGroup = {
+  primitive_id: string;
+  count: number;
+  slot_ids: string[];
+  cards: PrimitiveExplorerCardRow[];
+};
+
 const DEFAULT_API_BASE = String(import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").trim();
 const SUGGEST_LIMIT_MAX = 20;
 const FIXTURE_PATH_LABEL = "./ui_harness/fixtures/build_result.json";
@@ -40,6 +56,20 @@ function asOptionalString(value: unknown): string | null {
   }
   const token = value.trim();
   return token === "" ? null : token;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const rows: string[] = [];
+  for (const rawEntry of value) {
+    const token = asOptionalString(rawEntry);
+    if (token !== null) {
+      rows.push(token);
+    }
+  }
+  return rows;
 }
 
 function asNumber(value: unknown): number | null {
@@ -125,6 +155,85 @@ function toSingleLineSnippet(raw: string, maxLength = 180): string {
     return normalized;
   }
   return `${normalized.slice(0, maxLength)}...`;
+}
+
+function uniqueSortedStrings(values: string[]): string[] {
+  const deduped = new Set<string>();
+  for (const value of values) {
+    const token = value.trim();
+    if (token !== "") {
+      deduped.add(token);
+    }
+  }
+  return Array.from(deduped).sort((a: string, b: string) => a.localeCompare(b));
+}
+
+function extractPrimitiveIds(value: unknown): string[] {
+  const rows = asArray(value);
+  const primitiveIds: string[] = [];
+
+  for (const rawRow of rows) {
+    const asText = asOptionalString(rawRow);
+    if (asText !== null) {
+      primitiveIds.push(asText);
+      continue;
+    }
+
+    const row = asRecord(rawRow);
+    if (!row) {
+      continue;
+    }
+
+    const primitiveId = firstNonEmptyString(row.primitive_id, row.primitive, row.id, row.tag_id, row.code);
+    if (primitiveId !== null) {
+      primitiveIds.push(primitiveId);
+    }
+  }
+
+  return uniqueSortedStrings(primitiveIds);
+}
+
+function normalizeSlotIds(value: unknown): string[] {
+  const rows = asArray(value);
+  const slotIds: string[] = [];
+
+  for (const rawRow of rows) {
+    const asText = asOptionalString(rawRow);
+    if (asText !== null) {
+      slotIds.push(asText);
+      continue;
+    }
+
+    const row = asRecord(rawRow);
+    if (!row) {
+      continue;
+    }
+
+    const slotId = firstNonEmptyString(row.slot_id, row.id);
+    if (slotId !== null) {
+      slotIds.push(slotId);
+    }
+  }
+
+  return uniqueSortedStrings(slotIds);
+}
+
+function hasOwnKey(record: JsonRecord | null, key: string): boolean {
+  return record !== null && Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function cardNameSortKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function mapPrimitiveCardToSuggestRow(row: PrimitiveExplorerCardRow): CardSuggestRow {
+  return {
+    oracle_id: row.oracle_id,
+    name: row.name,
+    mana_cost: null,
+    type_line: row.type_line,
+    image_uri: row.image_uri,
+  };
 }
 
 function normalizeCardsInput(rawCards: string): string[] {
@@ -221,7 +330,10 @@ export default function Phase1Harness() {
   const [searchResults, setSearchResults] = useState<CardSuggestRow[]>([]);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const [selectedSuggestion, setSelectedSuggestion] = useState<CardSuggestRow | null>(null);
+  const [selectedPrimitiveId, setSelectedPrimitiveId] = useState<string | null>(null);
   const [hoverSuggestion, setHoverSuggestion] = useState<CardSuggestRow | null>(null);
+  const [hoverPreviewSource, setHoverPreviewSource] = useState<"search" | "primitive" | null>(null);
+  const [hoverPrimitiveTags, setHoverPrimitiveTags] = useState<string[]>([]);
   const [hoverVisible, setHoverVisible] = useState(false);
 
   const hoverDelayTimerRef = useRef<number | null>(null);
@@ -232,6 +344,24 @@ export default function Phase1Harness() {
       window.clearTimeout(hoverDelayTimerRef.current);
       hoverDelayTimerRef.current = null;
     }
+  }
+
+  function hideHoverPreview() {
+    clearHoverTimer();
+    setHoverVisible(false);
+    setHoverPreviewSource(null);
+    setHoverPrimitiveTags([]);
+  }
+
+  function showHoverPreview(row: CardSuggestRow, source: "search" | "primitive", primitiveTags: string[] = []) {
+    clearHoverTimer();
+    hoverDelayTimerRef.current = window.setTimeout(() => {
+      setHoverSuggestion(row);
+      setHoverPreviewSource(source);
+      setHoverPrimitiveTags(uniqueSortedStrings(primitiveTags));
+      setHoverVisible(true);
+      hoverDelayTimerRef.current = null;
+    }, 150);
   }
 
   function loadFixturePayload() {
@@ -347,12 +477,7 @@ export default function Phase1Harness() {
   }
 
   function handleSuggestionMouseEnter(row: CardSuggestRow) {
-    clearHoverTimer();
-    hoverDelayTimerRef.current = window.setTimeout(() => {
-      setHoverSuggestion(row);
-      setHoverVisible(true);
-      hoverDelayTimerRef.current = null;
-    }, 150);
+    showHoverPreview(row, "search", []);
   }
 
   function handleSuggestionMouseLeave() {
@@ -485,6 +610,11 @@ export default function Phase1Harness() {
   const graphBounds = asRecord(graphV1?.bounds);
   const graphStats = asRecord(graphV1?.stats);
   const graphCapsHit = asRecord(graphStats?.caps_hit);
+  const primitiveIndexBySlot = asRecord(result?.primitive_index_by_slot);
+  const slotIdsByPrimitive = asRecord(result?.slot_ids_by_primitive);
+  const primitiveIndexTotals = asRecord(result?.primitive_index_totals);
+  const hasPrimitiveIndexBySlotField = hasOwnKey(result, "primitive_index_by_slot");
+  const hasSlotIdsByPrimitiveField = hasOwnKey(result, "slot_ids_by_primitive");
 
   const structuralStatus =
     firstNonEmptyString(structuralSnapshot?.status, structuralSnapshot?.state, structuralSnapshot ? "PRESENT" : "MISSING") ||
@@ -534,6 +664,209 @@ export default function Phase1Harness() {
   const commanderCanonicalSlot = result?.commander_canonical_slot;
   const unknownsBySlot = result?.deck_cards_unknowns_by_slot ?? result?.unknowns_by_slot;
 
+  const slotPrimitiveTagsById = useMemo(() => {
+    const rowsBySlotId = new Map<string, string[]>();
+    if (!primitiveIndexBySlot) {
+      return rowsBySlotId;
+    }
+
+    for (const slotId of Object.keys(primitiveIndexBySlot).sort((a: string, b: string) => a.localeCompare(b))) {
+      const primitiveTags = extractPrimitiveIds(primitiveIndexBySlot[slotId]);
+      if (primitiveTags.length > 0) {
+        rowsBySlotId.set(slotId, primitiveTags);
+      }
+    }
+
+    return rowsBySlotId;
+  }, [primitiveIndexBySlot]);
+
+  const slotCardRowsById = useMemo(() => {
+    const rowsBySlotId = new Map<string, PrimitiveExplorerCardRow>();
+
+    function upsertFromRaw(raw: unknown): void {
+      const row = asRecord(raw);
+      if (!row) {
+        return;
+      }
+
+      const slotId = firstNonEmptyString(row.slot_id, row.id);
+      if (slotId === null) {
+        return;
+      }
+
+      const nextName = firstNonEmptyString(row.resolved_name, row.name, row.input, row.card_name, row.slot_name, slotId) || slotId;
+      const nextOracleId = firstNonEmptyString(row.resolved_oracle_id, row.oracle_id) || "";
+      const nextTypeLine = firstNonEmptyString(row.type_line, row.resolved_type_line, row.card_type_line);
+      const nextImageUri = firstNonEmptyString(row.image_uri, row.image_url, row.art_uri, row.art_url);
+      const nextPrimitiveTags = uniqueSortedStrings([
+        ...extractPrimitiveIds(row.primitives),
+        ...extractPrimitiveIds(row.primitive_ids),
+        ...extractPrimitiveIds(row.primitive_tags),
+        ...asStringArray(row.tags),
+      ]);
+
+      const previous = rowsBySlotId.get(slotId);
+      if (!previous) {
+        rowsBySlotId.set(slotId, {
+          slot_id: slotId,
+          name: nextName,
+          oracle_id: nextOracleId,
+          type_line: nextTypeLine,
+          image_uri: nextImageUri,
+          primitive_tags: nextPrimitiveTags,
+        });
+        return;
+      }
+
+      const preferredName = cardNameSortKey(previous.name) !== cardNameSortKey(slotId) ? previous.name : nextName;
+      rowsBySlotId.set(slotId, {
+        slot_id: slotId,
+        name: preferredName,
+        oracle_id: previous.oracle_id || nextOracleId,
+        type_line: previous.type_line || nextTypeLine,
+        image_uri: previous.image_uri || nextImageUri,
+        primitive_tags: uniqueSortedStrings([...previous.primitive_tags, ...nextPrimitiveTags]),
+      });
+    }
+
+    upsertFromRaw(result?.commander_canonical_slot);
+    for (const row of asArray(result?.canonical_slots_all)) {
+      upsertFromRaw(row);
+    }
+    for (const row of asArray(result?.graph_nodes)) {
+      upsertFromRaw(row);
+    }
+    for (const row of asArray(result?.deck_cards_playable)) {
+      upsertFromRaw(row);
+    }
+    for (const row of asArray(result?.deck_cards_nonplayable)) {
+      upsertFromRaw(row);
+    }
+
+    return rowsBySlotId;
+  }, [result]);
+
+  const primitiveExplorer = useMemo(() => {
+    const primitiveToSlotIds = new Map<string, Set<string>>();
+    let source: "primitive_index_by_slot" | "slot_ids_by_primitive" | "missing" = "missing";
+
+    function addPrimitiveSlotPair(primitiveIdRaw: string, slotIdRaw: string): void {
+      const primitiveId = primitiveIdRaw.trim();
+      const slotId = slotIdRaw.trim();
+      if (primitiveId === "" || slotId === "") {
+        return;
+      }
+      const slotIds = primitiveToSlotIds.get(primitiveId) || new Set<string>();
+      slotIds.add(slotId);
+      primitiveToSlotIds.set(primitiveId, slotIds);
+    }
+
+    if (hasPrimitiveIndexBySlotField) {
+      source = "primitive_index_by_slot";
+
+      if (primitiveIndexBySlot) {
+        for (const slotId of Object.keys(primitiveIndexBySlot).sort((a: string, b: string) => a.localeCompare(b))) {
+          const primitiveIds = extractPrimitiveIds(primitiveIndexBySlot[slotId]);
+          for (const primitiveId of primitiveIds) {
+            addPrimitiveSlotPair(primitiveId, slotId);
+          }
+        }
+      }
+
+      if (primitiveToSlotIds.size === 0 && slotIdsByPrimitive) {
+        for (const primitiveId of Object.keys(slotIdsByPrimitive).sort((a: string, b: string) => a.localeCompare(b))) {
+          const slotIds = normalizeSlotIds(slotIdsByPrimitive[primitiveId]);
+          for (const slotId of slotIds) {
+            addPrimitiveSlotPair(primitiveId, slotId);
+          }
+        }
+      }
+    } else if (hasSlotIdsByPrimitiveField) {
+      source = "slot_ids_by_primitive";
+      if (slotIdsByPrimitive) {
+        for (const primitiveId of Object.keys(slotIdsByPrimitive).sort((a: string, b: string) => a.localeCompare(b))) {
+          const slotIds = normalizeSlotIds(slotIdsByPrimitive[primitiveId]);
+          for (const slotId of slotIds) {
+            addPrimitiveSlotPair(primitiveId, slotId);
+          }
+        }
+      }
+    }
+
+    const groups: PrimitiveExplorerGroup[] = Array.from(primitiveToSlotIds.entries()).map(([primitiveId, slotIdSet]) => {
+      const slotIds = Array.from(slotIdSet).sort((a: string, b: string) => a.localeCompare(b));
+      const cards: PrimitiveExplorerCardRow[] = slotIds
+        .map((slotId: string) => {
+          const cardRow = slotCardRowsById.get(slotId);
+          const mergedTags = uniqueSortedStrings([
+            ...(slotPrimitiveTagsById.get(slotId) || []),
+            ...(cardRow ? cardRow.primitive_tags : []),
+          ]);
+
+          return {
+            slot_id: slotId,
+            name: cardRow?.name || slotId,
+            oracle_id: cardRow?.oracle_id || "",
+            type_line: cardRow?.type_line || null,
+            image_uri: cardRow?.image_uri || null,
+            primitive_tags: mergedTags,
+          };
+        })
+        .sort((a: PrimitiveExplorerCardRow, b: PrimitiveExplorerCardRow) => {
+          const byName = cardNameSortKey(a.name).localeCompare(cardNameSortKey(b.name));
+          if (byName !== 0) {
+            return byName;
+          }
+          return a.slot_id.localeCompare(b.slot_id);
+        });
+
+      return {
+        primitive_id: primitiveId,
+        count: slotIds.length,
+        slot_ids: slotIds,
+        cards,
+      };
+    });
+
+    groups.sort((a: PrimitiveExplorerGroup, b: PrimitiveExplorerGroup) => {
+      if (a.count !== b.count) {
+        return b.count - a.count;
+      }
+      return a.primitive_id.localeCompare(b.primitive_id);
+    });
+
+    return {
+      source,
+      groups,
+    };
+  }, [
+    hasPrimitiveIndexBySlotField,
+    hasSlotIdsByPrimitiveField,
+    primitiveIndexBySlot,
+    slotIdsByPrimitive,
+    slotCardRowsById,
+    slotPrimitiveTagsById,
+  ]);
+
+  const primitiveExplorerAvailable = primitiveExplorer.source !== "missing";
+  const primitiveExplorerSourceLabel =
+    primitiveExplorer.source === "primitive_index_by_slot"
+      ? "result.primitive_index_by_slot"
+      : primitiveExplorer.source === "slot_ids_by_primitive"
+      ? "result.slot_ids_by_primitive"
+      : "none";
+
+  const selectedPrimitiveGroup = useMemo(() => {
+    if (primitiveExplorer.groups.length === 0) {
+      return null;
+    }
+    if (selectedPrimitiveId === null) {
+      return primitiveExplorer.groups[0];
+    }
+    const match = primitiveExplorer.groups.find((row: PrimitiveExplorerGroup) => row.primitive_id === selectedPrimitiveId);
+    return match || primitiveExplorer.groups[0];
+  }, [primitiveExplorer.groups, selectedPrimitiveId]);
+
   const deckCardsDebugRows = useMemo(() => {
     if (!result) {
       return [] as Array<{ key: string; value: unknown }>;
@@ -557,8 +890,27 @@ export default function Phase1Harness() {
       .filter((code: string) => code !== "");
   }, [unknowns]);
 
+  useEffect(() => {
+    if (primitiveExplorer.groups.length === 0) {
+      if (selectedPrimitiveId !== null) {
+        setSelectedPrimitiveId(null);
+      }
+      return;
+    }
+
+    const hasSelected =
+      selectedPrimitiveId !== null &&
+      primitiveExplorer.groups.some((row: PrimitiveExplorerGroup) => row.primitive_id === selectedPrimitiveId);
+
+    if (!hasSelected) {
+      setSelectedPrimitiveId(primitiveExplorer.groups[0].primitive_id);
+    }
+  }, [primitiveExplorer.groups, selectedPrimitiveId]);
+
   const selectedPreviewRow = hoverVisible ? hoverSuggestion : null;
   const selectedPreviewHasLocalArt = isLocalImageUri(selectedPreviewRow?.image_uri || null);
+  const selectedPreviewPrimitiveTags =
+    hoverVisible && hoverPreviewSource === "primitive" ? hoverPrimitiveTags : [];
 
   return (
     <div className="phase1-shell">
@@ -570,6 +922,10 @@ export default function Phase1Harness() {
         <a className="phase1-rail-link" href="#phase1-search">
           <span className="phase1-rail-icon">S</span>
           <span className="phase1-rail-text">Card Search</span>
+        </a>
+        <a className="phase1-rail-link" href="#phase1-primitive">
+          <span className="phase1-rail-icon">P</span>
+          <span className="phase1-rail-text">Primitive Explorer</span>
         </a>
         <a className="phase1-rail-link" href="#phase1-v2">
           <span className="phase1-rail-icon">V2</span>
@@ -698,7 +1054,7 @@ export default function Phase1Harness() {
         <section className="phase1-panel" id="phase1-search">
           <h2>Card search (local, deterministic, offline-safe)</h2>
 
-          <div className="phase1-search-grid" onMouseLeave={() => setHoverVisible(false)}>
+          <div className="phase1-search-grid" onMouseLeave={hideHoverPreview}>
             <div className="phase1-search-box">
               <label>
                 Card lookup
@@ -787,6 +1143,111 @@ export default function Phase1Harness() {
 
         {buildPayload ? (
           <>
+            <section className="phase1-panel" id="phase1-primitive">
+              <h2>Primitive Explorer (scaffold)</h2>
+
+              <div className="phase1-source-row">
+                <span className="phase1-chip">source: {primitiveExplorerSourceLabel}</span>
+                <span className="phase1-chip">
+                  unique_primitives_total: {firstNumber(primitiveIndexTotals?.unique_primitives_total) ?? primitiveExplorer.groups.length}
+                </span>
+                <span className="phase1-chip">
+                  slots_with_primitives: {firstNumber(primitiveIndexTotals?.slots_with_primitives) ?? "-"}
+                </span>
+              </div>
+
+              {!primitiveExplorerAvailable ? (
+                <div className="phase1-empty-state">
+                  Primitive index not present in this build result (requires runtime tag index + primitive index layer).
+                </div>
+              ) : primitiveExplorer.groups.length === 0 ? (
+                <div className="phase1-empty-state">Primitive index is present, but no primitives were mapped in this payload.</div>
+              ) : (
+                <div className="phase1-primitive-grid" onMouseLeave={hideHoverPreview}>
+                  <div className="phase1-primitive-column">
+                    <h3>Primitive categories ({primitiveExplorer.groups.length})</h3>
+
+                    <ul className="phase1-primitive-list">
+                      {primitiveExplorer.groups.map((row: PrimitiveExplorerGroup) => {
+                        const isActive = selectedPrimitiveGroup?.primitive_id === row.primitive_id;
+                        return (
+                          <li key={row.primitive_id}>
+                            <button
+                              type="button"
+                              className={`phase1-primitive-button ${isActive ? "is-active" : ""}`}
+                              onClick={() => setSelectedPrimitiveId(row.primitive_id)}
+                            >
+                              <span className="phase1-primitive-label">{row.primitive_id}</span>
+                              <span className="phase1-primitive-count">{row.count}</span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+
+                  <div className="phase1-primitive-column">
+                    <h3>
+                      Cards mapped to {selectedPrimitiveGroup?.primitive_id || "-"} ({selectedPrimitiveGroup?.cards.length || 0})
+                    </h3>
+
+                    {selectedPrimitiveGroup && selectedPrimitiveGroup.cards.length > 0 ? (
+                      <ul className="phase1-primitive-card-list">
+                        {selectedPrimitiveGroup.cards.map((row: PrimitiveExplorerCardRow) => (
+                          <li
+                            key={`${selectedPrimitiveGroup.primitive_id}-${row.slot_id}`}
+                            onMouseEnter={() => {
+                              showHoverPreview(mapPrimitiveCardToSuggestRow(row), "primitive", row.primitive_tags);
+                            }}
+                            onMouseLeave={handleSuggestionMouseLeave}
+                          >
+                            <div className="phase1-suggest-name">{row.name}</div>
+                            <div className="phase1-suggest-meta-row">
+                              <span>{row.slot_id}</span>
+                              <span>{row.type_line || "-"}</span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="phase1-empty-state phase1-empty-state-compact">No cards mapped to selected primitive.</div>
+                    )}
+
+                    <div className={`phase1-card-preview ${selectedPreviewRow ? "is-visible" : ""}`}>
+                      <h3>Primitive hover preview</h3>
+                      {selectedPreviewRow ? (
+                        <>
+                          <p className="phase1-preview-title">{selectedPreviewRow.name}</p>
+                          <p className="phase1-preview-subtitle">{selectedPreviewRow.type_line || "Type unavailable"}</p>
+                          {selectedPreviewHasLocalArt ? (
+                            <img src={selectedPreviewRow.image_uri || undefined} alt={selectedPreviewRow.name} />
+                          ) : (
+                            <div className="phase1-preview-placeholder">No local image URI available in snapshot metadata.</div>
+                          )}
+
+                          {selectedPreviewPrimitiveTags.length > 0 ? (
+                            <div className="phase1-primitive-tag-wrap">
+                              {selectedPreviewPrimitiveTags.map((tag: string) => (
+                                <span className="phase1-chip" key={tag}>
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="phase1-footnote">Primitive tags not available for this card in current build payload.</div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="phase1-preview-placeholder">
+                          Hover a mapped card row for 150ms to preview and inspect primitive tags.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
             <section className="phase1-panel" id="phase1-overview">
               <h2>Header chips + analysis status bar</h2>
 
