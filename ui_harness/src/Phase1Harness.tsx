@@ -19,7 +19,8 @@ type BuildResponsePayload = JsonRecord & {
   unknowns?: unknown[];
 };
 
-const DEFAULT_API_BASE = String(import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").trim();
+const DEFAULT_API_BASE = String(import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").trim();
+const SUGGEST_LIMIT_MAX = 20;
 const FIXTURE_PATH_LABEL = "./ui_harness/fixtures/build_result.json";
 
 function asRecord(value: unknown): JsonRecord | null {
@@ -105,9 +106,25 @@ function safeParseJson(raw: string): unknown {
 function normalizeApiBase(raw: string): string {
   const token = raw.trim();
   if (token === "") {
-    return "http://localhost:8000";
+    return "http://127.0.0.1:8000";
   }
   return token.endsWith("/") ? token.slice(0, -1) : token;
+}
+
+function clampSuggestLimit(value: number): number {
+  if (!Number.isFinite(value)) {
+    return SUGGEST_LIMIT_MAX;
+  }
+  const rounded = Math.trunc(value);
+  return Math.min(Math.max(rounded, 1), SUGGEST_LIMIT_MAX);
+}
+
+function toSingleLineSnippet(raw: string, maxLength = 180): string {
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength)}...`;
 }
 
 function normalizeCardsInput(rawCards: string): string[] {
@@ -379,16 +396,16 @@ export default function Phase1Harness() {
     const requestId = suggestRequestIdRef.current + 1;
     suggestRequestIdRef.current = requestId;
     const controller = new AbortController();
+    const base = normalizeApiBase(apiBase);
+    const safeLimit = clampSuggestLimit(SUGGEST_LIMIT_MAX);
+    const snapshotPart = dbSnapshotId.trim() !== "" ? `&snapshot_id=${encodeURIComponent(dbSnapshotId.trim())}` : "";
+    const url = `${base}/cards/suggest?q=${encodeURIComponent(query)}${snapshotPart}&limit=${safeLimit}`;
 
     setSearchLoading(true);
     setSearchError(null);
 
     const timerId = window.setTimeout(async () => {
       try {
-        const base = normalizeApiBase(apiBase);
-        const snapshotPart = dbSnapshotId.trim() !== "" ? `&snapshot_id=${encodeURIComponent(dbSnapshotId.trim())}` : "";
-        const url = `${base}/cards/suggest?q=${encodeURIComponent(query)}${snapshotPart}&limit=20`;
-
         const response = await fetch(url, {
           method: "GET",
           signal: controller.signal,
@@ -397,7 +414,11 @@ export default function Phase1Harness() {
         const text = await response.text();
         const parsed = safeParseJson(text);
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status} from /cards/suggest`);
+          const responseSnippet = toSingleLineSnippet(text);
+          const debugResponse = responseSnippet === "" ? "(empty response body)" : responseSnippet;
+          throw new Error(
+            `Failed to fetch /cards/suggest (HTTP ${response.status}) | apiBaseUrl=${base} | requestUrl=${url} | response=${debugResponse}`,
+          );
         }
 
         if (requestId !== suggestRequestIdRef.current) {
@@ -415,7 +436,17 @@ export default function Phase1Harness() {
         if (requestId !== suggestRequestIdRef.current) {
           return;
         }
-        const message = error instanceof Error ? error.message : "Unknown /cards/suggest runtime error";
+        let message = "Unknown /cards/suggest runtime error";
+        if (error instanceof TypeError) {
+          message = [
+            "Failed to fetch /cards/suggest",
+            `apiBaseUrl=${base}`,
+            `requestUrl=${url}`,
+            "API not reachable (backend unavailable or CORS blocked).",
+          ].join(" | ");
+        } else if (error instanceof Error) {
+          message = error.message;
+        }
         setSearchResults([]);
         setSearchOpen(false);
         setActiveSuggestionIndex(-1);
@@ -587,7 +618,7 @@ export default function Phase1Harness() {
                 onChange={(event: ChangeEvent<HTMLInputElement>) => {
                   setApiBase(event.target.value);
                 }}
-                placeholder="http://localhost:8000"
+                placeholder="http://127.0.0.1:8000"
               />
             </label>
 
@@ -691,6 +722,13 @@ export default function Phase1Harness() {
                 <span>{searchLoading ? "Searching..." : `Results: ${searchResults.length}`}</span>
                 {searchError ? <span className="phase1-search-error">{searchError}</span> : null}
               </div>
+
+              {searchError ? (
+                <div className="phase1-search-error-banner" role="status">
+                  <strong>Failed to fetch /cards/suggest</strong>
+                  <code>{searchError}</code>
+                </div>
+              ) : null}
 
               {searchOpen && searchResults.length > 0 ? (
                 <ul className="phase1-suggest-list" role="listbox" aria-label="Card suggestions">
