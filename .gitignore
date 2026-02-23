@@ -40,6 +40,8 @@ tmp_*.json
 # Prevent accidental repo-local DB files
 /data/mtg.sqlite
 /data/*.sqlite
+/data/card_images/
+/data/scryfall/
 
 # --- Local data dumps / generated exports ---
 *.jsonl

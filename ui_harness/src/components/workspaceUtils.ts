@@ -139,7 +139,13 @@ export function normalizeApiBase(raw: string): string {
   if (token === "") {
     return "http://127.0.0.1:8000";
   }
-  return token.endsWith("/") ? token.slice(0, -1) : token;
+
+  const withoutTrailingSlash = token.endsWith("/") ? token.slice(0, -1) : token;
+  if (withoutTrailingSlash.toLowerCase().endsWith("/api")) {
+    return withoutTrailingSlash.slice(0, -4);
+  }
+
+  return withoutTrailingSlash;
 }
 
 export function safeParseJson(raw: string): unknown {

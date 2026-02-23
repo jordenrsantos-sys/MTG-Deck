@@ -46,6 +46,48 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
 
   const requestIdRef = useRef(0);
 
+  async function fetchSuggestRows(
+    requestUrl: string,
+    requestId: number,
+    controller: AbortController,
+  ): Promise<{ rows: CardSuggestRow[]; status: number; text: string }> {
+    if (import.meta.env.DEV) {
+      console.log("[CardSuggestInput] request", {
+        label,
+        requestId,
+        requestUrl,
+      });
+    }
+
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    const parsed = safeParseJson(text);
+    const parsedRows = parseCardSuggestRows(parsed);
+
+    if (import.meta.env.DEV) {
+      console.log("[CardSuggestInput] response", {
+        label,
+        requestId,
+        requestUrl,
+        status: response.status,
+        resultCount: parsedRows.length,
+      });
+    }
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch /cards/suggest (HTTP ${response.status}) | response=${toSingleLineSnippet(text) || "(empty)"}`);
+    }
+
+    return {
+      rows: parsedRows,
+      status: response.status,
+      text,
+    };
+  }
+
   function selectRow(row: CardSuggestRow) {
     onChange(row.name);
     onSelect?.(row);
@@ -114,32 +156,46 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
     const controller = new AbortController();
     const base = normalizeApiBase(apiBase);
     const safeLimit = clampSuggestLimit(limit);
-    const snapshotPart = snapshotId.trim() !== "" ? `&snapshot_id=${encodeURIComponent(snapshotId.trim())}` : "";
-    const requestUrl = `${base}/cards/suggest?q=${encodeURIComponent(query)}${snapshotPart}&limit=${safeLimit}`;
+    const snapshotToken = snapshotId.trim();
+    const snapshotPart = snapshotToken !== "" ? `&snapshot_id=${encodeURIComponent(snapshotToken)}` : "";
+    const primaryRequestUrl = `${base}/cards/suggest?q=${encodeURIComponent(query)}${snapshotPart}&limit=${safeLimit}`;
+    const fallbackRequestUrl = `${base}/cards/suggest?q=${encodeURIComponent(query)}&limit=${safeLimit}`;
 
     setLoading(true);
     setError(null);
 
     const timerId = window.setTimeout(async () => {
       try {
-        const response = await fetch(requestUrl, {
-          method: "GET",
-          signal: controller.signal,
-        });
-        const text = await response.text();
-        const parsed = safeParseJson(text);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch /cards/suggest (HTTP ${response.status}) | response=${toSingleLineSnippet(text) || "(empty)"}`);
-        }
+        const primary = await fetchSuggestRows(primaryRequestUrl, requestId, controller);
 
         if (requestId !== requestIdRef.current) {
           return;
         }
 
-        const parsedRows = parseCardSuggestRows(parsed);
-        setRows(parsedRows);
-        setOpen(parsedRows.length > 0);
-        setActiveIndex(parsedRows.length > 0 ? 0 : -1);
+        let resolvedRows = primary.rows;
+
+        if (resolvedRows.length === 0 && snapshotToken !== "") {
+          const fallback = await fetchSuggestRows(fallbackRequestUrl, requestId, controller);
+          if (requestId !== requestIdRef.current) {
+            return;
+          }
+
+          resolvedRows = fallback.rows;
+
+          if (import.meta.env.DEV) {
+            console.log("[CardSuggestInput] fallback-without-snapshot", {
+              label,
+              requestId,
+              primaryRequestUrl,
+              fallbackRequestUrl,
+              resultCount: resolvedRows.length,
+            });
+          }
+        }
+
+        setRows(resolvedRows);
+        setOpen(resolvedRows.length > 0);
+        setActiveIndex(resolvedRows.length > 0 ? 0 : -1);
       } catch (requestError) {
         if (controller.signal.aborted || requestId !== requestIdRef.current) {
           return;
