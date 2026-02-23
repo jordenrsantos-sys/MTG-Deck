@@ -1,4 +1,4 @@
-export { default } from "./Phase1Harness";
+export { default } from "./views/AppRouter";
 /*
 
 type BuildResult = {
