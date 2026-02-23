@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import sqlite3
 from pathlib import Path
@@ -7,6 +8,9 @@ from typing import Optional, Dict, Any, List, Tuple
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB_RELATIVE_PATH = Path("data") / "mtg.sqlite"
 DB_PATH = (REPO_ROOT / DEFAULT_DB_RELATIVE_PATH).resolve()
+EXTERNAL_DB_PATH = (REPO_ROOT.parent / DEFAULT_DB_RELATIVE_PATH).resolve()
+SQLITE_HEADER_PREFIX = b"SQLite format 3\x00"
+logger = logging.getLogger(__name__)
 
 
 class _ManagedConnection(sqlite3.Connection):
@@ -18,20 +22,59 @@ class _ManagedConnection(sqlite3.Connection):
 
 
 def resolve_db_path() -> Path:
-    env_db_path = os.getenv("MTG_ENGINE_DB_PATH")
-    if isinstance(env_db_path, str) and env_db_path.strip() != "":
-        candidate = Path(env_db_path.strip()).expanduser()
+    def _resolve_candidate(raw_path: str) -> Path:
+        candidate = Path(raw_path.strip()).expanduser()
         if not candidate.is_absolute():
             candidate = (REPO_ROOT / candidate).resolve()
-    else:
-        candidate = DB_PATH
+        return candidate.resolve()
 
-    if not candidate.is_file():
-        raise RuntimeError(
-            "MTG engine database file not found at "
-            f"'{candidate}'. Set MTG_ENGINE_DB_PATH or ensure ./data/mtg.sqlite exists."
+    def _is_valid_sqlite_db_file(candidate: Path) -> bool:
+        if not candidate.is_file():
+            return False
+        try:
+            if candidate.stat().st_size < len(SQLITE_HEADER_PREFIX):
+                return False
+            with candidate.open("rb") as file_obj:
+                header = file_obj.read(len(SQLITE_HEADER_PREFIX))
+        except OSError:
+            return False
+        return header == SQLITE_HEADER_PREFIX
+
+    checked: List[Path] = []
+
+    env_db_path = os.getenv("MTG_ENGINE_DB_PATH")
+    if isinstance(env_db_path, str) and env_db_path.strip() != "":
+        env_candidate = _resolve_candidate(env_db_path)
+        checked.append(env_candidate)
+        if _is_valid_sqlite_db_file(env_candidate):
+            return env_candidate
+        logger.warning(
+            "Ignoring MTG_ENGINE_DB_PATH candidate '%s' because it is not a valid SQLite DB file.",
+            env_candidate,
         )
-    return candidate
+
+    external_candidate = EXTERNAL_DB_PATH.resolve()
+    checked.append(external_candidate)
+    if _is_valid_sqlite_db_file(external_candidate):
+        return external_candidate
+
+    repo_candidate = DB_PATH.resolve()
+    checked.append(repo_candidate)
+    if _is_valid_sqlite_db_file(repo_candidate):
+        return repo_candidate
+
+    if repo_candidate.exists():
+        logger.warning(
+            "Ignoring repo-local DB candidate '%s' because it is not a valid SQLite DB file.",
+            repo_candidate,
+        )
+
+    checked_paths = ", ".join(str(path) for path in checked)
+    raise RuntimeError(
+        "No valid MTG engine SQLite database found. "
+        f"Checked: {checked_paths}. "
+        "Set MTG_ENGINE_DB_PATH to a valid SQLite DB file."
+    )
 
 
 class CommanderEligibilityUnknownError(RuntimeError):

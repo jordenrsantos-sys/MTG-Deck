@@ -37,6 +37,10 @@ tmp_*.json
 *.db
 *.bak
 
+# Prevent accidental repo-local DB files
+/data/mtg.sqlite
+/data/*.sqlite
+
 # --- Local data dumps / generated exports ---
 *.jsonl
 *.ndjson
