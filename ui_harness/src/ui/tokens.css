@@ -1,0 +1,61 @@
+:root {
+  color-scheme: dark;
+
+  /* Background */
+  --bg-base: #0c121c;
+  --bg-elev-1: rgba(255, 255, 255, 0.035);
+  --bg-elev-2: rgba(255, 255, 255, 0.075);
+
+  /* Glass */
+  --glass-bg: rgba(255, 255, 255, 0.048);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-blur: 18px;
+
+  /* Text */
+  --text-primary: #f4f8ff;
+  --text-secondary: #c7d3e6;
+  --text-muted: #8f9db2;
+
+  /* Accent */
+  --accent: #5aa9ff;
+  --accent-hover: #76b8ff;
+  --accent-active: #448ddc;
+
+  /* Borders */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  /* Spacing */
+  --space-1: 6px;
+  --space-2: 10px;
+  --space-3: 14px;
+  --space-4: 18px;
+  --space-5: 24px;
+
+  /* Panel */
+  --panel-pad: 16px;
+  --panel-gap: 14px;
+  --panel-title-gap: 10px;
+
+  /* Shadow */
+  --shadow-soft: 0 14px 32px rgba(3, 7, 16, 0.3);
+  --shadow-elevated: 0 30px 68px rgba(2, 6, 14, 0.5);
+  --shadow-rail: 0 10px 24px rgba(2, 7, 16, 0.26);
+  --shadow-panel: 0 18px 40px rgba(2, 7, 16, 0.34);
+  --shadow-sticky: 0 14px 34px rgba(3, 8, 18, 0.42);
+  --shadow-modal: 0 42px 90px rgba(2, 5, 12, 0.62);
+
+  /* Elevation */
+  --z-depth-rail: 1100;
+  --z-depth-panel: 1;
+  --z-depth-sticky: 4;
+  --z-depth-modal: 1700;
+
+  /* Focus */
+  --focus-ring: 0 0 0 1px rgba(90, 169, 255, 0.9), 0 0 0 3px rgba(90, 169, 255, 0.36);
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-med: 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}

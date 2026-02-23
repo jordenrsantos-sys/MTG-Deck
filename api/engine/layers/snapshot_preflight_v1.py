@@ -19,6 +19,15 @@ _REQUIRED_SNAPSHOTS_COLUMNS = (
     "manifest_json",
 )
 
+_REQUIRED_CARD_IMAGES_COLUMNS = (
+    "oracle_id",
+    "img_normal_uri",
+    "img_small_uri",
+    "img_source",
+    "img_enriched_at",
+    "img_bulk_version",
+)
+
 
 def _normalize_snapshot_id(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
@@ -55,6 +64,26 @@ def _snapshot_schema_ok(con: sqlite3.Connection) -> bool:
             column_names.add(row[1])
 
     return all(required in column_names for required in _REQUIRED_SNAPSHOTS_COLUMNS)
+
+
+def _card_images_schema_ok(con: sqlite3.Connection) -> bool:
+    try:
+        rows = con.execute("PRAGMA table_info(card_images)").fetchall()
+    except sqlite3.Error:
+        return False
+
+    column_names = set()
+    for row in rows:
+        if isinstance(row, sqlite3.Row):
+            name_value = row["name"] if "name" in row.keys() else None
+            if isinstance(name_value, str):
+                column_names.add(name_value)
+            continue
+
+        if isinstance(row, (tuple, list)) and len(row) > 1 and isinstance(row[1], str):
+            column_names.add(row[1])
+
+    return all(required in column_names for required in _REQUIRED_CARD_IMAGES_COLUMNS)
 
 
 def _snapshot_exists_via_connection(con: sqlite3.Connection, snapshot_id: str) -> bool:
@@ -114,6 +143,7 @@ def run_snapshot_preflight_v1(db: Any, snapshot_id: Any) -> Dict[str, Any]:
     con, should_close = _connect_for_preflight(db)
     try:
         schema_ok = _snapshot_schema_ok(con)
+        card_images_schema_ok = _card_images_schema_ok(con)
 
         if isinstance(db, sqlite3.Connection):
             snapshot_exists_check = _snapshot_exists_via_connection(con=con, snapshot_id=snapshot_id_clean)
@@ -136,6 +166,7 @@ def run_snapshot_preflight_v1(db: Any, snapshot_id: Any) -> Dict[str, Any]:
             "manifest_present": manifest_present,
             "tags_compiled": tags_compiled,
             "schema_ok": schema_ok,
+            "card_images_schema_ok": card_images_schema_ok,
         }
 
         errors: list[dict[str, str]] = []
@@ -144,6 +175,16 @@ def run_snapshot_preflight_v1(db: Any, snapshot_id: Any) -> Dict[str, Any]:
                 {
                     "code": "SNAPSHOTS_SCHEMA_INVALID",
                     "message": "Snapshots schema is missing required columns.",
+                }
+            )
+        if not card_images_schema_ok:
+            errors.append(
+                {
+                    "code": "CARD_IMAGES_SCHEMA_INVALID",
+                    "message": (
+                        "card_images table is missing required columns. "
+                        "Run migration script: python -m snapshot_build.migrate_card_images_table --db <path_to_db>"
+                    ),
                 }
             )
         if not snapshot_exists_check:

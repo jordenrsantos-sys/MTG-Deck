@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MTG Engine Desktop",
+  "version": "0.1.0",
+  "identifier": "com.mtgengine.desktop",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "resources": [
+      "../resources/mtg.sqlite",
+      "../resources/ui_dist/**",
+      "../resources/ui_dist_version.txt"
+    ]
+  }
+}

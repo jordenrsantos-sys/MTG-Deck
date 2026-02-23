@@ -29,14 +29,9 @@ export default function AppRouter() {
     setView("workspace");
   }
 
-  function openDiagnostics() {
-    window.location.hash = "#diagnostics";
-    setView("diagnostics");
-  }
-
   if (view === "diagnostics") {
     return <DiagnosticsView onBack={openWorkspace} />;
   }
 
-  return <WorkspaceView onOpenDiagnostics={openDiagnostics} />;
+  return <WorkspaceView />;
 }

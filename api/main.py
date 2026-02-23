@@ -8,10 +8,16 @@ from uuid import UUID
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from engine.db import DB_PATH as CARDS_DB_PATH, connect as cards_db_connect, list_snapshots
+from engine.image_cache_contract import (
+    IMAGE_CACHE_ALLOWED_SIZES,
+    normalize_image_size,
+    resolve_local_image_path,
+)
 from api.engine.constants import (
     ENGINE_VERSION,
     RULESET_VERSION,
@@ -39,6 +45,15 @@ from api.engine.tag_index_query_v0 import (
     get_primitive_tag_index_status_v0,
     resolve_ruleset_version_v0,
 )
+
+
+DB_PATH_ENV = "MTG_ENGINE_DB_PATH"
+DB_PATH_OVERRIDE = os.getenv(DB_PATH_ENV, "").strip()
+if DB_PATH_OVERRIDE != "":
+    db_path_candidate = Path(DB_PATH_OVERRIDE).expanduser()
+    if not db_path_candidate.is_absolute():
+        db_path_candidate = (Path(REPO_ROOT) / db_path_candidate).resolve()
+    CARDS_DB_PATH = db_path_candidate.resolve()
 
 
 class BuildRequest(BaseModel):
@@ -298,14 +313,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-CARD_IMAGE_SIZE_EXTENSIONS: Dict[str, str] = {
-    "small": ".jpg",
-    "normal": ".jpg",
-    "large": ".jpg",
-    "png": ".png",
-    "art_crop": ".jpg",
-    "border_crop": ".jpg",
-}
+UI_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+UI_DIST_DIR_ENV = "MTG_ENGINE_UI_DIST_DIR"
+UI_DIST_PATH_OVERRIDE = os.getenv(UI_DIST_DIR_ENV, "").strip()
+if UI_DIST_PATH_OVERRIDE != "":
+    UI_DIST_PATH = os.path.abspath(UI_DIST_PATH_OVERRIDE)
+else:
+    UI_DIST_PATH = os.path.join(UI_REPO_ROOT, "ui_harness", "dist")
+UI_ASSETS_PATH = os.path.join(UI_DIST_PATH, "assets")
+UI_INDEX_PATH = os.path.join(UI_DIST_PATH, "index.html")
+UI_STATIC_ENABLED = os.path.isdir(UI_DIST_PATH) and os.path.isfile(UI_INDEX_PATH)
+
+if UI_STATIC_ENABLED and os.path.isdir(UI_ASSETS_PATH):
+    app.mount("/assets", StaticFiles(directory=UI_ASSETS_PATH), name="assets")
+
 DEFAULT_CARD_IMAGE_CACHE_DIR = (Path(REPO_ROOT) / "data" / "card_images").resolve()
 CARD_IMAGE_CACHE_DIR_ENV = "MTG_ENGINE_IMAGE_CACHE_DIR"
 CARD_IMAGE_CACHE_CONTROL = "public, max-age=31536000"
@@ -463,13 +484,16 @@ def cards_image(oracle_id: str, size: str = "normal"):
     normalized_size = _normalize_card_image_size(size)
     normalized_oracle_id = _normalize_oracle_id(oracle_id)
     cache_dir = _resolve_card_image_cache_dir()
-    image_path = _resolve_cached_card_image_path(
-        cache_dir=cache_dir,
-        size=normalized_size,
-        oracle_id=normalized_oracle_id,
-    )
+    try:
+        image_path_value = resolve_local_image_path(
+            cache_root=str(cache_dir),
+            oracle_id=normalized_oracle_id,
+            size=normalized_size,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid image cache path.") from exc
 
-    if not image_path.is_file():
+    if image_path_value is None:
         return JSONResponse(
             status_code=404,
             content={
@@ -479,7 +503,14 @@ def cards_image(oracle_id: str, size: str = "normal"):
             },
         )
 
-    media_type = "image/png" if image_path.suffix.lower() == ".png" else "image/jpeg"
+    image_path = Path(image_path_value)
+    suffix = image_path.suffix.lower()
+    if suffix == ".png":
+        media_type = "image/png"
+    elif suffix == ".webp":
+        media_type = "image/webp"
+    else:
+        media_type = "image/jpeg"
     response = FileResponse(path=str(image_path), media_type=media_type)
     response.headers["Cache-Control"] = CARD_IMAGE_CACHE_CONTROL
     return response
@@ -605,13 +636,13 @@ def _resolve_card_image_cache_dir() -> Path:
 
 
 def _normalize_card_image_size(size: Any) -> str:
-    normalized = _coerce_nonempty_str(size).lower()
-    if normalized not in CARD_IMAGE_SIZE_EXTENSIONS:
+    try:
+        return normalize_image_size(size)
+    except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid size '{size}'. Allowed: {sorted(CARD_IMAGE_SIZE_EXTENSIONS.keys())}",
+            detail=f"Invalid size '{size}'. Allowed: {sorted(IMAGE_CACHE_ALLOWED_SIZES)}",
         )
-    return normalized
 
 
 def _normalize_oracle_id(oracle_id: Any) -> str:
@@ -622,17 +653,6 @@ def _normalize_oracle_id(oracle_id: Any) -> str:
         return str(UUID(token))
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid oracle_id.") from exc
-
-
-def _resolve_cached_card_image_path(*, cache_dir: Path, size: str, oracle_id: str) -> Path:
-    extension = CARD_IMAGE_SIZE_EXTENSIONS[size]
-    cache_root = cache_dir.resolve()
-    candidate = (cache_root / size / f"{oracle_id}{extension}").resolve()
-    try:
-        candidate.relative_to(cache_root)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid image cache path.") from exc
-    return candidate
 
 
 def _extract_image_uri_from_card_row(card_row: Dict[str, Any]) -> str | None:
@@ -1633,3 +1653,18 @@ def primitive_tag_index_v0_primitive(
         "ruleset_version": ruleset_version_value,
         "cards": rows,
     }
+
+
+if UI_STATIC_ENABLED:
+
+    @app.get("/", include_in_schema=False)
+    def serve_index():
+        return FileResponse(UI_INDEX_PATH)
+
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_spa(full_path: str):
+        normalized_full_path = full_path.strip().lstrip("/")
+        if normalized_full_path.startswith("api") or normalized_full_path.startswith("cards"):
+            raise HTTPException(status_code=404, detail="Not found")
+        return FileResponse(UI_INDEX_PATH)

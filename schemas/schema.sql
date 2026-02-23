@@ -35,12 +35,27 @@ CREATE TABLE IF NOT EXISTS cards (
   produced_mana TEXT,
   keywords TEXT,
   legalities_json TEXT,
+  image_uris_json TEXT,
+  card_faces_json TEXT,
+  image_status TEXT,
   primitives_json TEXT,
   PRIMARY KEY (snapshot_id, oracle_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_cards_name
 ON cards(snapshot_id, name);
+
+CREATE TABLE IF NOT EXISTS card_images (
+  oracle_id TEXT PRIMARY KEY,
+  img_normal_uri TEXT,
+  img_small_uri TEXT,
+  img_source TEXT NOT NULL,
+  img_enriched_at TEXT NOT NULL,
+  img_bulk_version TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_card_images_bulk_version
+ON card_images(img_bulk_version);
 
 CREATE TABLE IF NOT EXISTS run_history_v0 (
   run_id TEXT PRIMARY KEY,

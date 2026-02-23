@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 import type { CardSuggestRow } from "./workspaceTypes";
+import CardList, { type CardListItem } from "./cards/CardList";
 import {
   clampSuggestLimit,
   normalizeApiBase,
@@ -162,6 +163,22 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
     };
   }, [apiBase, disabled, limit, snapshotId, value]);
 
+  const suggestItems = useMemo(() => {
+    return rows.map((row: CardSuggestRow, index: number) => {
+      return {
+        name: row.name,
+        oracleId: row.oracle_id,
+        className: index === activeIndex ? "is-active" : "",
+        rightMeta: (
+          <div className="workspace-suggest-meta-row">
+            <span>{row.mana_cost || "-"}</span>
+            <span>{row.type_line || "-"}</span>
+          </div>
+        ),
+      } satisfies CardListItem;
+    });
+  }, [activeIndex, rows]);
+
   return (
     <label className="workspace-field workspace-suggest-field">
       <span>{label}</span>
@@ -187,31 +204,31 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
       </div>
 
       {open && rows.length > 0 ? (
-        <ul className="workspace-suggest-list" role="listbox" aria-label={`${label} suggestions`}>
-          {rows.map((row: CardSuggestRow, index: number) => (
-            <li
-              key={`${row.oracle_id}-${row.name}-${index}`}
-              className={index === activeIndex ? "is-active" : ""}
-              onMouseEnter={() => {
-                setActiveIndex(index);
-                onHoverCard?.(row);
-              }}
-              onMouseLeave={() => {
-                onHoverCard?.(null);
-              }}
-              onMouseDown={(event) => {
-                event.preventDefault();
-                selectRow(row);
-              }}
-            >
-              <div className="workspace-suggest-name">{row.name}</div>
-              <div className="workspace-suggest-meta-row">
-                <span>{row.mana_cost || "-"}</span>
-                <span>{row.type_line || "-"}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <CardList
+          items={suggestItems}
+          className="workspace-suggest-list"
+          role="listbox"
+          ariaLabel={`${label} suggestions`}
+          onRowMouseEnter={(_, index: number) => {
+            const row = rows[index];
+            if (!row) {
+              return;
+            }
+            setActiveIndex(index);
+            onHoverCard?.(row);
+          }}
+          onRowMouseLeave={() => {
+            onHoverCard?.(null);
+          }}
+          onRowMouseDown={(_, index: number, event) => {
+            const row = rows[index];
+            if (!row) {
+              return;
+            }
+            event.preventDefault();
+            selectRow(row);
+          }}
+        />
       ) : null}
     </label>
   );

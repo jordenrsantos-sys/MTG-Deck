@@ -1,7 +1,15 @@
 import { useState } from "react";
 
 import type { BuildRequestPayload, BuildResponsePayload } from "./workspaceTypes";
-import { asArray, asRecord, asStringArray, copyTextToClipboard, firstNonEmptyString, toPrettyJson } from "./workspaceUtils";
+import {
+  asArray,
+  asRecord,
+  asStringArray,
+  copyTextToClipboard,
+  firstNonEmptyString,
+  resolveUnknownSignal,
+  toPrettyJson,
+} from "./workspaceUtils";
 
 type UnknownsPatchesPanelProps = {
   buildResponse: BuildResponsePayload | null;
@@ -16,8 +24,11 @@ export default function UnknownsPatchesPanel(props: UnknownsPatchesPanelProps) {
 
   const result = asRecord(buildResponse?.result);
 
-  const unknowns = asArray(buildResponse?.unknowns);
-  const unknownsCanonical = asArray(result?.unknowns_canonical);
+  const unknownSignal = resolveUnknownSignal(buildResponse);
+  const unknowns = unknownSignal.topLevelUnknowns;
+  const unknownsInResult = unknownSignal.resultUnknowns;
+  const unknownsCanonicalTopLevel = unknownSignal.topLevelCanonicalUnknowns;
+  const unknownsCanonicalInResult = unknownSignal.resultCanonicalUnknowns;
 
   const patchLoop = asRecord(result?.patch_loop_v0);
   const primitiveOverrides = asRecord(result?.primitive_overrides);
@@ -54,7 +65,7 @@ export default function UnknownsPatchesPanel(props: UnknownsPatchesPanelProps) {
   }
 
   return (
-    <section className="workspace-panel">
+    <section className="workspace-panel-content">
       <details open className="workspace-collapsible">
         <summary>Unknowns + Patches</summary>
 
@@ -69,7 +80,7 @@ export default function UnknownsPatchesPanel(props: UnknownsPatchesPanelProps) {
         <div className="workspace-panel-split">
           <div>
             <h4>Unknowns</h4>
-            {unknowns.length === 0 && unknownsCanonical.length === 0 ? (
+            {unknownSignal.totalCount === 0 ? (
               <p className="workspace-muted">No unknowns reported.</p>
             ) : (
               <>
@@ -79,10 +90,22 @@ export default function UnknownsPatchesPanel(props: UnknownsPatchesPanelProps) {
                     <pre className="workspace-json-block">{toPrettyJson(unknowns)}</pre>
                   </div>
                 ) : null}
-                {unknownsCanonical.length > 0 ? (
+                {unknownsInResult.length > 0 ? (
+                  <div>
+                    <h5>Result unknowns</h5>
+                    <pre className="workspace-json-block">{toPrettyJson(unknownsInResult)}</pre>
+                  </div>
+                ) : null}
+                {unknownsCanonicalTopLevel.length > 0 ? (
+                  <div>
+                    <h5>Top-level canonical unknowns</h5>
+                    <pre className="workspace-json-block">{toPrettyJson(unknownsCanonicalTopLevel)}</pre>
+                  </div>
+                ) : null}
+                {unknownsCanonicalInResult.length > 0 ? (
                   <div>
                     <h5>Canonical unknowns</h5>
-                    <pre className="workspace-json-block">{toPrettyJson(unknownsCanonical)}</pre>
+                    <pre className="workspace-json-block">{toPrettyJson(unknownsCanonicalInResult)}</pre>
                   </div>
                 ) : null}
               </>

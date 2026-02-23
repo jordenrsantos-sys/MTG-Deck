@@ -1,0 +1,5 @@
+node_modules
+src-tauri/target
+resources/mtg.sqlite
+resources/ui_dist
+resources/ui_dist_version.txt

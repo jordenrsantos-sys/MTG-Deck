@@ -38,6 +38,34 @@ npm run dev
 
 Open the URL shown by Vite (default `http://127.0.0.1:5173`).
 
+## Production Mode
+
+Build the UI bundle first:
+
+```bash
+cd ui_harness
+npm run build
+```
+
+Run production mode from repo root:
+
+```bash
+python launch_prod.py
+```
+
+Notes:
+- Single server mode: one `uvicorn` process serves both API routes and `ui_harness/dist` static UI.
+- Fully offline runtime: no Vite dev server and no runtime internet fetches.
+- Existing API endpoints remain unchanged (including `/cards/image/{oracle_id}`).
+
+### Prod smoke check
+
+From repo root:
+
+```bash
+python tools/smoke_prod.py
+```
+
 ## API mode setup (optional)
 
 1. Run the backend locally (default expected base: `http://127.0.0.1:8000`).
@@ -74,14 +102,35 @@ Notes:
 
 ## Update Mode prefetch (explicit opt-in)
 
-Prefetch image binaries into local cache from URLs already stored in your local DB snapshot metadata:
+From the repo root:
+
+Use the Update Mode pipeline runner to download bulk data (optional), enrich local DB image metadata, and prefetch local image cache in one command:
 
 ```bash
-python -m snapshot_build.prefetch_card_images --db ./data/mtg.sqlite --snapshot_id <id> --out ./data/card_images --size normal --limit 500
+python tools/run_update_pipeline.py --db .\data\mtg.sqlite --snapshot-id <SNAPSHOT_ID> --download-bulk --workers 4 --progress 100
+python tools/run_update_pipeline.py --db .\data\mtg.sqlite --snapshot-id <SNAPSHOT_ID> --bulk-json .\data\scryfall\bulk\default-cards.json --workers 4 --progress 100 --launch
+```
+
+Smoke test (download + enrich limited rows, skip prefetch):
+
+```bash
+python tools/run_update_pipeline.py --db .\data\mtg.sqlite --snapshot-id <SNAPSHOT_ID> --download-bulk --limit 5000 --skip-prefetch
+```
+
+First, ensure snapshot rows are enriched with image metadata from Scryfall default-cards bulk JSON:
+
+```bash
+python -m snapshot_build.enrich_images_from_scryfall_bulk --db ../data/mtg.sqlite --bulk-json ./data/scryfall/bulk/default-cards.json
+```
+
+Then prefetch image binaries into local cache from URLs already stored in your local DB snapshot metadata:
+
+```bash
+python -m snapshot_build.prefetch_card_images --db ../data/mtg.sqlite --snapshot_id <id> --source card_images --out ./data/card_images --sizes normal,small --workers 4 --resume --progress 100
 ```
 
 Notes:
-- Update Mode only (network allowed for the script).
+- Update Mode only (network allowed for enrichment/prep script).
 - Runtime API/UI remain local-cache-only and do not fetch remote images.
 
 ## Fixture notes

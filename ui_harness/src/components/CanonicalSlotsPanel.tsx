@@ -111,7 +111,7 @@ export default function CanonicalSlotsPanel(props: CanonicalSlotsPanelProps) {
   }
 
   return (
-    <section className="workspace-panel">
+    <section className="workspace-panel-content">
       <details open className="workspace-collapsible">
         <summary>Canonical Slots Drilldown</summary>
 

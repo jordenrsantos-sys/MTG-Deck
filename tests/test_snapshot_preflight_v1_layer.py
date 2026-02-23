@@ -48,6 +48,7 @@ class SnapshotPreflightV1LayerTests(unittest.TestCase):
         con.row_factory = sqlite3.Row
         try:
             self._create_snapshots_table(con)
+            self._create_card_images_table(con)
             self._insert_snapshot(con, snapshot_id="TEST_SNAPSHOT_0001", manifest_json='{"tags_compiled": true}')
             con.commit()
 
@@ -68,6 +69,7 @@ class SnapshotPreflightV1LayerTests(unittest.TestCase):
                 "manifest_present": True,
                 "tags_compiled": True,
                 "schema_ok": True,
+                "card_images_schema_ok": True,
             },
         )
 
@@ -76,6 +78,7 @@ class SnapshotPreflightV1LayerTests(unittest.TestCase):
         con.row_factory = sqlite3.Row
         try:
             self._create_snapshots_table(con)
+            self._create_card_images_table(con)
             self._insert_snapshot(con, snapshot_id="TEST_SNAPSHOT_0001", manifest_json="")
             con.commit()
 
@@ -97,6 +100,7 @@ class SnapshotPreflightV1LayerTests(unittest.TestCase):
         con.row_factory = sqlite3.Row
         try:
             self._create_snapshots_table(con)
+            self._create_card_images_table(con)
             self._insert_snapshot(con, snapshot_id="TEST_SNAPSHOT_0001", manifest_json='{"tags_compiled": 0}')
             con.commit()
 
@@ -117,6 +121,7 @@ class SnapshotPreflightV1LayerTests(unittest.TestCase):
         con = sqlite3.connect(":memory:")
         con.row_factory = sqlite3.Row
         try:
+            self._create_card_images_table(con)
             con.execute(
                 """
                 CREATE TABLE snapshots (
@@ -143,11 +148,53 @@ class SnapshotPreflightV1LayerTests(unittest.TestCase):
         error_codes = [err.get("code") for err in errors if isinstance(err, dict)]
         self.assertIn("SNAPSHOTS_SCHEMA_INVALID", error_codes)
 
+    def test_preflight_error_when_card_images_table_missing(self) -> None:
+        con = sqlite3.connect(":memory:")
+        con.row_factory = sqlite3.Row
+        try:
+            self._create_snapshots_table(con)
+            self._insert_snapshot(con, snapshot_id="TEST_SNAPSHOT_0001", manifest_json='{"tags_compiled": true}')
+            con.commit()
+
+            payload = run_snapshot_preflight_v1(db=con, snapshot_id="TEST_SNAPSHOT_0001")
+        finally:
+            con.close()
+
+        self.assertEqual(payload.get("status"), "ERROR")
+        checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
+        self.assertIs(checks.get("card_images_schema_ok"), False)
+
+        errors = payload.get("errors") if isinstance(payload.get("errors"), list) else []
+        error_codes = [err.get("code") for err in errors if isinstance(err, dict)]
+        self.assertIn("CARD_IMAGES_SCHEMA_INVALID", error_codes)
+        self.assertTrue(
+            any(
+                "snapshot_build.migrate_card_images_table" in str(err.get("message"))
+                for err in errors
+                if isinstance(err, dict)
+            )
+        )
+
+    def _create_card_images_table(self, con: sqlite3.Connection) -> None:
+        con.execute(
+            """
+            CREATE TABLE card_images (
+              oracle_id TEXT PRIMARY KEY,
+              img_normal_uri TEXT,
+              img_small_uri TEXT,
+              img_source TEXT NOT NULL,
+              img_enriched_at TEXT NOT NULL,
+              img_bulk_version TEXT NOT NULL
+            )
+            """
+        )
+
     def test_preflight_is_deterministic_for_same_input(self) -> None:
         con = sqlite3.connect(":memory:")
         con.row_factory = sqlite3.Row
         try:
             self._create_snapshots_table(con)
+            self._create_card_images_table(con)
             self._insert_snapshot(con, snapshot_id="TEST_SNAPSHOT_0001", manifest_json='{"tags_compiled": true}')
             con.commit()
 

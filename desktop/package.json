@@ -1,0 +1,16 @@
+{
+  "name": "mtg-engine-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tauri desktop wrapper for MTG Engine production serve mode",
+  "scripts": {
+    "sync:ui-dist": "node ./scripts/sync_ui_dist.mjs",
+    "sync:db": "node ./scripts/sync_db.mjs",
+    "sync:resources": "npm run sync:ui-dist && npm run sync:db",
+    "tauri:dev": "npm run sync:resources && tauri dev",
+    "tauri:build": "npm run sync:resources && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

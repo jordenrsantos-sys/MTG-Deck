@@ -1,4 +1,4 @@
-import type { CardSuggestRow, JsonRecord, ParsedDecklistRow } from "./workspaceTypes";
+import type { BuildResponsePayload, CardSuggestRow, JsonRecord, ParsedDecklistRow } from "./workspaceTypes";
 
 export const DEFAULT_API_BASE = String(import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").trim();
 const MAX_DECK_COUNT_PER_LINE = 250;
@@ -13,6 +13,58 @@ export function asRecord(value: unknown): JsonRecord | null {
 
 export function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+export type UnknownSignal = {
+  topLevelUnknowns: unknown[];
+  resultUnknowns: unknown[];
+  topLevelCanonicalUnknowns: unknown[];
+  resultCanonicalUnknowns: unknown[];
+  hasUnknownsData: boolean;
+  totalCount: number;
+};
+
+export function resolveUnknownSignal(buildResponse: BuildResponsePayload | null): UnknownSignal {
+  const empty: UnknownSignal = {
+    topLevelUnknowns: [],
+    resultUnknowns: [],
+    topLevelCanonicalUnknowns: [],
+    resultCanonicalUnknowns: [],
+    hasUnknownsData: false,
+    totalCount: 0,
+  };
+
+  if (!buildResponse) {
+    return empty;
+  }
+
+  const result = asRecord(buildResponse.result);
+  const topLevelUnknowns = asArray(buildResponse.unknowns);
+  const resultUnknowns = asArray(result?.unknowns);
+  const topLevelCanonicalUnknowns = asArray((buildResponse as JsonRecord).unknowns_canonical);
+  const resultCanonicalUnknowns = asArray(result?.unknowns_canonical);
+
+  const hasTopLevelUnknownsField = Object.prototype.hasOwnProperty.call(buildResponse, "unknowns");
+  const hasResultUnknownsField = result ? Object.prototype.hasOwnProperty.call(result, "unknowns") : false;
+  const hasTopLevelCanonicalUnknownsField = Object.prototype.hasOwnProperty.call(buildResponse, "unknowns_canonical");
+  const hasResultCanonicalUnknownsField = result ? Object.prototype.hasOwnProperty.call(result, "unknowns_canonical") : false;
+  const hasUnknownsData =
+    hasTopLevelUnknownsField ||
+    hasResultUnknownsField ||
+    hasTopLevelCanonicalUnknownsField ||
+    hasResultCanonicalUnknownsField;
+
+  const totalCount =
+    topLevelUnknowns.length + resultUnknowns.length + topLevelCanonicalUnknowns.length + resultCanonicalUnknowns.length;
+
+  return {
+    topLevelUnknowns,
+    resultUnknowns,
+    topLevelCanonicalUnknowns,
+    resultCanonicalUnknowns,
+    hasUnknownsData,
+    totalCount,
+  };
 }
 
 export function asOptionalString(value: unknown): string | null {

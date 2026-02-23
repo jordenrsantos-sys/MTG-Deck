@@ -9,6 +9,8 @@ from typing import Any, Dict
 import requests
 from tqdm import tqdm
 
+from snapshot_build.migrate_card_images_table import ensure_card_images_table
+
 
 def extract_primitives(card_dict: dict) -> list[str]:
     type_line_l = (card_dict.get("type_line") or "").lower()
@@ -343,6 +345,7 @@ def main():
     try:
         print("[4/5] Applying schema...")
         apply_schema(con, load_schema(schema_path))
+        ensure_card_images_table(db_path=db_path)
 
         print(f"[5/5] Ingesting cards for snapshot_id={snapshot_id} ...")
         insert_snapshot(con, snapshot_id, oracle_meta, manifest)

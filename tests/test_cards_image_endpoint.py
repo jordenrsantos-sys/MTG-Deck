@@ -48,6 +48,23 @@ def test_cards_image_present_returns_200_with_jpeg_headers(tmp_path, monkeypatch
 
 
 @pytest.mark.skipif(_IMPORT_ERROR is not None, reason="FastAPI integration dependencies unavailable")
+def test_cards_image_present_returns_png_when_only_png_exists(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MTG_ENGINE_IMAGE_CACHE_DIR", str(tmp_path))
+    oracle_id = "123e4567-e89b-12d3-a456-426614174000"
+
+    image_path = tmp_path / "normal" / f"{oracle_id}.png"
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get(f"/cards/image/{oracle_id}", params={"size": "normal"})
+
+    assert response.status_code == 200
+    assert response.headers.get("content-type", "").startswith("image/png")
+    assert response.content == b"\x89PNG\r\n\x1a\n"
+
+
+@pytest.mark.skipif(_IMPORT_ERROR is not None, reason="FastAPI integration dependencies unavailable")
 def test_cards_image_rejects_invalid_size(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MTG_ENGINE_IMAGE_CACHE_DIR", str(tmp_path))
     oracle_id = "123e4567-e89b-12d3-a456-426614174000"

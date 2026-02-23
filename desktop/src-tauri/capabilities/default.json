@@ -1,0 +1,6 @@
+{
+  "identifier": "main-capability",
+  "description": "Default capability for MTG Engine desktop wrapper",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

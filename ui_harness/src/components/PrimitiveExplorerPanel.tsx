@@ -16,14 +16,16 @@ import {
   normalizeSlotIds,
   uniqueSortedStrings,
 } from "./workspaceUtils";
+import CardList, { type CardListItem } from "./cards/CardList";
 
 type PrimitiveExplorerPanelProps = {
   buildResponse: BuildResponsePayload | null;
   onHoverCard: (card: HoverCard | null) => void;
+  onCardClick?: (oracleId: string, oracleIdsContext?: string[]) => void;
 };
 
 export default function PrimitiveExplorerPanel(props: PrimitiveExplorerPanelProps) {
-  const { buildResponse, onHoverCard } = props;
+  const { buildResponse, onHoverCard, onCardClick } = props;
 
   const [selectedPrimitiveId, setSelectedPrimitiveId] = useState<string | null>(null);
 
@@ -243,6 +245,23 @@ export default function PrimitiveExplorerPanel(props: PrimitiveExplorerPanelProp
     return primitiveExplorer.groups.find((row: PrimitiveExplorerGroup) => row.primitive_id === selectedPrimitiveId) || primitiveExplorer.groups[0];
   }, [primitiveExplorer.groups, selectedPrimitiveId]);
 
+  const selectedPrimitiveCardItems = useMemo(() => {
+    return (selectedPrimitiveGroup?.cards || []).map((card: PrimitiveExplorerCardRow) => {
+      const tagCount = card.primitive_tags.length;
+      return {
+        name: card.name,
+        oracleId: card.oracle_id,
+        rightMeta: (
+          <div className="workspace-card-row-meta-stack">
+            <span className="workspace-muted">{card.slot_id}</span>
+            <span className="workspace-muted">{card.type_line || "type unavailable"}</span>
+            {tagCount > 0 ? <span className="workspace-chip workspace-chip-soft">tags: {tagCount}</span> : null}
+          </div>
+        ),
+      } satisfies CardListItem;
+    });
+  }, [selectedPrimitiveGroup]);
+
   const sourceLabel =
     primitiveExplorer.source === "primitive_index_by_slot"
       ? "result.primitive_index_by_slot"
@@ -251,7 +270,7 @@ export default function PrimitiveExplorerPanel(props: PrimitiveExplorerPanelProp
       : "not present";
 
   return (
-    <section className="workspace-panel" onMouseLeave={() => onHoverCard(null)}>
+    <section className="workspace-panel-content" onMouseLeave={() => onHoverCard(null)}>
       <details open className="workspace-collapsible">
         <summary>Primitive Explorer</summary>
 
@@ -292,37 +311,28 @@ export default function PrimitiveExplorerPanel(props: PrimitiveExplorerPanelProp
               {!selectedPrimitiveGroup ? (
                 <p className="workspace-muted">Select a primitive.</p>
               ) : (
-                <ul className="workspace-primitive-cards">
-                  {selectedPrimitiveGroup.cards.map((card: PrimitiveExplorerCardRow) => (
-                    <li
-                      key={`${selectedPrimitiveGroup.primitive_id}-${card.slot_id}`}
-                      onMouseEnter={() => {
-                        onHoverCard({
-                          name: card.name,
-                          oracle_id: card.oracle_id,
-                          type_line: card.type_line,
-                          primitive_tags: card.primitive_tags,
-                          source: "primitive",
-                        });
-                      }}
-                    >
-                      <div className="workspace-history-title-row">
-                        <strong>{card.name}</strong>
-                        <span className="workspace-muted">{card.slot_id}</span>
-                      </div>
-                      <div className="workspace-muted">{card.type_line || "type unavailable"}</div>
-                      {card.primitive_tags.length > 0 ? (
-                        <div className="workspace-inline-tags">
-                          {card.primitive_tags.map((tag: string) => (
-                            <span key={`${card.slot_id}-${tag}`} className="workspace-chip workspace-chip-soft">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
+                <CardList
+                  items={selectedPrimitiveCardItems}
+                  className="workspace-primitive-cards"
+                  onOpenCard={onCardClick}
+                  onRowMouseEnter={(_, index: number) => {
+                    const card = selectedPrimitiveGroup.cards[index];
+                    if (!card) {
+                      return;
+                    }
+
+                    onHoverCard({
+                      name: card.name,
+                      oracle_id: card.oracle_id,
+                      type_line: card.type_line,
+                      primitive_tags: card.primitive_tags,
+                      source: "primitive",
+                    });
+                  }}
+                  onRowMouseLeave={() => {
+                    onHoverCard(null);
+                  }}
+                />
               )}
             </div>
           </div>

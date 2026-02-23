@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MTG Engine - UI Not Built</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #0b1119;
+        color: #e5efff;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+      }
+
+      .notice {
+        width: min(560px, 92vw);
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.04);
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+      }
+
+      h1 {
+        margin: 0 0 10px;
+        font-size: 20px;
+      }
+
+      p {
+        margin: 0;
+        line-height: 1.45;
+        color: #c7d7f0;
+      }
+
+      code {
+        display: inline-block;
+        margin-top: 10px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(0, 0, 0, 0.25);
+        color: #f4f8ff;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="notice">
+      <h1>UI not built</h1>
+      <p>Run <code>cd ui_harness &amp;&amp; npm run build</code> and restart the desktop app.</p>
+    </main>
+  </body>
+</html>

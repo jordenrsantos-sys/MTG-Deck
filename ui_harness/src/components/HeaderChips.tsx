@@ -1,13 +1,17 @@
 import type { BuildResponsePayload } from "./workspaceTypes";
 import { asRecord, firstNonEmptyString, getPath } from "./workspaceUtils";
+import Chip from "../ui/primitives/Chip";
 
 type HeaderChipsProps = {
   buildResponse: BuildResponsePayload | null;
+  compact?: boolean;
+  className?: string;
 };
 
 export default function HeaderChips(props: HeaderChipsProps) {
-  const { buildResponse } = props;
+  const { buildResponse, compact = false, className } = props;
   const result = asRecord(buildResponse?.result);
+  const classes = ["workspace-panel-content", className].filter(Boolean).join(" ");
 
   const chips: Array<{ label: string; value: string }> = [
     {
@@ -44,15 +48,30 @@ export default function HeaderChips(props: HeaderChipsProps) {
     },
   ];
 
+  if (compact) {
+    return (
+      <section className={classes}>
+        <p className="workspace-topbar-title">Version Locks</p>
+        <div className="workspace-chip-row">
+          {chips.map((chip) => (
+            <Chip key={chip.label}>
+              {chip.label}: {chip.value}
+            </Chip>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <section className="workspace-panel">
+    <section className={classes}>
       <details open className="workspace-collapsible">
         <summary>Version Locks</summary>
         <div className="workspace-chip-row">
           {chips.map((chip) => (
-            <span key={chip.label} className="workspace-chip">
+            <Chip key={chip.label}>
               {chip.label}: {chip.value}
-            </span>
+            </Chip>
           ))}
         </div>
       </details>

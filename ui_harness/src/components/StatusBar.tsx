@@ -5,12 +5,15 @@ type StatusBarProps = {
   buildResponse: BuildResponsePayload | null;
   loading: boolean;
   runtimeError: string | null;
+  compact?: boolean;
+  className?: string;
 };
 
 export default function StatusBar(props: StatusBarProps) {
-  const { buildResponse, loading, runtimeError } = props;
+  const { buildResponse, loading, runtimeError, compact = false, className } = props;
   const result = asRecord(buildResponse?.result);
   const unknowns = asArray(buildResponse?.unknowns);
+  const classes = ["workspace-panel-content", className].filter(Boolean).join(" ");
 
   const status = firstNonEmptyString(buildResponse?.status) || "-";
   const deckStatus = firstNonEmptyString(buildResponse?.deck_status) || "-";
@@ -20,8 +23,28 @@ export default function StatusBar(props: StatusBarProps) {
   const pipelineStage = firstNonEmptyString(result?.build_pipeline_stage) || "-";
   const unknownCanonicalCount = firstNumber(result?.unknowns_canonical_total, getPath(result, ["unknowns_canonical", "length"]));
 
+  if (compact) {
+    return (
+      <section className={classes}>
+        <p className="workspace-topbar-title">Status</p>
+        <div className="workspace-chip-row">
+          <span className="workspace-chip workspace-chip-info">build: {loading ? "RUNNING" : status}</span>
+          <span className="workspace-chip">deck: {deckStatus}</span>
+          <span className="workspace-chip">size: {deckSize ?? "-"}</span>
+          <span className="workspace-chip">unknowns: {unknowns.length}</span>
+          <span className="workspace-chip">canonical unknowns: {unknownCanonicalCount ?? "-"}</span>
+          <span className="workspace-chip">
+            needed/cut: {cardsNeeded ?? "-"}/{cardsToCut ?? "-"}
+          </span>
+          <span className="workspace-chip">pipeline: {pipelineStage}</span>
+        </div>
+        {runtimeError ? <p className="workspace-error-banner">{runtimeError}</p> : null}
+      </section>
+    );
+  }
+
   return (
-    <section className="workspace-panel">
+    <section className={classes}>
       <details open className="workspace-collapsible">
         <summary>Status Bar</summary>
 

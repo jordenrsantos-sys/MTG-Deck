@@ -159,6 +159,10 @@ function buildLocalCardImageUrl(apiBaseUrl: string, oracleId: string, size: "nor
   return `${base}/cards/image/${encodeURIComponent(oracleId)}?size=${encodeURIComponent(size)}`;
 }
 
+function buildPrefetchCardImagesCommand(snapshotId: string): string {
+  return `python -m snapshot_build.prefetch_card_images --db ./data/mtg.sqlite --snapshot_id ${snapshotId} --out ./data/card_images --sizes normal,small --workers 4 --resume --progress 100`;
+}
+
 function clampSuggestLimit(value: number): number {
   if (!Number.isFinite(value)) {
     return SUGGEST_LIMIT_MAX;
@@ -1146,6 +1150,8 @@ export default function Phase1Harness() {
     selectedPreviewOracleId !== "" ? buildLocalCardImageUrl(apiBase, selectedPreviewOracleId, "normal") : "";
   const selectedPreviewImageFailed = selectedPreviewImageUrl !== "" && Boolean(previewImageFailures[selectedPreviewImageUrl]);
   const selectedPreviewCanRenderImage = selectedPreviewImageUrl !== "" && !selectedPreviewImageFailed;
+  const selectedPreviewSnapshotId = firstNonEmptyString(dbSnapshotId, buildPayload?.db_snapshot_id) || "<id>";
+  const selectedPreviewPrefetchCommand = buildPrefetchCardImagesCommand(selectedPreviewSnapshotId);
   const selectedPreviewPrimitiveTags =
     hoverVisible && hoverPreviewSource === "primitive" ? hoverPrimitiveTags : [];
 
@@ -1447,7 +1453,14 @@ export default function Phase1Harness() {
                     <div className="phase1-preview-placeholder">
                       {selectedPreviewOracleId === ""
                         ? "No oracle_id available for this card in current payload."
-                        : "Not cached in local image cache."}
+                        : (
+                          <>
+                            <span>Not cached (run prefetch)</span>
+                            <pre className="phase1-prefetch-command">
+                              <code>{selectedPreviewPrefetchCommand}</code>
+                            </pre>
+                          </>
+                        )}
                     </div>
                   )}
                 </>
@@ -1548,7 +1561,14 @@ export default function Phase1Harness() {
                             <div className="phase1-preview-placeholder">
                               {selectedPreviewOracleId === ""
                                 ? "No oracle_id available for this card in current payload."
-                                : "Not cached in local image cache."}
+                                : (
+                                  <>
+                                    <span>Not cached (run prefetch)</span>
+                                    <pre className="phase1-prefetch-command">
+                                      <code>{selectedPreviewPrefetchCommand}</code>
+                                    </pre>
+                                  </>
+                                )}
                             </div>
                           )}
 
