@@ -20,6 +20,7 @@ type DeckPanelProps = {
   deckCards: DeckPanelCard[];
   commander?: DeckPanelCommander | null;
   onOpenCard?: (oracleId: string, contextOracleIds?: string[]) => void;
+  onHoverCard?: (card: DeckPanelCard | null) => void;
   unknownsCount?: number | null;
   deckSizeTotal?: number | null;
   cardsNeeded?: number | null;
@@ -228,6 +229,7 @@ export default function DeckPanel(props: DeckPanelProps) {
     deckCards,
     commander,
     onOpenCard,
+    onHoverCard,
     unknownsCount,
     deckSizeTotal,
     cardsNeeded,
@@ -496,7 +498,12 @@ export default function DeckPanel(props: DeckPanelProps) {
   }
 
   return (
-    <section className="deck-panel-root workspace-panel-content">
+    <section
+      className="deck-panel-root workspace-panel-content"
+      onMouseLeave={() => {
+        onHoverCard?.(null);
+      }}
+    >
       <div className="deck-panel-sticky">
         <div className="deck-panel-subheader">
           <div className="deck-panel-summary">
@@ -597,7 +604,25 @@ export default function DeckPanel(props: DeckPanelProps) {
               <h4 className="deck-section-title">Commander</h4>
               <span className="deck-section-count">1</span>
             </div>
-            <CardList items={commanderItem} onOpenCard={onOpenCard} className="deck-card-list" ariaLabel="Commander" />
+            <CardList
+              items={commanderItem}
+              onOpenCard={onOpenCard}
+              className="deck-card-list"
+              ariaLabel="Commander"
+              onRowMouseEnter={() => {
+                if (!commander) {
+                  return;
+                }
+                onHoverCard?.({
+                  name: commander.name,
+                  oracleId: commander.oracleId,
+                  typeLine: null,
+                });
+              }}
+              onRowMouseLeave={() => {
+                onHoverCard?.(null);
+              }}
+            />
           </GlassPanel>
         ) : null}
 
@@ -641,6 +666,16 @@ export default function DeckPanel(props: DeckPanelProps) {
                         onOpenCard={handleOpenVisibleCard}
                         className="deck-card-list"
                         ariaLabel={`${section.group} cards`}
+                        onRowMouseEnter={(_, index: number) => {
+                          const card = section.cards[index];
+                          if (!card) {
+                            return;
+                          }
+                          onHoverCard?.(card);
+                        }}
+                        onRowMouseLeave={() => {
+                          onHoverCard?.(null);
+                        }}
                       />
                     </div>
                   </>

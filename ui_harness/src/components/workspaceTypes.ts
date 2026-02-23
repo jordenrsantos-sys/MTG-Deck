@@ -49,7 +49,7 @@ export type HoverCard = {
   oracle_id: string;
   type_line: string | null;
   primitive_tags: string[];
-  source: "suggest" | "primitive" | "unknown";
+  source: "suggest" | "primitive" | "unknown" | "deck";
 };
 
 export type PrimitiveExplorerCardRow = {

@@ -15,8 +15,17 @@ const links: RailLink[] = [
   { label: "Diagnostics", href: "#diagnostics", icon: "DG", view: "diagnostics" },
 ];
 
+const WORKSPACE_DEFAULT_HASH = "#workspace-decks";
+
 function normalizeHash(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function resolveActiveWorkspaceHash(hashValue: string): string {
+  if (hashValue === "#workspace-runs") {
+    return "#workspace-runs";
+  }
+  return WORKSPACE_DEFAULT_HASH;
 }
 
 export default function LeftRail() {
@@ -34,12 +43,15 @@ export default function LeftRail() {
   }, []);
 
   const diagnosticsActive = hashValue === "#diagnostics";
-  const workspaceActive = !diagnosticsActive;
+  const activeWorkspaceHash = resolveActiveWorkspaceHash(hashValue);
 
   const navItems = useMemo(
     () =>
       links.map((link: RailLink) => {
-        const isActive = link.view === "diagnostics" ? diagnosticsActive : workspaceActive;
+        const isActive =
+          link.view === "diagnostics"
+            ? diagnosticsActive
+            : !diagnosticsActive && link.href === activeWorkspaceHash;
         const classes = ["workspace-left-rail-link", isActive ? "is-active" : ""].filter(Boolean).join(" ");
         return {
           ...link,
@@ -47,7 +59,7 @@ export default function LeftRail() {
           classes,
         };
       }),
-    [diagnosticsActive, workspaceActive],
+    [activeWorkspaceHash, diagnosticsActive],
   );
 
   return (

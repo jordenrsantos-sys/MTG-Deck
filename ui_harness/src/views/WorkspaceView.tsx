@@ -4,8 +4,9 @@ import fixtureBuildResult from "../../fixtures/build_result.json";
 import BuildHistoryPanel from "../components/BuildHistoryPanel";
 import CanonicalSlotsPanel from "../components/CanonicalSlotsPanel";
 import CardModal from "../components/CardModal";
-import CardHoverPreview from "../components/CardHoverPreview";
 import DeckInputPanel from "../components/DeckInputPanel";
+import ArtDock from "../components/cards/ArtDock";
+import DeckEditorPanel, { type DeckEditorCardHint } from "../components/deck/DeckEditorPanel";
 import DeckPanel, { type DeckPanelCard, type DeckPanelCommander } from "../components/deck/DeckPanel";
 import HeaderChips from "../components/HeaderChips";
 import LeftRail from "../components/layout/LeftRail";
@@ -57,6 +58,28 @@ function buildCardsInputFromPayloadCards(cards: string[]): string {
 
 function buildTimestampLabel(now: Date): string {
   return `${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
+}
+
+function buildDeckEditorCardHints(deckCards: DeckPanelCard[]): Record<string, DeckEditorCardHint> {
+  const hintsByName: Record<string, DeckEditorCardHint> = {};
+
+  for (const card of deckCards) {
+    const key = card.name.trim().toLowerCase();
+    if (key === "") {
+      continue;
+    }
+
+    const existing = hintsByName[key];
+    const oracleId = firstNonEmptyString(card.oracleId)?.trim() || "";
+    const typeLine = firstNonEmptyString(card.typeLine);
+
+    hintsByName[key] = {
+      oracleId: existing?.oracleId || oracleId,
+      typeLine: existing?.typeLine || typeLine || null,
+    };
+  }
+
+  return hintsByName;
 }
 
 function normalizeDeckPanelCard(raw: unknown): DeckPanelCard | null {
@@ -236,6 +259,7 @@ export default function WorkspaceView() {
     [buildResponse],
   );
   const deckPanelBuildStatus = useMemo(() => firstNonEmptyString(buildResponse?.status), [buildResponse]);
+  const deckEditorCardHints = useMemo(() => buildDeckEditorCardHints(deckPanelCards), [deckPanelCards]);
 
   useEffect(() => {
     if (snapshotId.trim() !== "") {
@@ -278,6 +302,21 @@ export default function WorkspaceView() {
 
   function handleCommanderSelect(row: CardSuggestRow) {
     setCommander(row.name);
+  }
+
+  function handleDeckPanelHoverCard(card: DeckPanelCard | null): void {
+    if (!card) {
+      setHoverCard(null);
+      return;
+    }
+
+    setHoverCard({
+      name: card.name,
+      oracle_id: (card.oracleId || "").trim(),
+      type_line: card.typeLine || null,
+      primitive_tags: [],
+      source: "deck",
+    });
   }
 
   function runLocalValidate(): { ok: boolean; message: string } {
@@ -545,90 +584,115 @@ export default function WorkspaceView() {
             </div>
           </GlassPanel>
 
-          <div className="workspace-main-stack">
-            <section id="workspace-decks" className="workspace-section-anchor">
-              <DeckInputPanel
-                apiBase={apiBase}
-                snapshotId={snapshotId}
-                profileId={profileId}
-                bracketId={bracketId}
-                commander={commander}
-                cardsInput={cardsInput}
-                parsedDeckRows={parsedDeckRows}
-                normalizedPreviewLines={normalizedPreviewLines}
-                payloadCardCount={deckCardsInPayloadOrder.length}
-                validating={validating}
-                runningBuild={runningBuild}
-                validationMessage={validationMessage}
-                onApiBaseChange={setApiBase}
-                onSnapshotIdChange={setSnapshotId}
-                onProfileIdChange={setProfileId}
-                onBracketIdChange={setBracketId}
-                onCommanderChange={setCommander}
-                onCardsInputChange={setCardsInput}
-                onCommanderSelect={handleCommanderSelect}
-                onCommanderHoverCard={handleCommanderHoverCard}
-                onValidate={() => void handleValidate()}
-                onRunBuild={() => void handleRunBuild()}
-              />
-            </section>
+          <div className="workspace-grid">
+            <aside className="workspace-col-left">
+              <div className="workspace-left-stack">
+                <section id="workspace-decks" className="workspace-section-anchor">
+                  <DeckInputPanel
+                    apiBase={apiBase}
+                    snapshotId={snapshotId}
+                    profileId={profileId}
+                    bracketId={bracketId}
+                    commander={commander}
+                    cardsInput={cardsInput}
+                    parsedDeckRows={parsedDeckRows}
+                    normalizedPreviewLines={normalizedPreviewLines}
+                    payloadCardCount={deckCardsInPayloadOrder.length}
+                    validating={validating}
+                    runningBuild={runningBuild}
+                    validationMessage={validationMessage}
+                    onApiBaseChange={setApiBase}
+                    onSnapshotIdChange={setSnapshotId}
+                    onProfileIdChange={setProfileId}
+                    onBracketIdChange={setBracketId}
+                    onCommanderChange={setCommander}
+                    onCardsInputChange={setCardsInput}
+                    onCommanderSelect={handleCommanderSelect}
+                    onCommanderHoverCard={handleCommanderHoverCard}
+                    onValidate={() => void handleValidate()}
+                    onRunBuild={() => void handleRunBuild()}
+                  />
+                </section>
 
-            <section id="workspace-runs" className="workspace-section-anchor">
-              <BuildHistoryPanel
-                entries={historyEntries}
-                selectedEntryId={selectedHistoryEntryId}
-                onSelectEntry={handleSelectHistoryEntry}
-              />
-            </section>
+                <section id="workspace-runs" className="workspace-section-anchor">
+                  <BuildHistoryPanel
+                    entries={historyEntries}
+                    selectedEntryId={selectedHistoryEntryId}
+                    onSelectEntry={handleSelectHistoryEntry}
+                  />
+                </section>
+              </div>
+            </aside>
 
-            <section id="workspace-deck-panel" className="workspace-section-anchor">
-              <GlassPanel>
-                <DeckPanel
-                  deckCards={deckPanelCards}
-                  commander={deckPanelCommander}
+            <section className="workspace-col-center">
+              <div className="workspace-center-stack">
+                <DeckEditorPanel
+                  apiBase={apiBase}
+                  snapshotId={snapshotId}
+                  cardsInput={cardsInput}
+                  parsedDeckRows={parsedDeckRows}
+                  cardHintsByName={deckEditorCardHints}
+                  onCardsInputChange={setCardsInput}
+                  onHoverCard={setHoverCard}
                   onOpenCard={openCardModal}
-                  unknownsCount={deckPanelUnknownsCount}
-                  deckSizeTotal={deckPanelDeckSizeTotal}
-                  cardsNeeded={deckPanelCardsNeeded}
-                  deckStatus={deckPanelDeckStatus}
-                  buildStatus={deckPanelBuildStatus}
-                  unknownsPanelId="workspace-unknowns-panel"
                 />
-              </GlassPanel>
+
+                <section id="workspace-deck-panel" className="workspace-section-anchor">
+                  <GlassPanel>
+                    <DeckPanel
+                      deckCards={deckPanelCards}
+                      commander={deckPanelCommander}
+                      onOpenCard={openCardModal}
+                      onHoverCard={handleDeckPanelHoverCard}
+                      unknownsCount={deckPanelUnknownsCount}
+                      deckSizeTotal={deckPanelDeckSizeTotal}
+                      cardsNeeded={deckPanelCardsNeeded}
+                      deckStatus={deckPanelDeckStatus}
+                      buildStatus={deckPanelBuildStatus}
+                      unknownsPanelId="workspace-unknowns-panel"
+                    />
+                  </GlassPanel>
+                </section>
+
+                <GlassPanel>
+                  <PrimitiveExplorerPanel
+                    buildResponse={buildResponse}
+                    onHoverCard={setHoverCard}
+                    onCardClick={openCardModal}
+                  />
+                </GlassPanel>
+
+                <GlassPanel>
+                  <CanonicalSlotsPanel buildResponse={buildResponse} />
+                </GlassPanel>
+
+                <section id="workspace-unknowns-panel" className="workspace-section-anchor">
+                  <GlassPanel>
+                    <UnknownsPatchesPanel buildResponse={buildResponse} requestPayload={requestPayload} />
+                  </GlassPanel>
+                </section>
+
+                <GlassPanel className="workspace-developer-data">
+                  <details className="workspace-collapsible">
+                    <summary>Developer Data</summary>
+                    <pre className="workspace-json-block">{toPrettyJson(buildResponse || {})}</pre>
+                  </details>
+                </GlassPanel>
+              </div>
             </section>
 
-            <GlassPanel>
-              <PrimitiveExplorerPanel
-                buildResponse={buildResponse}
-                onHoverCard={setHoverCard}
-                onCardClick={openCardModal}
-              />
-            </GlassPanel>
-
-            <CardHoverPreview
-              apiBase={apiBase}
-              snapshotId={snapshotId}
-              card={hoverCard}
-              failedImageUrls={previewImageFailures}
-              onImageError={markPreviewImageFailure}
-            />
-
-            <GlassPanel>
-              <CanonicalSlotsPanel buildResponse={buildResponse} />
-            </GlassPanel>
-
-            <section id="workspace-unknowns-panel" className="workspace-section-anchor">
-              <GlassPanel>
-                <UnknownsPatchesPanel buildResponse={buildResponse} requestPayload={requestPayload} />
-              </GlassPanel>
-            </section>
-
-            <GlassPanel className="workspace-developer-data">
-              <details className="workspace-collapsible">
-                <summary>Developer Data</summary>
-                <pre className="workspace-json-block">{toPrettyJson(buildResponse || {})}</pre>
-              </details>
-            </GlassPanel>
+            <aside className="workspace-col-right" aria-label="Card art preview dock">
+              <div className="workspace-col-right-inner">
+                <ArtDock
+                  hoverCard={hoverCard}
+                  onClear={() => {
+                    setHoverCard(null);
+                  }}
+                  previewImageFailures={previewImageFailures}
+                  markPreviewImageFailure={markPreviewImageFailure}
+                />
+              </div>
+            </aside>
           </div>
         </div>
       </main>
