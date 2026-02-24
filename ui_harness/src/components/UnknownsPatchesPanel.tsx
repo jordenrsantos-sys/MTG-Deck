@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { BuildRequestPayload, BuildResponsePayload } from "./workspaceTypes";
 import {
@@ -14,10 +14,11 @@ import {
 type UnknownsPatchesPanelProps = {
   buildResponse: BuildResponsePayload | null;
   requestPayload: BuildRequestPayload | null;
+  resolveNamesMissingNames?: string[];
 };
 
 export default function UnknownsPatchesPanel(props: UnknownsPatchesPanelProps) {
-  const { buildResponse, requestPayload } = props;
+  const { buildResponse, requestPayload, resolveNamesMissingNames = [] } = props;
 
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
@@ -36,6 +37,24 @@ export default function UnknownsPatchesPanel(props: UnknownsPatchesPanelProps) {
   const patchIds = asStringArray(patchLoop?.patch_ids_sorted);
   const patchEffects = asArray(patchLoop?.patch_effect_summary);
   const overridePatchRows = asArray(primitiveOverrides?.applied_patches);
+
+  const normalizedResolveMissingNames = useMemo(() => {
+    const rows: string[] = [];
+    const seen = new Set<string>();
+    for (const rawName of resolveNamesMissingNames) {
+      const name = typeof rawName === "string" ? rawName.trim() : "";
+      if (name === "") {
+        continue;
+      }
+      const key = name.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      rows.push(name);
+    }
+    return rows;
+  }, [resolveNamesMissingNames]);
 
   async function handleCopyBugBundle() {
     setCopyNotice(null);
@@ -59,6 +78,22 @@ export default function UnknownsPatchesPanel(props: UnknownsPatchesPanelProps) {
     try {
       await copyTextToClipboard(toPrettyJson(bundle));
       setCopyNotice("Copied bug bundle JSON to clipboard.");
+    } catch (error) {
+      setCopyError(error instanceof Error ? error.message : "Clipboard write failed.");
+    }
+  }
+
+  async function handleCopyMissingNames() {
+    if (normalizedResolveMissingNames.length === 0) {
+      setCopyError("No resolve_names missing names available.");
+      return;
+    }
+
+    setCopyNotice(null);
+    setCopyError(null);
+    try {
+      await copyTextToClipboard(normalizedResolveMissingNames.join("\n"));
+      setCopyNotice("Copied missing names to clipboard.");
     } catch (error) {
       setCopyError(error instanceof Error ? error.message : "Clipboard write failed.");
     }
@@ -106,6 +141,22 @@ export default function UnknownsPatchesPanel(props: UnknownsPatchesPanelProps) {
                   <div>
                     <h5>Canonical unknowns</h5>
                     <pre className="workspace-json-block">{toPrettyJson(unknownsCanonicalInResult)}</pre>
+                  </div>
+                ) : null}
+
+                {normalizedResolveMissingNames.length > 0 ? (
+                  <div>
+                    <div className="workspace-action-row">
+                      <h5>resolve_names missing</h5>
+                      <button type="button" onClick={() => void handleCopyMissingNames()}>
+                        Copy missing names
+                      </button>
+                    </div>
+                    <ul className="workspace-compact-list workspace-scroll-list">
+                      {normalizedResolveMissingNames.map((name: string) => (
+                        <li key={`resolve-missing-${name.toLowerCase()}`}>{name}</li>
+                      ))}
+                    </ul>
                   </div>
                 ) : null}
               </>

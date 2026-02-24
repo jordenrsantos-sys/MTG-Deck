@@ -6,7 +6,7 @@ from time import perf_counter
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -288,6 +288,33 @@ class DeckCompleteRequest(BaseModel):
     save_run: bool = False
 
 
+class CardsResolveNamesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    snapshot_id: Optional[str] = None
+    names: List[str] = Field(default_factory=list)
+
+
+class CardsResolveNamesResultRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    input: str
+    name: str
+    oracle_id: str
+    mana_cost: Optional[str] = None
+    type_line: Optional[str] = None
+    image_uri: Optional[str] = None
+
+
+class CardsResolveNamesResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    snapshot_id: str
+    results: List[CardsResolveNamesResultRow] = Field(default_factory=list)
+    missing: List[str] = Field(default_factory=list)
+
+
 app = FastAPI(title="MTG Strategy Engine", version=ENGINE_VERSION)
 
 DEV_CORS = os.getenv("MTG_ENGINE_DEV_CORS", "0") == "1"
@@ -334,11 +361,29 @@ CARD_IMAGE_CACHE_CONTROL = "public, max-age=31536000"
 
 @app.get("/health")
 def health():
-    return {
-        "ok": True,
+    try:
+        latest_snapshot_id = _latest_snapshot_id()
+    except Exception:
+        latest_snapshot_id = ""
+
+    git_commit = (
+        os.getenv("MTG_ENGINE_GIT_COMMIT", "").strip()
+        or os.getenv("GIT_COMMIT", "").strip()
+        or os.getenv("VITE_GIT_SHA", "").strip()
+        or os.getenv("UI_COMMIT", "").strip()
+    )
+
+    payload = {
+        "status": "OK",
         "engine_version": ENGINE_VERSION,
-        "time": datetime.utcnow().isoformat(),
+        "db_snapshot_id": latest_snapshot_id,
+        "ruleset_version": RULESET_VERSION,
+        "bracket_definition_version": BRACKET_DEFINITION_VERSION,
+        "server_time": datetime.utcnow().isoformat() + "Z",
     }
+    if git_commit != "":
+        payload["git_commit"] = git_commit
+    return payload
 
 
 @app.get("/snapshots")
@@ -516,6 +561,132 @@ def cards_image(oracle_id: str, size: str = "normal"):
     return response
 
 
+@app.post("/cards/resolve_names", response_model=CardsResolveNamesResponse)
+def cards_resolve_names(req: CardsResolveNamesRequest):
+    if len(req.names) > 200:
+        raise HTTPException(status_code=400, detail="names supports at most 200 entries.")
+
+    normalized_inputs: List[str] = []
+    for index, raw_name in enumerate(req.names):
+        token = _coerce_nonempty_str(raw_name)
+        if token == "":
+            raise HTTPException(status_code=400, detail=f"names[{index}] must be a non-empty string.")
+        normalized_inputs.append(token)
+
+    normalized_snapshot_id = _coerce_nonempty_str(req.snapshot_id)
+    if normalized_snapshot_id == "":
+        normalized_snapshot_id = _latest_snapshot_id()
+
+    if len(normalized_inputs) == 0:
+        return {
+            "status": "OK",
+            "snapshot_id": normalized_snapshot_id,
+            "results": [],
+            "missing": [],
+        }
+
+    if normalized_snapshot_id == "":
+        return {
+            "status": "OK",
+            "snapshot_id": "",
+            "results": [],
+            "missing": normalized_inputs,
+        }
+
+    requested_name_keys: List[str] = []
+    seen_keys: set[str] = set()
+    for token in normalized_inputs:
+        name_key = token.lower()
+        if name_key in seen_keys:
+            continue
+        seen_keys.add(name_key)
+        requested_name_keys.append(name_key)
+
+    rows_by_name_key: Dict[str, Dict[str, Any]] = {}
+
+    with cards_db_connect() as con:
+        pragma_rows = con.execute("PRAGMA table_info(cards)").fetchall()
+        available_columns: set[str] = set()
+        for pragma_row in pragma_rows:
+            try:
+                pragma_row_dict = dict(pragma_row)
+            except Exception:
+                continue
+            col_name = pragma_row_dict.get("name")
+            if isinstance(col_name, str) and col_name != "":
+                available_columns.add(col_name)
+
+        select_fields = ["oracle_id", "name", "mana_cost", "type_line"]
+        for optional_field in [
+            "image_uri",
+            "image_url",
+            "art_uri",
+            "art_url",
+            "image_uris_json",
+            "card_faces_json",
+        ]:
+            if optional_field in available_columns:
+                select_fields.append(optional_field)
+        select_clause = ", ".join(select_fields)
+
+        placeholders = ", ".join(["?"] * len(requested_name_keys))
+        rows = con.execute(
+            f"SELECT {select_clause} FROM cards "
+            f"WHERE snapshot_id = ? AND LOWER(name) IN ({placeholders}) "
+            "ORDER BY LOWER(name) ASC, name ASC, oracle_id ASC",
+            [normalized_snapshot_id, *requested_name_keys],
+        ).fetchall()
+
+    for row in rows:
+        try:
+            row_dict = dict(row)
+        except Exception:
+            continue
+
+        resolved_name = _coerce_nonempty_str(row_dict.get("name"))
+        if resolved_name == "":
+            continue
+
+        key = resolved_name.lower()
+        if key in rows_by_name_key:
+            continue
+
+        mana_cost_raw = row_dict.get("mana_cost")
+        type_line_raw = row_dict.get("type_line")
+        rows_by_name_key[key] = {
+            "name": resolved_name,
+            "oracle_id": _coerce_nonempty_str(row_dict.get("oracle_id")),
+            "mana_cost": mana_cost_raw if isinstance(mana_cost_raw, str) and mana_cost_raw != "" else None,
+            "type_line": type_line_raw if isinstance(type_line_raw, str) and type_line_raw != "" else None,
+            "image_uri": _extract_image_uri_from_card_row(row_dict),
+        }
+
+    results: List[Dict[str, Any]] = []
+    missing: List[str] = []
+    for input_name in normalized_inputs:
+        resolved = rows_by_name_key.get(input_name.lower())
+        if not isinstance(resolved, dict):
+            missing.append(input_name)
+            continue
+        results.append(
+            {
+                "input": input_name,
+                "name": resolved.get("name"),
+                "oracle_id": resolved.get("oracle_id"),
+                "mana_cost": resolved.get("mana_cost"),
+                "type_line": resolved.get("type_line"),
+                "image_uri": resolved.get("image_uri"),
+            }
+        )
+
+    return {
+        "status": "OK",
+        "snapshot_id": normalized_snapshot_id,
+        "results": results,
+        "missing": missing,
+    }
+
+
 @app.post("/build", response_model=BuildResponse)
 def build(req: BuildRequest):
     canonical_request = build_canonical_deck_input_v1(
@@ -556,6 +727,30 @@ def _coerce_nonempty_str(value: Any) -> str:
         if token != "":
             return token
     return ""
+
+
+def _looks_like_wrapped_deck_complete_payload(raw_json: Any) -> bool:
+    if not isinstance(raw_json, dict):
+        return False
+    endpoint_payload = raw_json.get("endpoint_payload")
+    if not isinstance(endpoint_payload, dict):
+        return False
+
+    expected_keys = {
+        "db_snapshot_id",
+        "raw_decklist_text",
+        "format",
+        "profile_id",
+        "bracket_id",
+        "mulligan_model_id",
+        "target_deck_size",
+        "max_adds",
+        "allow_basic_lands",
+        "land_target_mode",
+        "commander",
+        "name_overrides_v1",
+    }
+    return any(key in endpoint_payload for key in expected_keys)
 
 
 def _clean_unique_strings_in_order(values: Any, *, limit: int = 0) -> List[str]:
@@ -1115,9 +1310,21 @@ def deck_tune_v1(req: DeckTuneRequest):
 
 
 @app.post("/deck/complete_v1", response_model=DeckCompleteV1Response)
-def deck_complete_v1(req: DeckCompleteV1Request):
+async def deck_complete_v1(req: DeckCompleteV1Request, request: Request):
     dev_metrics_enabled = os.getenv("MTG_ENGINE_DEV_METRICS") == "1"
     start_total_timer = perf_counter()
+
+    if _coerce_nonempty_str(req.raw_decklist_text) == "":
+        detail = "raw_decklist_text missing."
+        raw_json: Any = None
+        try:
+            raw_json = await request.json()
+        except Exception:
+            raw_json = None
+
+        if _looks_like_wrapped_deck_complete_payload(raw_json):
+            detail = "raw_decklist_text missing. Did you wrap the payload in endpoint_payload?"
+        raise HTTPException(status_code=422, detail=detail)
 
     name_overrides_v1 = [
         row.model_dump(mode="python")

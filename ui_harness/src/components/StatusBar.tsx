@@ -1,19 +1,55 @@
+import { useEffect, useState } from "react";
+
 import type { BuildResponsePayload } from "./workspaceTypes";
 import { asArray, asRecord, firstNonEmptyString, firstNumber, getPath } from "./workspaceUtils";
+
+type StatusBarApiErrorDetails = {
+  statusCode: number | null;
+  endpoint: string;
+  method?: string;
+  requestId: string | null;
+  timestampIso?: string;
+  requestPayloadText?: string;
+  requestBodyText?: string;
+  requestDebugText?: string;
+  responseJsonText: string;
+  stackTrace?: string;
+};
 
 type StatusBarProps = {
   buildResponse: BuildResponsePayload | null;
   loading: boolean;
   runtimeError: string | null;
+  apiErrorDetails?: StatusBarApiErrorDetails | null;
+  errorDetailsOpenSignal?: number;
   compact?: boolean;
   className?: string;
 };
 
 export default function StatusBar(props: StatusBarProps) {
-  const { buildResponse, loading, runtimeError, compact = false, className } = props;
+  const {
+    buildResponse,
+    loading,
+    runtimeError,
+    apiErrorDetails = null,
+    errorDetailsOpenSignal = 0,
+    compact = false,
+    className,
+  } = props;
   const result = asRecord(buildResponse?.result);
   const unknowns = asArray(buildResponse?.unknowns);
   const classes = ["workspace-panel-content", className].filter(Boolean).join(" ");
+  const [isErrorDetailsOpen, setIsErrorDetailsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!apiErrorDetails) {
+      setIsErrorDetailsOpen(false);
+      return;
+    }
+    if (errorDetailsOpenSignal > 0) {
+      setIsErrorDetailsOpen(true);
+    }
+  }, [apiErrorDetails, errorDetailsOpenSignal]);
 
   const status = firstNonEmptyString(buildResponse?.status) || "-";
   const deckStatus = firstNonEmptyString(buildResponse?.deck_status) || "-";
@@ -22,6 +58,51 @@ export default function StatusBar(props: StatusBarProps) {
   const cardsToCut = firstNumber(buildResponse?.cards_to_cut);
   const pipelineStage = firstNonEmptyString(result?.build_pipeline_stage) || "-";
   const unknownCanonicalCount = firstNumber(result?.unknowns_canonical_total, getPath(result, ["unknowns_canonical", "length"]));
+
+  const errorDetailsNode = apiErrorDetails ? (
+    <details
+      className="workspace-error-details"
+      open={isErrorDetailsOpen}
+      onToggle={(event) => {
+        setIsErrorDetailsOpen((event.currentTarget as HTMLDetailsElement).open);
+      }}
+    >
+      <summary>Error Details</summary>
+      <div className="workspace-error-details-grid">
+        <p>
+          <strong>status code:</strong> {apiErrorDetails.statusCode ?? "(network error)"}
+        </p>
+        <p>
+          <strong>endpoint:</strong> {apiErrorDetails.endpoint || "-"}
+        </p>
+        <p>
+          <strong>method:</strong> {apiErrorDetails.method || "POST"}
+        </p>
+        <p>
+          <strong>request id:</strong> {apiErrorDetails.requestId || "(none)"}
+        </p>
+        <p>
+          <strong>timestamp:</strong> {apiErrorDetails.timestampIso || "-"}
+        </p>
+      </div>
+
+      <p className="workspace-topbar-title">request_debug (local)</p>
+      <pre className="workspace-json-block workspace-error-response-json">
+        {apiErrorDetails.requestDebugText || "(empty)"}
+      </pre>
+
+      <p className="workspace-topbar-title">request_body (sent)</p>
+      <pre className="workspace-json-block workspace-error-response-json">
+        {apiErrorDetails.requestBodyText || apiErrorDetails.requestPayloadText || "(empty)"}
+      </pre>
+
+      <p className="workspace-topbar-title">Response payload</p>
+      <pre className="workspace-json-block workspace-error-response-json">{apiErrorDetails.responseJsonText || "(empty)"}</pre>
+
+      <p className="workspace-topbar-title">Stack trace</p>
+      <pre className="workspace-json-block workspace-error-response-json">{apiErrorDetails.stackTrace || "(none)"}</pre>
+    </details>
+  ) : null;
 
   if (compact) {
     return (
@@ -39,6 +120,7 @@ export default function StatusBar(props: StatusBarProps) {
           <span className="workspace-chip">pipeline: {pipelineStage}</span>
         </div>
         {runtimeError ? <p className="workspace-error-banner">{runtimeError}</p> : null}
+        {errorDetailsNode}
       </section>
     );
   }
@@ -80,6 +162,7 @@ export default function StatusBar(props: StatusBarProps) {
         <p className="workspace-muted">pipeline stage: {pipelineStage}</p>
 
         {runtimeError ? <p className="workspace-error-banner">{runtimeError}</p> : null}
+        {errorDetailsNode}
       </details>
     </section>
   );

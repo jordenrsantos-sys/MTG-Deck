@@ -38,6 +38,10 @@ function toCardCountRows(cards: string[]): CardCountRow[] {
   return Array.from(counters.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function summarizeCardUnits(units: string[]): string[] {
+  return toCardCountRows(units).map((row: CardCountRow) => `${row.count} ${row.name}`);
+}
+
 function formatDelta(value: number | null): string {
   if (value === null) {
     return "n/a";
@@ -88,28 +92,79 @@ export default function BuildHistoryPanel(props: BuildHistoryPanelProps) {
   const selectedEntry = entries.length > 0 ? entries[effectiveSelectedIndex] : null;
   const previousEntry = selectedEntry && effectiveSelectedIndex + 1 < entries.length ? entries[effectiveSelectedIndex + 1] : null;
 
+  const selectedSummaryRows = useMemo(() => {
+    if (!selectedEntry?.summary_counts) {
+      return [] as Array<{ key: string; value: number }>;
+    }
+
+    return Object.entries(selectedEntry.summary_counts)
+      .filter(([, value]: [string, number]) => Number.isFinite(value))
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]: [string, number]) => ({
+        key,
+        value,
+      }));
+  }, [selectedEntry]);
+
+  const hasStoredDeckDiff = useMemo(() => {
+    if (!selectedEntry?.deck_diff) {
+      return false;
+    }
+    return (
+      selectedEntry.deck_diff.added.length > 0 ||
+      selectedEntry.deck_diff.removed.length > 0 ||
+      selectedEntry.deck_diff.swapped.length > 0
+    );
+  }, [selectedEntry]);
+
   const diffRows = useMemo(() => {
-    if (!selectedEntry || !previousEntry) {
+    if (!selectedEntry) {
       return {
         added: [] as string[],
         removed: [] as string[],
+        swapped: [] as string[],
       };
     }
 
-    const currentRows = toCardCountRows(selectedEntry.request_payload.cards);
-    const previousRows = toCardCountRows(previousEntry.request_payload.cards);
+    if (selectedEntry.deck_diff) {
+      return {
+        added: Array.isArray(selectedEntry.deck_diff.added) ? selectedEntry.deck_diff.added : [],
+        removed: Array.isArray(selectedEntry.deck_diff.removed) ? selectedEntry.deck_diff.removed : [],
+        swapped: Array.isArray(selectedEntry.deck_diff.swapped) ? selectedEntry.deck_diff.swapped : [],
+      };
+    }
+
+    if (!previousEntry) {
+      return {
+        added: [] as string[],
+        removed: [] as string[],
+        swapped: [] as string[],
+      };
+    }
+
+    const selectedCards =
+      Array.isArray(selectedEntry.output_cards) && selectedEntry.output_cards.length > 0
+        ? selectedEntry.output_cards
+        : selectedEntry.request_payload.cards;
+    const previousCards =
+      Array.isArray(previousEntry.output_cards) && previousEntry.output_cards.length > 0
+        ? previousEntry.output_cards
+        : previousEntry.request_payload.cards;
+
+    const currentRows = toCardCountRows(selectedCards);
+    const previousRows = toCardCountRows(previousCards);
 
     const previousCounts = new Map<string, CardCountRow>();
     previousRows.forEach((row) => previousCounts.set(row.key, row));
 
-    const added: string[] = [];
-    const removed: string[] = [];
+    const addedUnits: string[] = [];
+    const removedUnits: string[] = [];
 
     for (const row of currentRows) {
       const before = previousCounts.get(row.key);
       const delta = row.count - (before ? before.count : 0);
-      if (delta > 0) {
-        added.push(`${delta} ${row.name}`);
+      for (let idx = 0; idx < delta; idx += 1) {
+        addedUnits.push(row.name);
       }
     }
 
@@ -119,14 +174,21 @@ export default function BuildHistoryPanel(props: BuildHistoryPanelProps) {
     for (const row of previousRows) {
       const now = currentCounts.get(row.key);
       const delta = row.count - (now ? now.count : 0);
-      if (delta > 0) {
-        removed.push(`${delta} ${row.name}`);
+      for (let idx = 0; idx < delta; idx += 1) {
+        removedUnits.push(row.name);
       }
     }
 
+    const swappedCount = Math.min(addedUnits.length, removedUnits.length);
+    const swapped: string[] = [];
+    for (let idx = 0; idx < swappedCount; idx += 1) {
+      swapped.push(`${removedUnits[idx]} -> ${addedUnits[idx]}`);
+    }
+
     return {
-      added,
-      removed,
+      added: summarizeCardUnits(addedUnits.slice(swappedCount)),
+      removed: summarizeCardUnits(removedUnits.slice(swappedCount)),
+      swapped,
     };
   }, [previousEntry, selectedEntry]);
 
@@ -175,13 +237,47 @@ export default function BuildHistoryPanel(props: BuildHistoryPanelProps) {
 
         <div className="workspace-history-diff">
           <h4>Diff vs previous</h4>
+          {selectedEntry ? (
+            <div className="workspace-chip-row">
+              <span className="workspace-chip">tool: {selectedEntry.tool_type || selectedEntry.status}</span>
+              <span className="workspace-chip">input hash: {selectedEntry.input_deck_hash || "-"}</span>
+              <span className="workspace-chip">output hash: {selectedEntry.output_deck_hash || "-"}</span>
+            </div>
+          ) : null}
+
+          {selectedSummaryRows.length > 0 ? (
+            <div>
+              <h5>Summary counts</h5>
+              <ul className="workspace-compact-list">
+                {selectedSummaryRows.map((row: { key: string; value: number }) => (
+                  <li key={`summary-${row.key}`}>
+                    <strong>{row.key}</strong>: {Math.trunc(row.value)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           {!selectedEntry ? (
             <p className="workspace-muted">Select a history entry to inspect diffs.</p>
-          ) : !previousEntry ? (
+          ) : !previousEntry && !hasStoredDeckDiff ? (
             <p className="workspace-muted">No previous entry to compare against.</p>
           ) : (
             <>
               <div className="workspace-panel-split">
+                <div>
+                  <h5>Swapped cards</h5>
+                  {diffRows.swapped.length === 0 ? (
+                    <p className="workspace-muted">No direct swaps.</p>
+                  ) : (
+                    <ul className="workspace-compact-list">
+                      {diffRows.swapped.map((row: string) => (
+                        <li key={`swap-${row}`}>{row}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
                 <div>
                   <h5>Added cards</h5>
                   {diffRows.added.length === 0 ? (

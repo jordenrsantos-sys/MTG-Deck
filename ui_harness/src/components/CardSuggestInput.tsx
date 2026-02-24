@@ -11,6 +11,8 @@ import {
   toSingleLineSnippet,
 } from "./workspaceUtils";
 
+const SUGGEST_DEBOUNCE_MS = 100;
+
 type CardSuggestInputProps = {
   label: string;
   value: string;
@@ -45,6 +47,19 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
   const [activeIndex, setActiveIndex] = useState(-1);
 
   const requestIdRef = useRef(0);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  function focusInput(): void {
+    window.requestAnimationFrame(() => {
+      const inputNode = inputRef.current;
+      if (!inputNode || disabled) {
+        return;
+      }
+      inputNode.focus();
+      const cursorIndex = inputNode.value.length;
+      inputNode.setSelectionRange(cursorIndex, cursorIndex);
+    });
+  }
 
   async function fetchSuggestRows(
     requestUrl: string,
@@ -93,7 +108,9 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
     onSelect?.(row);
     setOpen(false);
     setActiveIndex(-1);
+    setRows([]);
     onHoverCard?.(null);
+    focusInput();
   }
 
   function handleInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -110,13 +127,17 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActiveIndex((prev) => (prev < 0 ? 0 : (prev + 1) % rows.length));
+      const nextIndex = activeIndex < 0 ? 0 : (activeIndex + 1) % rows.length;
+      setActiveIndex(nextIndex);
+      onHoverCard?.(rows[nextIndex] || null);
       return;
     }
 
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActiveIndex((prev) => (prev < 0 ? rows.length - 1 : (prev - 1 + rows.length) % rows.length));
+      const nextIndex = activeIndex < 0 ? rows.length - 1 : (activeIndex - 1 + rows.length) % rows.length;
+      setActiveIndex(nextIndex);
+      onHoverCard?.(rows[nextIndex] || null);
       return;
     }
 
@@ -137,6 +158,7 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
       setError(null);
       setRows([]);
       setActiveIndex(-1);
+      onHoverCard?.(null);
       return;
     }
 
@@ -147,6 +169,7 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
       setError(null);
       setRows([]);
       setActiveIndex(-1);
+      onHoverCard?.(null);
       return;
     }
 
@@ -196,6 +219,7 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
         setRows(resolvedRows);
         setOpen(resolvedRows.length > 0);
         setActiveIndex(resolvedRows.length > 0 ? 0 : -1);
+        onHoverCard?.(resolvedRows[0] || null);
       } catch (requestError) {
         if (controller.signal.aborted || requestId !== requestIdRef.current) {
           return;
@@ -206,12 +230,13 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
         setOpen(false);
         setActiveIndex(-1);
         setError(message);
+        onHoverCard?.(null);
       } finally {
         if (requestId === requestIdRef.current) {
           setLoading(false);
         }
       }
-    }, 80);
+    }, SUGGEST_DEBOUNCE_MS);
 
     return () => {
       controller.abort();
@@ -239,17 +264,23 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
     <label className="workspace-field workspace-suggest-field">
       <span>{label}</span>
       <input
+        ref={inputRef}
         value={value}
         placeholder={placeholder}
         disabled={disabled}
         onChange={(event) => {
           onChange(event.target.value);
           setOpen(true);
+          setActiveIndex(-1);
+          onHoverCard?.(null);
         }}
         onKeyDown={handleInputKeyDown}
         onFocus={() => {
           if (rows.length > 0) {
+            const nextIndex = activeIndex >= 0 ? activeIndex : 0;
             setOpen(true);
+            setActiveIndex(nextIndex);
+            onHoverCard?.(rows[nextIndex] || null);
           }
         }}
       />

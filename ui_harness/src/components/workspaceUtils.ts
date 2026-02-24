@@ -89,6 +89,45 @@ export function asStringArray(value: unknown): string[] {
   return rows;
 }
 
+export function extractResolveNamesMissingNames(payload: unknown): string[] {
+  const root = asRecord(payload);
+  if (!root) {
+    return [];
+  }
+
+  const missingRows = asArray(root.missing).length > 0 ? asArray(root.missing) : asArray(root.missing_names);
+  const names: string[] = [];
+  const seenKeys = new Set<string>();
+
+  for (const rawRow of missingRows) {
+    const token = asOptionalString(rawRow);
+    const row = asRecord(rawRow);
+    const name =
+      token ||
+      firstNonEmptyString(
+        row?.name,
+        row?.input,
+        row?.name_raw,
+        row?.card_name,
+        row?.query,
+        row?.raw,
+      ) ||
+      "";
+    if (name === "") {
+      continue;
+    }
+
+    const key = name.trim().toLowerCase();
+    if (key === "" || seenKeys.has(key)) {
+      continue;
+    }
+    seenKeys.add(key);
+    names.push(name);
+  }
+
+  return names;
+}
+
 export function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -252,10 +291,21 @@ function stripDeckComment(rawLine: string): string {
 export function parseDecklistInput(rawDecklist: string): ParsedDecklistRow[] {
   const lines = rawDecklist.split(/\r?\n/);
   const rows: ParsedDecklistRow[] = [];
+  let section: "NONE" | "COMMANDER" | "DECK" = "NONE";
 
   for (const line of lines) {
     const stripped = stripDeckComment(line);
     if (stripped === "") {
+      continue;
+    }
+
+    const lowered = stripped.toLowerCase();
+    if (lowered === "commander") {
+      section = "COMMANDER";
+      continue;
+    }
+    if (lowered === "deck") {
+      section = "DECK";
       continue;
     }
 
@@ -277,6 +327,10 @@ export function parseDecklistInput(rawDecklist: string): ParsedDecklistRow[] {
     }
 
     if (name === "") {
+      continue;
+    }
+
+    if (section === "COMMANDER") {
       continue;
     }
 
@@ -354,7 +408,7 @@ export function parseCardSuggestRows(payload: unknown): CardSuggestRow[] {
     }
 
     rows.push({
-      oracle_id: asOptionalString(row.oracle_id) || "",
+      oracle_id: firstNonEmptyString(row.oracle_id, row.oracleId, row.scryfall_oracle_id) || "",
       name,
       mana_cost: asOptionalString(row.mana_cost),
       type_line: asOptionalString(row.type_line),

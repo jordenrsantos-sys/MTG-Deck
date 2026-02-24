@@ -30,6 +30,12 @@ export type BuildResponsePayload = JsonRecord & {
   unknowns?: unknown[];
 };
 
+export type BuildHistoryDeckDiff = {
+  added: string[];
+  removed: string[];
+  swapped: string[];
+};
+
 export type BuildHistoryEntry = {
   id: string;
   timestamp_iso: string;
@@ -42,6 +48,13 @@ export type BuildHistoryEntry = {
   status: string;
   request_payload: BuildRequestPayload;
   response_body: BuildResponsePayload;
+  tool_type?: string;
+  input_deck_hash?: string;
+  output_deck_hash?: string;
+  output_deck_text?: string;
+  output_cards?: string[];
+  summary_counts?: Record<string, number>;
+  deck_diff?: BuildHistoryDeckDiff;
 };
 
 export type HoverCard = {

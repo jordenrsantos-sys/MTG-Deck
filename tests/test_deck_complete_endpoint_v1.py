@@ -83,6 +83,84 @@ class DeckCompleteEndpointV1Tests(unittest.TestCase):
         mocked_run_build.assert_not_called()
         mocked_run_complete.assert_not_called()
 
+    def test_complete_rejects_empty_raw_decklist_text(self) -> None:
+        if _IMPORT_ERROR is not None:
+            self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")
+
+        payload = {
+            "db_snapshot_id": DECKLIST_FIXTURE_SNAPSHOT_ID,
+            "raw_decklist_text": "   ",
+            "format": "commander",
+            "profile_id": "focused",
+            "bracket_id": "B2",
+            "mulligan_model_id": "NORMAL",
+            "target_deck_size": 100,
+            "max_adds": 200,
+            "allow_basic_lands": True,
+            "land_target_mode": "AUTO",
+            "commander": "Krenko, Mob Boss",
+        }
+
+        with (
+            patch("api.main.run_build_pipeline") as mocked_run_build,
+            patch("api.main.run_deck_complete_engine_v1") as mocked_run_complete,
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            response = client.post("/deck/complete_v1", json=payload)
+
+        self.assertEqual(response.status_code, 422)
+        body = response.json() if isinstance(response.json(), dict) else {}
+        self.assertEqual(body.get("detail"), "raw_decklist_text missing.")
+        mocked_run_build.assert_not_called()
+        mocked_run_complete.assert_not_called()
+
+    def test_complete_rejects_wrapped_endpoint_payload_with_hint(self) -> None:
+        if _IMPORT_ERROR is not None:
+            self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")
+
+        payload = {
+            "db_snapshot_id": DECKLIST_FIXTURE_SNAPSHOT_ID,
+            "raw_decklist_text": " ",
+            "format": "commander",
+            "profile_id": "focused",
+            "bracket_id": "B2",
+            "mulligan_model_id": "NORMAL",
+            "target_deck_size": 100,
+            "max_adds": 200,
+            "allow_basic_lands": True,
+            "land_target_mode": "AUTO",
+            "commander": "Krenko, Mob Boss",
+            "endpoint_payload": {
+                "db_snapshot_id": DECKLIST_FIXTURE_SNAPSHOT_ID,
+                "raw_decklist_text": "1 Sol Ring",
+                "format": "commander",
+                "profile_id": "focused",
+                "bracket_id": "B2",
+                "mulligan_model_id": "NORMAL",
+                "target_deck_size": 100,
+                "max_adds": 200,
+                "allow_basic_lands": True,
+                "land_target_mode": "AUTO",
+                "commander": "Krenko, Mob Boss",
+            },
+        }
+
+        with (
+            patch("api.main.run_build_pipeline") as mocked_run_build,
+            patch("api.main.run_deck_complete_engine_v1") as mocked_run_complete,
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            response = client.post("/deck/complete_v1", json=payload)
+
+        self.assertEqual(response.status_code, 422)
+        body = response.json() if isinstance(response.json(), dict) else {}
+        self.assertEqual(
+            body.get("detail"),
+            "raw_decklist_text missing. Did you wrap the payload in endpoint_payload?",
+        )
+        mocked_run_build.assert_not_called()
+        mocked_run_complete.assert_not_called()
+
     def test_complete_happy_path_invokes_build_then_complete_engine(self) -> None:
         if _IMPORT_ERROR is not None:
             self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")
