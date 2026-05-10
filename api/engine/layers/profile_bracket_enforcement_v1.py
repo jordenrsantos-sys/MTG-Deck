@@ -126,10 +126,19 @@ def _resolve_category_support_counts(
     commander: str | None,
     primitive_index_by_slot: Any,
     deck_slot_ids_playable: Any,
+    oracle_id_by_name: Dict[str, str] | None = None,
 ) -> Dict[str, Dict[str, Any]]:
-    combo_deck_cards = list(deck_cards)
+    combo_deck_cards: List[Any] = list(deck_cards)
     if isinstance(commander, str) and commander.strip() != "":
         combo_deck_cards.append(commander)
+
+    if isinstance(oracle_id_by_name, dict):
+        combo_deck_cards = [
+            {"name": card_name, "oracle_id": oracle_id_by_name.get(card_name.lower())}
+            if isinstance(card_name, str)
+            else card_name
+            for card_name in combo_deck_cards
+        ]
 
     category_support = {
         category: {
@@ -204,6 +213,7 @@ def run_profile_bracket_enforcement_v1(
     profile_definition_version: str,
     primitive_index_by_slot: dict[str, list[str]] | None = None,
     deck_slot_ids_playable: list[str] | None = None,
+    oracle_id_by_name: Dict[str, str] | None = None,
 ) -> dict:
     deck_cards_clean = _clean_str_list(deck_cards)
     commander_clean = _nonempty_str(commander)
@@ -312,6 +322,7 @@ def run_profile_bracket_enforcement_v1(
         commander_clean,
         primitive_index_by_slot,
         deck_slot_ids_playable,
+        oracle_id_by_name=oracle_id_by_name,
     )
     category_results: Dict[str, Dict[str, Any]] = {}
     for category in _TRACKED_CATEGORIES:

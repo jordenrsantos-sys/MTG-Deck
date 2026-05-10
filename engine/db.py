@@ -9,6 +9,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB_RELATIVE_PATH = Path("data") / "mtg.sqlite"
 DB_PATH = (REPO_ROOT / DEFAULT_DB_RELATIVE_PATH).resolve()
 EXTERNAL_DB_PATH = (REPO_ROOT.parent / DEFAULT_DB_RELATIVE_PATH).resolve()
+DEFAULT_IMAGE_CACHE_RELATIVE_PATH = Path("data") / "image_cache"
+DEFAULT_IMAGE_CACHE_PATH = (REPO_ROOT / DEFAULT_IMAGE_CACHE_RELATIVE_PATH).resolve()
+IMAGE_CACHE_DIR_ENV = "MTG_IMAGE_CACHE_DIR"
+LEGACY_IMAGE_CACHE_DIR_ENV = "MTG_ENGINE_IMAGE_CACHE_DIR"
 SQLITE_HEADER_PREFIX = b"SQLite format 3\x00"
 logger = logging.getLogger(__name__)
 
@@ -75,6 +79,31 @@ def resolve_db_path() -> Path:
         f"Checked: {checked_paths}. "
         "Set MTG_ENGINE_DB_PATH to a valid SQLite DB file."
     )
+
+
+def resolve_image_cache_dir() -> str:
+    def _resolve_candidate(raw_path: str) -> Path:
+        candidate = Path(raw_path.strip()).expanduser()
+        if not candidate.is_absolute():
+            candidate = (REPO_ROOT / candidate).resolve()
+        return candidate.resolve()
+
+    env_candidates = (
+        os.getenv(IMAGE_CACHE_DIR_ENV),
+        os.getenv(LEGACY_IMAGE_CACHE_DIR_ENV),
+    )
+
+    selected_path: Path | None = None
+    for env_value in env_candidates:
+        if isinstance(env_value, str) and env_value.strip() != "":
+            selected_path = _resolve_candidate(env_value)
+            break
+
+    if selected_path is None:
+        selected_path = DEFAULT_IMAGE_CACHE_PATH.resolve()
+
+    selected_path.mkdir(parents=True, exist_ok=True)
+    return str(selected_path)
 
 
 class CommanderEligibilityUnknownError(RuntimeError):
@@ -251,8 +280,42 @@ def _extract_commander_eligibility_from_facets(facets: Dict[str, Any]) -> Tuple[
 
     return None, None, candidate_keys
 
+class MtgDbUnavailable(Exception):
+    """Phase 6 Stage 6 Stage 3: typed exception for missing/invalid mtg.sqlite.
+
+    Raised by `connect()` when the resolved DB path doesn't exist OR isn't a
+    valid SQLite file OR the cards table is missing. Carries a `reason_code`
+    string that maps to a structured API error response in api/main.py:
+      - `mtg_db_path_unresolvable` — env-var path doesn't exist + no fallback
+      - `cards_table_missing` — DB exists but the `cards` table isn't there
+        (sandbox 0-byte DB / partial restore / wrong file)
+      - `snapshot_not_found` — DB + cards table OK but the requested
+        snapshot_id has no entry (raised by callers, not connect())
+
+    Existing callers continue to see `sqlite3.OperationalError` for runtime
+    SQL bugs; MtgDbUnavailable is for missing-infrastructure conditions only.
+    """
+
+    def __init__(self, reason_code: str, message: str = "", path: str = ""):
+        self.reason_code = reason_code
+        self.path = path
+        super().__init__(message or reason_code)
+
+
 def connect() -> sqlite3.Connection:
-    con = sqlite3.connect(str(resolve_db_path()), factory=_ManagedConnection)
+    # Phase 6 Stage 6 Stage 3: convert the historical RuntimeError raised by
+    # resolve_db_path() into a typed MtgDbUnavailable so the API endpoints
+    # can catch it cleanly and emit structured {status:"ERROR", reason_code:
+    # "mtg_db_path_unresolvable", ...} responses (vs uncaught HTTP 500s).
+    try:
+        path = resolve_db_path()
+    except RuntimeError as e:
+        raise MtgDbUnavailable(
+            reason_code="mtg_db_path_unresolvable",
+            message=str(e),
+            path="",
+        ) from e
+    con = sqlite3.connect(str(path), factory=_ManagedConnection)
     con.row_factory = sqlite3.Row
     return con
 

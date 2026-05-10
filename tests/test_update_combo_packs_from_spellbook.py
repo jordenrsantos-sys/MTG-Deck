@@ -149,6 +149,116 @@ class UpdateComboPacksFromSpellbookTests(unittest.TestCase):
             self.assertEqual(first_variants_text, variants_path.read_text(encoding="utf-8"))
             self.assertEqual(first_two_card_text, two_card_path.read_text(encoding="utf-8"))
 
+    def test_main_handles_nested_card_uses_shape_from_live_api(self) -> None:
+        # Regression for the 2026-05-05 ingest blocker: the live Commander Spellbook API
+        # returns each uses[] element as {"card": {"oracleId": "...", "name": "..."}, ...},
+        # not as a flat dict with oracle_id/name. The original normalizer dropped every
+        # variant on len(cards) < 2 and silently emitted zero. This test pins the fixed
+        # shape so a future regression on the same code path will fail loudly.
+        page = {
+            "results": [
+                {
+                    "id": "VARNESTED1",
+                    "uses": [
+                        {"card": {"oracleId": "AAAAAAAA-1111-2222-3333-444444444444", "name": "Card Alpha"}},
+                        {"card": {"oracleId": "bbbbbbbb-5555-6666-7777-888888888888", "name": "Card Bravo"}},
+                    ],
+                    "produces": "infinite mana",
+                }
+            ],
+            "next": None,
+        }
+
+        with TemporaryDirectory() as tmp_dir:
+            output_dir = Path(tmp_dir)
+
+            with patch.object(updater, "_fetch_json", return_value=page):
+                exit_code = updater.main(
+                    [
+                        "--api-base",
+                        "https://example.test",
+                        "--endpoint",
+                        "/variants/",
+                        "--output-dir",
+                        str(output_dir),
+                    ]
+                )
+
+            variants_path = output_dir / "commander_spellbook_variants_v1.json"
+            two_card_path = output_dir / "two_card_combos_v2.json"
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(variants_path.is_file())
+            self.assertTrue(two_card_path.is_file())
+
+            variants_payload = json.loads(variants_path.read_text(encoding="utf-8"))
+            two_card_payload = json.loads(two_card_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(
+                variants_payload.get("variants"),
+                [
+                    {
+                        "cards": [
+                            "aaaaaaaa-1111-2222-3333-444444444444",
+                            "bbbbbbbb-5555-6666-7777-888888888888",
+                        ],
+                        "result": "infinite mana",
+                        "variant_id": "VARNESTED1",
+                    }
+                ],
+            )
+            self.assertEqual(
+                two_card_payload.get("pairs"),
+                [
+                    {
+                        "a": "aaaaaaaa-1111-2222-3333-444444444444",
+                        "b": "bbbbbbbb-5555-6666-7777-888888888888",
+                        "variant_ids": ["VARNESTED1"],
+                    }
+                ],
+            )
+
+    def test_default_max_pages_is_500(self) -> None:
+        args = updater._parse_args([])
+        self.assertEqual(args.max_pages, 500)
+
+    def test_default_request_delay_seconds_is_half(self) -> None:
+        args = updater._parse_args([])
+        self.assertEqual(args.request_delay_seconds, 0.5)
+
+    def test_normalization_drops_all_rows_raises(self) -> None:
+        # Pins the new guard: API returned data, but every row dropped during
+        # normalization. Previously this silently emitted an empty pack — exactly
+        # the failure mode of the 2026-05-05 pass 2 ingest blocker.
+        with self.assertRaisesRegex(RuntimeError, "Normalization dropped all rows"):
+            updater._build_variants_payload(
+                [{"of": [], "uses": []}],
+                generated_from="/variants/",
+            )
+
+    def test_extract_rows_handles_bulk_dump_variants_key(self) -> None:
+        # Regression for the 2026-05-06 pass 8 blocker: the bulk JSON dump at
+        # https://json.commanderspellbook.com/variants.json returns a top-level
+        # dict shaped {"aliases": [...], "timestamp": "...", "variants": [...],
+        # "version": "..."} — variants are under the "variants" key, not
+        # "results" or "data". Earlier the extractor returned zero rows.
+        payload = {
+            "variants": [{"id": 1}, {"id": 2}],
+            "version": "v1",
+            "timestamp": "2026-05-06T00:00:00Z",
+        }
+        rows, next_url = updater._extract_rows_and_next(payload)
+        self.assertEqual(rows, [{"id": 1}, {"id": 2}])
+        self.assertIsNone(next_url)
+
+    def test_extract_rows_raises_on_unknown_dict_shape(self) -> None:
+        # Mirror of the normalization-side guard at the extraction layer:
+        # if the payload is a non-empty dict but no recognized rows-bearing
+        # key exists, raise loudly so a future schema drift is surfaced
+        # instead of silently producing zero rows.
+        with self.assertRaisesRegex(RuntimeError, "response shape may have changed"):
+            updater._extract_rows_and_next({"unknown_key": [1, 2]})
+
 
 if __name__ == "__main__":
     unittest.main()

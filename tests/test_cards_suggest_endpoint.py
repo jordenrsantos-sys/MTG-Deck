@@ -132,6 +132,63 @@ class CardsSuggestEndpointTests(unittest.TestCase):
         self.assertGreaterEqual(len(rows), 1)
         self.assertEqual(rows[0].get("name"), "Sol Ring")
 
+    def test_suggest_commander_only_filters_out_non_commanders(self) -> None:
+        if _IMPORT_ERROR is not None:
+            self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")
+
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get(
+                "/cards/suggest",
+                params={
+                    "q": "ring",
+                    "snapshot_id": DECKLIST_FIXTURE_SNAPSHOT_ID,
+                    "limit": 20,
+                    "commander_only": 1,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body.get("query"), "ring")
+        self.assertEqual(body.get("snapshot_id"), DECKLIST_FIXTURE_SNAPSHOT_ID)
+        self.assertEqual(body.get("limit"), 20)
+        self.assertEqual(body.get("results"), [])
+
+    def test_suggest_commander_only_returns_legal_commanders(self) -> None:
+        if _IMPORT_ERROR is not None:
+            self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")
+
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get(
+                "/cards/suggest",
+                params={
+                    "q": "kren",
+                    "snapshot_id": DECKLIST_FIXTURE_SNAPSHOT_ID,
+                    "limit": 20,
+                    "commander_only": 1,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body.get("query"), "kren")
+        self.assertEqual(body.get("snapshot_id"), DECKLIST_FIXTURE_SNAPSHOT_ID)
+        self.assertEqual(body.get("limit"), 20)
+
+        rows = body.get("results")
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "oracle_id": "ORA_CMDR_001",
+                    "name": "Krenko, Mob Boss",
+                    "mana_cost": "{2}{R}{R}",
+                    "type_line": "Legendary Creature — Goblin Warrior",
+                    "image_uri": None,
+                }
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

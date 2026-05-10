@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Sequence, Tuple
 
-from engine.db import resolve_db_path
+from engine.db import resolve_db_path, resolve_image_cache_dir
 from engine.image_cache_contract import (
     IMAGE_CACHE_ALLOWED_SIZES,
     IMAGE_CACHE_EXTENSIONS_PREFERRED,
@@ -144,7 +144,7 @@ def _resolve_db_path_from_cli(raw_db_path: Any) -> Path:
 def _resolve_output_dir(raw_output_dir: Any) -> Path:
     token = _nonempty_str(raw_output_dir)
     if token == "":
-        raise RuntimeError("--out is required")
+        return Path(resolve_image_cache_dir()).resolve()
 
     candidate = Path(token).expanduser()
     if not candidate.is_absolute():
@@ -612,7 +612,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         choices=sorted(PREFETCH_SOURCE_MODES),
         help="Image URL source mode: auto (prefer card_images), card_images, or legacy cards metadata",
     )
-    parser.add_argument("--out", default="./data/card_images", help="Output cache root directory")
+    parser.add_argument("--out", default=resolve_image_cache_dir(), help="Output cache root directory")
     parser.add_argument("--sizes", default="normal", help="Comma-separated image sizes (normal,small)")
     parser.add_argument("--size", default="", help=argparse.SUPPRESS)
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="Max cards to prefetch (<=0 means no limit; default: full snapshot)")

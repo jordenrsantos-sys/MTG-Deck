@@ -1,0 +1,43 @@
+{
+  "_informational_only_doc": "Per sub-task 5a.6 (Path C canonical realignment): these per-bracket per-axis caps were originally intended to drive bracket assignment in 5a.5, but have been DEMOTED to TRACK_ONLY (analytics-only diagnostic). The validator computes power_staple_counts per deck and surfaces them via the power_staple_diagnostic field, but `_assign_engine_bracket_v1` does NOT consult these caps in the bracket walk. The data is preserved for future analytics consumers.",
+  "axes": [
+    "cheap_tutor",
+    "fast_mana",
+    "interaction_staple",
+    "value_staple"
+  ],
+  "informational_only": true,
+  "caps_per_bracket": {
+    "B1": {
+      "cheap_tutor": 0,
+      "fast_mana": 0,
+      "interaction_staple": 0,
+      "value_staple": 0
+    },
+    "B2": {
+      "cheap_tutor": 1,
+      "fast_mana": 2,
+      "interaction_staple": 3,
+      "value_staple": 2
+    },
+    "B3": {
+      "cheap_tutor": 3,
+      "fast_mana": 4,
+      "interaction_staple": 8,
+      "value_staple": 6
+    },
+    "B4": {
+      "cheap_tutor": 4,
+      "fast_mana": null,
+      "interaction_staple": null,
+      "value_staple": null
+    },
+    "B5": {
+      "cheap_tutor": null,
+      "fast_mana": null,
+      "interaction_staple": null,
+      "value_staple": null
+    }
+  },
+  "version": "power_staple_caps_v1"
+}

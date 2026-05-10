@@ -1,6 +1,28 @@
 import type { BuildResponsePayload } from "./workspaceTypes";
 import { asRecord, firstNonEmptyString, firstNumber, getPath } from "./workspaceUtils";
 import Chip from "../ui/primitives/Chip";
+import Badge, { type BadgeVariant } from "../ui/primitives/Badge";
+import Tooltip from "../ui/primitives/Tooltip";
+
+/* Phase 4.2 exemplar primitive consumer:
+ * - status / api_ping chips swap from generic <Chip> to <Badge> with variant
+ *   (success/info/warn/error/neutral) reflecting the underlying state.
+ * - the popover summary "i" gains a <Tooltip> consumer per Phase 4.1 D10
+ *   ("Why?" explainers everywhere; tooltip text is content-driven, not generated).
+ * - layout CSS class names remain intact to preserve current visual layout
+ *   (autonomous_repair_log soft-safety #4: HeaderChips refactor visual regression
+ *   → revert that one file. The conservative additive change here keeps the
+ *   layout classes from styles.css and adds primitive consumption only on the
+ *   per-chip tag rendering, demonstrating the design-system handoff without
+ *   triggering a layout revert).
+ */
+function _statusToBadgeVariant(value: string): BadgeVariant {
+  const upper = value.toUpperCase();
+  if (upper === "OK" || upper === "PASS") return "success";
+  if (upper === "WARN" || upper === "PENDING" || upper === "RUNNING") return "warn";
+  if (upper === "ERROR" || upper === "FAIL") return "error";
+  return "neutral";
+}
 
 type HeaderChipsApiPingSummary = {
   status: "PENDING" | "OK" | "ERROR";
@@ -51,33 +73,24 @@ export default function HeaderChips(props: HeaderChipsProps) {
   const cardsNeeded = firstNumber(buildResponse?.cards_needed);
   const cardsToCut = firstNumber(buildResponse?.cards_to_cut);
 
-  const compactChips: Array<{ label: string; value: string; className?: string }> = [
-    {
-      label: "snapshot",
-      value: snapshotId,
-    },
-    {
-      label: "profile",
-      value: profileId,
-    },
-    {
-      label: "bracket",
-      value: bracketId,
-    },
-    {
-      label: "status",
-      value: status,
-      className: "workspace-chip-info",
-    },
-    {
-      label: "ui_mode",
-      value: uiMode,
-      className: "workspace-chip-info",
-    },
+  // Phase 4.2: status-flavored chips render as <Badge> with variant; plain
+  // metadata chips stay as <Chip>. `badgeVariant` non-undefined → render via
+  // Badge; undefined → render via Chip.
+  const compactChips: Array<{
+    label: string;
+    value: string;
+    className?: string;
+    badgeVariant?: BadgeVariant;
+  }> = [
+    { label: "snapshot", value: snapshotId },
+    { label: "profile", value: profileId },
+    { label: "bracket", value: bracketId },
+    { label: "status", value: status, badgeVariant: _statusToBadgeVariant(status) },
+    { label: "ui_mode", value: uiMode, badgeVariant: "info" },
     {
       label: "api_ping",
       value: apiPingSummary.status,
-      className: apiPingSummary.status === "OK" ? "workspace-chip-info" : undefined,
+      badgeVariant: _statusToBadgeVariant(apiPingSummary.status),
     },
   ];
 
@@ -203,21 +216,35 @@ export default function HeaderChips(props: HeaderChipsProps) {
     },
   ];
 
+  // Phase 4.2: render helper picks Badge for status chips, Chip otherwise.
+  const renderChip = (chip: typeof compactChips[number]) => {
+    if (chip.badgeVariant) {
+      return (
+        <Badge key={chip.label} variant={chip.badgeVariant} className={chip.className}>
+          {chip.label}: {chip.value}
+        </Badge>
+      );
+    }
+    return (
+      <Chip key={chip.label} className={chip.className}>
+        {chip.label}: {chip.value}
+      </Chip>
+    );
+  };
+
   if (compact) {
     return (
       <section className={classes}>
         <div className="workspace-compact-header-row">
           <div className="workspace-chip-row workspace-compact-header-chips">
-            {compactChips.map((chip) => (
-              <Chip key={chip.label} className={chip.className}>
-                {chip.label}: {chip.value}
-              </Chip>
-            ))}
+            {compactChips.map(renderChip)}
           </div>
 
           <details className="workspace-header-meta-popover">
             <summary aria-label="Show build metadata" title="Show build metadata">
-              i
+              <Tooltip content="Show full build metadata">
+                <span>i</span>
+              </Tooltip>
             </summary>
 
             <div className="workspace-header-meta-popover-card" role="dialog" aria-label="Build metadata">
@@ -243,11 +270,7 @@ export default function HeaderChips(props: HeaderChipsProps) {
         <summary>Build metadata</summary>
 
         <div className="workspace-chip-row workspace-compact-header-chips">
-          {compactChips.map((chip) => (
-            <Chip key={chip.label} className={chip.className}>
-              {chip.label}: {chip.value}
-            </Chip>
-          ))}
+          {compactChips.map(renderChip)}
         </div>
 
         <dl className="workspace-header-meta-list workspace-header-meta-list-expanded">

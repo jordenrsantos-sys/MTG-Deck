@@ -110,6 +110,7 @@ export default function DeckInputPanel(props: DeckInputPanelProps) {
             apiBase={apiBase}
             snapshotId={snapshotId}
             limit={12}
+            commanderOnly
             onChange={onCommanderChange}
             onSelect={onCommanderSelect}
             onHoverCard={onCommanderHoverCard}

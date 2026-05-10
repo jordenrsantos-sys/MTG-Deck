@@ -1,10 +1,43 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useReducer, useRef, useState } from "react";
 
 import fixtureBuildResult from "../../fixtures/build_result.json";
 import BuildHistoryPanel from "../components/BuildHistoryPanel";
+// Phase 4.6: ImportRoute hand-off bridge + latency probe.
+import { readStagedImport as _readStagedImport, clearStagedImport as _clearStagedImport } from "./ImportRoute";
+// Phase 4 BUNDLE Integration (4.13): wire orphaned panels.
+import SufficiencyDashboard from "../components/stats/SufficiencyDashboard";
+import SwapSuggestionsList from "../components/stats/SwapSuggestionsList";
+import CommanderRecommendationPanel from "../components/recommendation/CommanderRecommendationPanel";
+import SeedBuilderPanel from "../components/seed/SeedBuilderPanel";
+// Phase 4.14 Stage 3: GroupedDeckList + GroupableCard imports removed
+// (the render call is gone; the source files stay BYTE-IDENTICAL per HARD #14).
+import type { SwapSuggestion } from "../lib/applySwap";
+import Badge from "../ui/primitives/Badge";
+import { saveDeck as _persistDeckViaAdapter } from "../lib/decks/savedDecks";
+import {
+  ACTIVE_DECK_STORAGE_KEY,
+  buildActiveDeckPayload,
+  buildBuildRequestBody,
+  buildWorkspacePillText,
+  callBuildEndpoint,
+  extractCommanderRecommendation,
+  extractSufficiencySummary,
+  extractSwapSuggestions,
+  normalizeActiveDeckSource,
+  restoreFromActiveDeckSlot as _restoreFromActiveDeckSlot,
+  shouldShowCommanderRecommendation,
+  shouldShowSufficiencyDashboard,
+  shouldShowSwapSuggestions,
+} from "./workspaceIntegrationAdapters";
+// Phase 4.13.2: pure reducer + types for workspace deck state.
+import {
+  deckReducer,
+  INITIAL_STATE as INITIAL_DECK_STATE,
+  type DeckSource,
+} from "../lib/workspaceDeckState";
 import CanonicalSlotsPanel from "../components/CanonicalSlotsPanel";
 import CardModal from "../components/CardModal";
-import ArtDock from "../components/cards/ArtDock";
+import HoverCardPreview from "../components/cards/HoverCardPreview";
 import DeckEditorPanel, { type DeckEditorCardHint } from "../components/deck/DeckEditorPanel";
 import type { DeckPanelCard, DeckPanelCommander } from "../components/deck/DeckPanel";
 import HeaderChips from "../components/HeaderChips";
@@ -24,6 +57,7 @@ import {
   DEFAULT_API_BASE,
   asArray,
   asRecord,
+  buildPrefetchCardImagesCommand,
   copyTextToClipboard,
   extractResolveNamesMissingNames,
   expandDecklistRowsInInputOrder,
@@ -37,9 +71,31 @@ import {
 
 const fixtureRoot = asRecord(fixtureBuildResult);
 const defaultSnapshotId = firstNonEmptyString(fixtureRoot?.db_snapshot_id) || "";
+
+// Phase 4.6: one-shot latency probe (Phase 4.4-vs-Phase-6A decision input).
+// Captures the first /build fetch wall-clock; logs ONCE to console + sets a
+// window-scoped flag for visual probes. Per autonomous_repair_log soft-safety
+// #8: instrumentation impact is a single one-shot log only.
+let _PHASE_4_6_BUILD_LATENCY_LOGGED = false;
+function _phase46MarkBuildLatency(ms: number, source: "fresh" | "reused"): void {
+  if (_PHASE_4_6_BUILD_LATENCY_LOGGED) return;
+  _PHASE_4_6_BUILD_LATENCY_LOGGED = true;
+  try {
+    // eslint-disable-next-line no-console
+    console.info(
+      `[phase4.6 latency] /build first call: ${ms.toFixed(1)}ms (source=${source})`,
+    );
+    if (typeof window !== "undefined") {
+      (window as unknown as { __phase46BuildLatencyMs?: number }).__phase46BuildLatencyMs = ms;
+    }
+  } catch {
+    /* noop */
+  }
+}
 const defaultProfileId = firstNonEmptyString(fixtureRoot?.profile_id) || "focused";
 const defaultBracketId = firstNonEmptyString(fixtureRoot?.bracket_id) || "B2";
-const defaultCommander = firstNonEmptyString(getBuildResultCommander(fixtureRoot)) || "Krenko, Mob Boss";
+// Phase 4.13.2: defaultCommander removed — INITIAL_DECK_STATE in
+// lib/workspaceDeckState owns the fallback commander/decklist constants.
 const HOVER_PREFETCH_LRU_LIMIT = 200;
 const DEFAULT_MAX_SWAPS = 5;
 const DEFAULT_COMPLETE_TARGET_DECK_SIZE = 100;
@@ -49,18 +105,6 @@ const MAX_SWAPS_LIMIT = 50;
 const MAX_COMPLETE_ADDS = 500;
 const RESOLVE_NAMES_MAX_NAMES_PER_REQUEST = 200;
 const DEV_SMOKE_TEST_TOAST_DURATION_MS = 5000;
-const DEV_SMOKE_STALE_REQUEST_MESSAGE = "__DEV_SMOKE_STALE_REQUEST__";
-const DEV_SMOKE_TEST_COMMANDER = "Krenko, Mob Boss";
-const DEV_SMOKE_TEST_CARDS = [
-  "Sol Ring",
-  "Arcane Signet",
-  "Goblin Matron",
-  "Skirk Prospector",
-  "Impact Tremors",
-  "Goblin Warchief",
-  "Goblin Chieftain",
-  "Skullclamp",
-] as const;
 const BASIC_LAND_NAME_KEYS = new Set<string>([
   "plains",
   "island",
@@ -79,6 +123,7 @@ const WINDOWS_ABSOLUTE_PATH_RE = /^[a-zA-Z]:[\\/]/;
 const UNC_ABSOLUTE_PATH_RE = /^\\\\[^\\]/;
 const POSIX_ABSOLUTE_PATH_RE = /^\/(?!\/)/;
 const HTTP_URL_RE = /^https?:\/\//i;
+const DISALLOWED_NETWORK_WRAPPER_KEYS = ["endpoint_payload", "smoke_request_debug"] as const;
 
 const MULLIGAN_MODEL_OPTIONS = ["NORMAL"] as const;
 type MulliganModelId = (typeof MULLIGAN_MODEL_OPTIONS)[number];
@@ -86,20 +131,34 @@ type MulliganModelId = (typeof MULLIGAN_MODEL_OPTIONS)[number];
 const COMPLETE_LAND_MODE_OPTIONS = ["AUTO", "NONE"] as const;
 type DeckCompleteLandMode = (typeof COMPLETE_LAND_MODE_OPTIONS)[number];
 
-type WorkspaceMode = "EDIT" | "TOOLS" | "ANALYZE";
+// Phase 4.14 Stage 1: ANALYZE mode removed (it was redundant with TOOLS;
+// fired the same /deck/complete_v1 endpoint and confused users). EDIT +
+// TOOLS remain.
+type WorkspaceMode = "EDIT" | "TOOLS";
 const WORKSPACE_MODE_STORAGE_KEY = "mtg_workspace_mode_v1";
-const WORKSPACE_MODE_OPTIONS: WorkspaceMode[] = ["EDIT", "TOOLS", "ANALYZE"];
+const SAVED_DECKS_STORAGE_KEY = "mtg_saved_decks_v1";
+const SELECTED_SAVED_DECK_STORAGE_KEY = "mtg_selected_saved_deck_v1";
+const SAVED_DECKS_MAX = 50;
+const WORKSPACE_MODE_OPTIONS: WorkspaceMode[] = ["EDIT", "TOOLS"];
 
-type WorkspaceToolId = "DECK_TRIM" | "MANA_TUNE" | "POWER_TUNE";
+type WorkspaceToolId = "DECK_TRIM" | "POWER_TUNE";
+
+type SavedDeckEntry = {
+  name: string;
+  commander: string;
+  deckText: string;
+  updatedAtMs: number;
+};
+
+type SavedDeckDialogMode = "SAVE" | "RENAME" | "DELETE";
 
 function normalizeWorkspaceMode(value: string | null | undefined): WorkspaceMode {
   const token = typeof value === "string" ? value.trim().toUpperCase() : "";
   if (token === "TOOLS") {
     return "TOOLS";
   }
-  if (token === "ANALYZE") {
-    return "ANALYZE";
-  }
+  // Legacy "ANALYZE" stored in localStorage from prior versions falls through
+  // to "EDIT" — the mode no longer exists per Phase 4.14 Stage 1.
   return "EDIT";
 }
 
@@ -163,6 +222,11 @@ type DeckCompleteResponseV1 = {
   completed_decklist_text_v1?: string;
   unknowns?: ValidateUnknownRow[];
   violations_v1?: ValidateViolationRow[];
+};
+
+type SnapshotPreflightErrorRow = {
+  code?: string;
+  message?: string;
 };
 
 type DeckTrimResultRow = {
@@ -264,13 +328,9 @@ type SmartToolHistoryOptions = {
   summaryCounts?: Record<string, number>;
 };
 
-function getBuildResultCommander(root: Record<string, unknown> | null): string | null {
-  if (!root) {
-    return null;
-  }
-  const result = asRecord(root.result);
-  return firstNonEmptyString(result?.commander);
-}
+// Phase 4.13.2: getBuildResultCommander helper retired alongside the
+// defaultCommander module-level binding it served (INITIAL_DECK_STATE
+// in lib/workspaceDeckState now owns the fallback).
 
 function buildCardsInputFromPayloadCards(cards: string[]): string {
   return cards.map((name: string) => `1 ${name}`).join("\n");
@@ -280,16 +340,85 @@ function buildTimestampLabel(now: Date): string {
   return `${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
 }
 
-function buildHoverPreviewImageUrl(oracleIdRaw: string): string {
+function buildHoverPreviewImageUrl(apiBase: string, oracleIdRaw: string): string {
   const oracleId = oracleIdRaw.trim();
   if (oracleId === "") {
     return "";
   }
-  return `/cards/image/${encodeURIComponent(oracleId)}?size=normal`;
+  return `${normalizeApiBase(apiBase)}/cards/image/${encodeURIComponent(oracleId)}?size=normal`;
 }
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function normalizeSavedDeckName(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function normalizeSavedDeckEntry(value: unknown): SavedDeckEntry | null {
+  const row = asRecord(value);
+  if (!row) {
+    return null;
+  }
+
+  const name = normalizeSavedDeckName(asString(row.name));
+  const commander = asString(row.commander).trim();
+  const deckText = asString(row.deckText);
+  const updatedAtMsCandidate = firstNumber(row.updatedAtMs, row.updated_at_ms, row.updated_at);
+  const updatedAtMs = updatedAtMsCandidate !== null ? Math.max(0, Math.trunc(updatedAtMsCandidate)) : 0;
+
+  if (name === "" || commander === "" || deckText.trim() === "") {
+    return null;
+  }
+
+  return {
+    name,
+    commander,
+    deckText,
+    updatedAtMs,
+  };
+}
+
+function normalizeSavedDeckEntries(value: unknown): SavedDeckEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const dedupedByKey = new Map<string, SavedDeckEntry>();
+  for (const entry of value) {
+    const normalized = normalizeSavedDeckEntry(entry);
+    if (!normalized) {
+      continue;
+    }
+
+    const key = normalized.name.toLowerCase();
+    const existing = dedupedByKey.get(key);
+    if (!existing) {
+      dedupedByKey.set(key, normalized);
+      continue;
+    }
+
+    if (normalized.updatedAtMs > existing.updatedAtMs) {
+      dedupedByKey.set(key, normalized);
+      continue;
+    }
+
+    if (normalized.updatedAtMs === existing.updatedAtMs && normalized.name.localeCompare(existing.name) < 0) {
+      dedupedByKey.set(key, normalized);
+    }
+  }
+
+  return [...dedupedByKey.values()]
+    .sort((left: SavedDeckEntry, right: SavedDeckEntry) => {
+      if (left.updatedAtMs !== right.updatedAtMs) {
+        return right.updatedAtMs - left.updatedAtMs;
+      }
+      return left.name.localeCompare(right.name);
+    })
+    .slice(0, SAVED_DECKS_MAX);
 }
 
 function countNonEmptyTextLines(text: string): number {
@@ -332,6 +461,33 @@ function asDeckCompleteAddedRows(value: unknown): DeckCompleteAddedCardV1[] {
     return [];
   }
   return value.filter((entry: unknown) => Boolean(asRecord(entry))) as DeckCompleteAddedCardV1[];
+}
+
+function asSnapshotPreflightErrorRows(value: unknown): SnapshotPreflightErrorRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((entry: unknown) => Boolean(asRecord(entry))) as SnapshotPreflightErrorRow[];
+}
+
+function collectSnapshotPreflightFixInstructions(errors: SnapshotPreflightErrorRow[]): string[] {
+  const codeSet = new Set<string>();
+  for (const row of errors) {
+    const code = asString(row.code).trim().toUpperCase();
+    if (code !== "") {
+      codeSet.add(code);
+    }
+  }
+
+  const instructions: string[] = [];
+  if (codeSet.has("SNAPSHOT_TAGS_NOT_COMPILED")) {
+    instructions.push("If SNAPSHOT_TAGS_NOT_COMPILED: run snapshot_build.tag_snapshot then snapshot_build.index_build.");
+  }
+  if (codeSet.has("CARD_IMAGES_SCHEMA_INVALID")) {
+    instructions.push("If CARD_IMAGES_SCHEMA_INVALID: run migration script snapshot_build.migrate_card_images_table.");
+  }
+
+  return instructions;
 }
 
 function isLocalAbsolutePath(value: string): boolean {
@@ -377,6 +533,38 @@ function toErrorPayloadText(value: unknown): string {
   } catch {
     return String(redacted);
   }
+}
+
+function toErrorRequestBodyText(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  return toErrorPayloadText(value);
+}
+
+function findDisallowedNetworkWrapperKey(value: unknown): (typeof DISALLOWED_NETWORK_WRAPPER_KEYS)[number] | null {
+  const row = asRecord(value);
+  if (!row) {
+    return null;
+  }
+
+  for (const key of DISALLOWED_NETWORK_WRAPPER_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(row, key)) {
+      return key;
+    }
+  }
+
+  return null;
+}
+
+function serializeRequestBodyForNetwork(endpoint: string, payload: unknown): string {
+  const disallowedKey = findDisallowedNetworkWrapperKey(payload);
+  if (disallowedKey) {
+    throw new Error(
+      `Refusing to send wrapped payload to ${endpoint}: unexpected key "${disallowedKey}". Send the flat endpoint request model.`,
+    );
+  }
+  return JSON.stringify(payload);
 }
 
 function toErrorStackTrace(error: unknown): string {
@@ -444,7 +632,7 @@ function buildApiErrorDetails(
   if (responseJsonText.trim() === "") {
     responseJsonText = toErrorPayloadText(responsePayload);
   }
-  const requestBodyText = toErrorPayloadText(options?.requestPayload);
+  const requestBodyText = toErrorRequestBodyText(options?.requestPayload);
   const requestDebugText = toErrorPayloadText(options?.requestDebug);
 
   return {
@@ -473,7 +661,7 @@ function buildSyntheticApiErrorDetails(
   },
 ): ApiErrorDetails {
   const responseJsonText = toErrorPayloadText(responsePayload);
-  const requestBodyText = toErrorPayloadText(options?.requestPayload);
+  const requestBodyText = toErrorRequestBodyText(options?.requestPayload);
   const requestDebugText = toErrorPayloadText(options?.requestDebug);
 
   return {
@@ -828,47 +1016,6 @@ function parseCompletedDecklistText(decklistText: string): { commander: string |
   };
 }
 
-function parseCompletedDecklistCounts(decklistText: string): {
-  commanderCount: number;
-  deckCount: number;
-  totalCount: number;
-} {
-  const lines = decklistText
-    .split(/\r?\n/)
-    .map((line: string) => line.trim())
-    .filter((line: string) => line !== "");
-
-  let section: "NONE" | "COMMANDER" | "DECK" = "NONE";
-  let commanderCount = 0;
-  let deckCount = 0;
-
-  for (const line of lines) {
-    if (line.toLowerCase() === "commander") {
-      section = "COMMANDER";
-      continue;
-    }
-    if (line.toLowerCase() === "deck") {
-      section = "DECK";
-      continue;
-    }
-    if (!/^\d+\s+.+$/.test(line)) {
-      continue;
-    }
-
-    if (section === "COMMANDER") {
-      commanderCount += 1;
-    } else if (section === "DECK") {
-      deckCount += 1;
-    }
-  }
-
-  return {
-    commanderCount,
-    deckCount,
-    totalCount: commanderCount + deckCount,
-  };
-}
-
 function isLikelyLandAddition(row: DeckCompleteAddedCardV1): boolean {
   const cardName = asString(row.name);
   if (cardName === "") {
@@ -1193,17 +1340,104 @@ export default function WorkspaceView() {
   const [snapshotId, setSnapshotId] = useState(defaultSnapshotId);
   const [profileId, setProfileId] = useState(defaultProfileId);
   const [bracketId, setBracketId] = useState(defaultBracketId);
-  const [commander, setCommander] = useState(defaultCommander);
-  const [deckText, setDeckText] = useState<string>(
-    ["1 Sol Ring", "1 Arcane Signet", "Goblin Matron", "Skirk Prospector", "Impact Tremors"].join("\n"),
-  );
-  const [deckTextRevision, setDeckTextRevision] = useState(0);
+  // Phase 4.13.2 architectural refactor: replace useState + useRef +
+  // two-racing-useEffects with a useReducer-backed pure state machine.
+  // The reducer (lib/workspaceDeckState) carries `source` as a first-class
+  // field + an `isHydrated` flag that gates persistence so default-state
+  // writes never leak into mtgdb:workspace:active_deck_v1. See the
+  // hydration + persistence useEffects further below.
+  const [deckState, dispatchDeckAction] = useReducer(deckReducer, INITIAL_DECK_STATE);
+  const commander = deckState.commander;
+  const deckText = deckState.deckText;
+  const deckTextRevision = deckState.deckTextRevision;
+  const buildResponse = deckState.buildResponse as BuildResponsePayload | null;
+
+  // Compatibility wrappers — DeckInputPanel adapter prop signature SHA
+  // 18ecdac40880... BYTE-IDENTICAL per HARD #7 (the prop type is `(value:
+  // string) => void`; these wrappers keep that contract).
+  const setCommander = (value: string) => dispatchDeckAction({ type: "USER_EDIT_COMMANDER", commander: value });
+  const setDeckText = (value: string) => dispatchDeckAction({ type: "USER_EDIT_DECK_TEXT", deckText: value });
+  // The reducer auto-bumps deckTextRevision on USER_EDIT_DECK_TEXT /
+  // HYDRATE_* / LOAD_SAVED_DECK — this wrapper is a no-op for backward
+  // compat with existing call sites that paired setDeckText + this bumper
+  // (e.g. `applyDeckText`).
+  const setDeckTextRevision = (_updater: ((rev: number) => number) | number): void => {
+    /* reducer auto-bumps; intentional no-op */
+  };
+  const setBuildResponse = (value: BuildResponsePayload | null): void => {
+    if (value === null) {
+      dispatchDeckAction({ type: "CLEAR_BUILD_RESPONSE" });
+    } else {
+      dispatchDeckAction({ type: "BUILD_SUCCESS", response: value as unknown as Record<string, unknown> });
+    }
+  };
+
+  // Phase 4.13.2 single hydration useEffect with explicit precedence:
+  // IMPORT (one-shot consume + clear; 4.6 contract preserved) > active-deck
+  // slot (sticky; not cleared; Goldfish still consumes it; 4.13.1 contract
+  // preserved) > HYDRATE_NO_SOURCE (preserves fallback values, marks
+  // hydrated so persistence guard activates on first user edit).
+  useEffect(() => {
+    const staged = _readStagedImport();
+    if (staged) {
+      const cmdr = staged.commander && staged.commander !== "" ? staged.commander : INITIAL_DECK_STATE.commander;
+      const list = staged.decklist && staged.decklist !== "" ? staged.decklist : INITIAL_DECK_STATE.deckText;
+      const source = normalizeActiveDeckSource(staged.source) as DeckSource;
+      dispatchDeckAction({ type: "HYDRATE_FROM_IMPORT_SLOT", commander: cmdr, decklist: list, source });
+      _clearStagedImport();
+      // eslint-disable-next-line no-console
+      console.info(
+        `[phase4.13.2 hydrate] IMPORT slot consumed: source=${staged.source} unknowns=${staged.unknowns.length}`,
+      );
+      return;
+    }
+    const restored = _restoreFromActiveDeckSlot();
+    if (restored) {
+      dispatchDeckAction({
+        type: "HYDRATE_FROM_ACTIVE_SLOT",
+        commander: restored.commander,
+        decklist: restored.decklist,
+        source: restored.source as DeckSource,
+      });
+      // eslint-disable-next-line no-console
+      console.info(`[phase4.13.2 hydrate] active-deck slot restored: source=${restored.source}`);
+      return;
+    }
+    dispatchDeckAction({ type: "HYDRATE_NO_SOURCE" });
+  }, []);
+  const [savedDecks, setSavedDecks] = useState<SavedDeckEntry[]>(() => {
+    if (typeof window === "undefined") {
+      return [];
+    }
+
+    try {
+      const stored = window.localStorage.getItem(SAVED_DECKS_STORAGE_KEY);
+      if (!stored) {
+        return [];
+      }
+
+      const parsed = safeParseJson(stored);
+      return normalizeSavedDeckEntries(parsed);
+    } catch {
+      return [];
+    }
+  });
+  const [selectedSavedDeckName, setSelectedSavedDeckName] = useState(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+
+    try {
+      return normalizeSavedDeckName(window.localStorage.getItem(SELECTED_SAVED_DECK_STORAGE_KEY) || "");
+    } catch {
+      return "";
+    }
+  });
 
   const [, setValidationMessage] = useState<string | null>(null);
   const [runningSmartTrim, setRunningSmartTrim] = useState(false);
   const [runningSmartTune, setRunningSmartTune] = useState(false);
   const [runningSmartComplete, setRunningSmartComplete] = useState(false);
-  const [runningDevSmokeCompleteApply, setRunningDevSmokeCompleteApply] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [apiErrorDetails, setApiErrorDetails] = useState<ApiErrorDetails | null>(null);
   const [isApiReachable, setIsApiReachable] = useState(false);
@@ -1212,8 +1446,19 @@ export default function WorkspaceView() {
   const [lastTuneSucceeded, setLastTuneSucceeded] = useState(false);
   const [lastTrimSucceeded, setLastTrimSucceeded] = useState(false);
 
-  const [buildResponse, setBuildResponse] = useState<BuildResponsePayload | null>(null);
+  // Phase 4.13.2: buildResponse + setBuildResponse moved earlier as
+  // reducer-derived bindings + compatibility wrapper. Only requestPayload
+  // remains here.
   const [requestPayload, setRequestPayload] = useState<BuildRequestPayload | null>(null);
+  // Phase 4 BUNDLE Integration (4.13): parent page mode toggle. EDIT/TOOLS/
+  // ANALYZE remain children of WORKSPACE per autonomous_repair_log #8.
+  const [pageMode, setPageMode] = useState<"WORKSPACE" | "SEED_BUILDER">("WORKSPACE");
+
+  // Phase 4.13.2: Build button pending/error state derive from the reducer.
+  // The Build click handler dispatches BUILD_PENDING → fetch → BUILD_SUCCESS
+  // / BUILD_ERROR. No separate useState needed.
+  const runningBuild = deckState.buildPending;
+  const buildError = deckState.buildError;
 
   const [nameOverridesV1] = useState<NameOverrideV1[]>([]);
   const [, setSmartToolValidateResponse] = useState<DeckValidateResponsePayload | null>(null);
@@ -1229,11 +1474,11 @@ export default function WorkspaceView() {
 
   const [deckTuneResponse, setDeckTuneResponse] = useState<DeckTuneResponseV1 | null>(null);
   const [completionResult, setCompletionResult] = useState<DeckCompleteResponseV1 | null>(null);
-  const [, setCompletionError] = useState<string | null>(null);
+  const [completionError, setCompletionError] = useState<string | null>(null);
   const [deckTrimResult, setDeckTrimResult] = useState<DeckTrimToolResult | null>(null);
   const [tuneSourceCards, setTuneSourceCards] = useState<string[]>([]);
   const [tuneSourceCommander, setTuneSourceCommander] = useState("");
-  const [activeTool, setActiveTool] = useState<WorkspaceToolId>("MANA_TUNE");
+  const [activeTool, setActiveTool] = useState<WorkspaceToolId>("DECK_TRIM");
 
   const [pendingCutOrder, setPendingCutOrder] = useState<string[]>([]);
   const [isCompletionBlockedModalOpen, setIsCompletionBlockedModalOpen] = useState(false);
@@ -1241,12 +1486,19 @@ export default function WorkspaceView() {
   const [completionBlockedViolations, setCompletionBlockedViolations] = useState<ValidateViolationRow[]>([]);
   const [completionBlockedStatus, setCompletionBlockedStatus] = useState("");
   const [completionBlockedToolLabel, setCompletionBlockedToolLabel] = useState("Smart Tool");
+  const [isSnapshotNotReadyModalOpen, setIsSnapshotNotReadyModalOpen] = useState(false);
+  const [snapshotNotReadyToolLabel, setSnapshotNotReadyToolLabel] = useState("Smart Tool");
+  const [snapshotNotReadyStatus, setSnapshotNotReadyStatus] = useState("");
+  const [snapshotNotReadyErrors, setSnapshotNotReadyErrors] = useState<SnapshotPreflightErrorRow[]>([]);
 
   const [historyEntries, setHistoryEntries] = useState<BuildHistoryEntry[]>([]);
   const [selectedHistoryEntryId, setSelectedHistoryEntryId] = useState<string | null>(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [savedDeckDialogMode, setSavedDeckDialogMode] = useState<SavedDeckDialogMode | null>(null);
+  const [savedDeckDialogTargetName, setSavedDeckDialogTargetName] = useState("");
+  const [savedDeckDialogNameInput, setSavedDeckDialogNameInput] = useState("");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [errorDetailsOpenSignal, setErrorDetailsOpenSignal] = useState(0);
+  const [errorDetailsOpenSignal] = useState(0);
   const [releaseChecklistCopyNotice, setReleaseChecklistCopyNotice] = useState<string | null>(null);
   const [releaseChecklistCopyError, setReleaseChecklistCopyError] = useState<string | null>(null);
   const [apiPingSummary, setApiPingSummary] = useState<ApiPingSummary>(DEFAULT_API_PING_SUMMARY);
@@ -1255,23 +1507,47 @@ export default function WorkspaceView() {
 
   const [hoverCard, setHoverCard] = useState<HoverCard | null>(null);
   const [previewImageFailures, setPreviewImageFailures] = useState<Record<string, true>>({});
+  const [missingImageOracleIds, setMissingImageOracleIds] = useState<Record<string, true>>({});
 
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
   const [cardModalOracleId, setCardModalOracleId] = useState<string | null>(null);
   const [cardModalList, setCardModalList] = useState<string[]>([]);
   const [cardModalIndex, setCardModalIndex] = useState(0);
+  const savedDeckDialogDescriptionId = useId();
+  const savedDeckDialogValidationId = useId();
 
   const historyCounterRef = useRef(0);
   const hoverPrefetchLruRef = useRef<Set<string>>(new Set<string>());
   const completionRequestIdRef = useRef(0);
   const resolveDeckNamesRequestIdRef = useRef(0);
-  const devSmokeRequestIdRef = useRef(0);
   const lastDeckTextMutationReasonRef = useRef("initial");
+  const savedDeckDialogRestoreFocusRef = useRef<HTMLElement | null>(null);
+  const savedDeckDialogShellRef = useRef<HTMLDivElement | null>(null);
+  // Phase 4.14 Stage 1: mirror completionResult + completionError into refs
+  // so the unified Complete handler can read the post-await values
+  // synchronously without a stale-closure race.
+  const completionResultRef = useRef<DeckCompleteResponseV1 | null>(null);
+  const completionErrorRef = useRef<string | null>(null);
+
+  // Phase 4.14 Stage 1: keep ref + state in sync so the unified Complete
+  // handler can observe the results without a stale-closure race.
+  useEffect(() => {
+    completionResultRef.current = completionResult;
+  }, [completionResult]);
+  useEffect(() => {
+    completionErrorRef.current = completionError;
+  }, [completionError]);
 
   const isEditMode = workspaceMode === "EDIT";
   const isToolsMode = workspaceMode === "TOOLS";
-  const isAnalyzeMode = workspaceMode === "ANALYZE";
-  const isDevMode = import.meta.env.DEV;
+  // Phase 4.14 Stage 1: ANALYZE mode removed. Conditional sites that
+  // previously gated rendering on `isAnalyzeMode` now treat ANALYZE-only
+  // surfaces as TOOLS-or-EDIT-rendered (consistent with how users actually
+  // navigated the workspace). The constant is retained as `false` so any
+  // missed call site short-circuits cleanly rather than raising a
+  // ReferenceError; the few intentional `isAnalyzeMode` predicates below
+  // are equivalent to `false` and were ANALYZE-mode-only flair.
+  const isAnalyzeMode = false;
 
   const parsedDeckRows = useMemo(() => parseDecklistInput(deckText), [deckText, deckTextRevision]);
   const deckTextLineCount = parsedDeckRows.length;
@@ -1288,6 +1564,113 @@ export default function WorkspaceView() {
       ...buildDerivedHints,
     };
   }, [deckPanelCards, resolvedDeckCardHints]);
+  const savedDeckNames = useMemo(() => savedDecks.map((entry: SavedDeckEntry) => entry.name), [savedDecks]);
+  const normalizedSavedDeckDialogNameInput = useMemo(
+    () => normalizeSavedDeckName(savedDeckDialogNameInput),
+    [savedDeckDialogNameInput],
+  );
+  const normalizedSavedDeckDialogTargetName = useMemo(
+    () => normalizeSavedDeckName(savedDeckDialogTargetName),
+    [savedDeckDialogTargetName],
+  );
+  const savedDeckDialogExistingDeck = useMemo(() => {
+    if (savedDeckDialogMode !== "SAVE" || normalizedSavedDeckDialogNameInput === "") {
+      return null;
+    }
+
+    return (
+      savedDecks.find(
+        (entry: SavedDeckEntry) => entry.name.toLowerCase() === normalizedSavedDeckDialogNameInput.toLowerCase(),
+      ) || null
+    );
+  }, [normalizedSavedDeckDialogNameInput, savedDeckDialogMode, savedDecks]);
+  const saveDialogHasChanges = useMemo(() => {
+    if (!savedDeckDialogExistingDeck) {
+      return false;
+    }
+    const normalizedCommanderName = commander.trim();
+    return savedDeckDialogExistingDeck.commander !== normalizedCommanderName || savedDeckDialogExistingDeck.deckText !== deckText;
+  }, [commander, deckText, savedDeckDialogExistingDeck]);
+  const savedDeckDialogAtCapacity = useMemo(() => {
+    if (savedDeckDialogMode !== "SAVE" || normalizedSavedDeckDialogNameInput === "") {
+      return false;
+    }
+    if (savedDeckDialogExistingDeck) {
+      return false;
+    }
+    return savedDecks.length >= SAVED_DECKS_MAX;
+  }, [normalizedSavedDeckDialogNameInput, savedDeckDialogExistingDeck, savedDeckDialogMode, savedDecks.length]);
+  const savedDeckDialogRenameConflict = useMemo(() => {
+    if (savedDeckDialogMode !== "RENAME" || normalizedSavedDeckDialogNameInput === "") {
+      return null;
+    }
+
+    const normalizedTargetKey = normalizedSavedDeckDialogTargetName.toLowerCase();
+    return (
+      savedDecks.find((entry: SavedDeckEntry) => {
+        const entryKey = entry.name.toLowerCase();
+        return entryKey === normalizedSavedDeckDialogNameInput.toLowerCase() && entryKey !== normalizedTargetKey;
+      }) || null
+    );
+  }, [normalizedSavedDeckDialogNameInput, normalizedSavedDeckDialogTargetName, savedDeckDialogMode, savedDecks]);
+  const savedDeckDialogValidationMessage = useMemo(() => {
+    if (!savedDeckDialogMode || savedDeckDialogMode === "DELETE") {
+      return "";
+    }
+
+    if (normalizedSavedDeckDialogNameInput === "") {
+      return savedDeckDialogMode === "RENAME" ? "Deck name is required to rename." : "Deck name is required to save.";
+    }
+
+    if (savedDeckDialogMode === "SAVE") {
+      if (commander.trim() === "" || deckText.trim() === "") {
+        return "Add a commander and deck cards before saving.";
+      }
+      if (savedDeckDialogAtCapacity) {
+        return `Saved deck limit (${SAVED_DECKS_MAX}) reached. Delete a saved deck before creating a new one.`;
+      }
+      return "";
+    }
+
+    if (savedDeckDialogRenameConflict) {
+      return `Saved deck "${savedDeckDialogRenameConflict.name}" already exists.`;
+    }
+    return "";
+  }, [
+    commander,
+    deckText,
+    normalizedSavedDeckDialogNameInput,
+    savedDeckDialogAtCapacity,
+    savedDeckDialogMode,
+    savedDeckDialogRenameConflict,
+  ]);
+  const savedDeckDialogDescribedBy = useMemo(() => {
+    if (savedDeckDialogValidationMessage === "") {
+      return savedDeckDialogDescriptionId;
+    }
+    return `${savedDeckDialogDescriptionId} ${savedDeckDialogValidationId}`;
+  }, [savedDeckDialogDescriptionId, savedDeckDialogValidationId, savedDeckDialogValidationMessage]);
+  const savedDeckDialogSubmitLabel = useMemo(() => {
+    if (savedDeckDialogMode === "DELETE") {
+      return "Delete Deck";
+    }
+    if (savedDeckDialogMode === "RENAME") {
+      return "Rename Deck";
+    }
+    if (savedDeckDialogExistingDeck && saveDialogHasChanges) {
+      return "Overwrite Deck";
+    }
+    return "Save Deck";
+  }, [saveDialogHasChanges, savedDeckDialogExistingDeck, savedDeckDialogMode]);
+  const savedDeckDialogSubmitDisabled = useMemo(() => {
+    if (!savedDeckDialogMode) {
+      return true;
+    }
+    if (savedDeckDialogMode === "DELETE") {
+      return normalizedSavedDeckDialogTargetName === "";
+    }
+    return savedDeckDialogValidationMessage !== "";
+  }, [normalizedSavedDeckDialogTargetName, savedDeckDialogMode, savedDeckDialogValidationMessage]);
   const tuneSwapRows = useMemo(() => asDeckTuneSwapRows(deckTuneResponse?.recommended_swaps_v1), [deckTuneResponse]);
   const completeAddedRows = useMemo(() => asDeckCompleteAddedRows(completionResult?.added_cards_v1), [completionResult]);
   const completedDecklistText = useMemo(() => asString(completionResult?.completed_decklist_text_v1), [completionResult]);
@@ -1305,14 +1688,7 @@ export default function WorkspaceView() {
     }
     return completeAddedRows.filter((row: DeckCompleteAddedCardV1) => isLikelyLandAddition(row)).length;
   }, [completionResult, completeAddedRows]);
-  const hasCompletionLandsAddedCount = useMemo(
-    () => firstNumber(completionResult?.lands_added_count) !== null,
-    [completionResult],
-  );
-  const completionDecklistCounts = useMemo(
-    () => parseCompletedDecklistCounts(completedDecklistText),
-    [completedDecklistText],
-  );
+  const canApplyCompletedDecklist = useMemo(() => completedDecklistText.trim() !== "", [completedDecklistText]);
   const deckTrimRows = useMemo(() => buildDeckTrimRows(pendingCutOrder, buildResponse), [pendingCutOrder, buildResponse]);
   const hoverArtReleaseMetrics = useMemo(() => {
     const seenKeys = new Set<string>();
@@ -1349,6 +1725,10 @@ export default function WorkspaceView() {
       isReady: targetCount === 0 || resolvedCount === targetCount,
     };
   }, [deckEditorCardHints, parsedDeckRows]);
+  const snapshotNotReadyFixInstructions = useMemo(
+    () => collectSnapshotPreflightFixInstructions(snapshotNotReadyErrors),
+    [snapshotNotReadyErrors],
+  );
   const currentDeckHash = useMemo(() => buildDeckHashV1(commander, deckText), [commander, deckText]);
   const currentBuildHash = useMemo(() => {
     const result = asRecord(buildResponse?.result);
@@ -1376,6 +1756,43 @@ export default function WorkspaceView() {
     });
   }, [historyEntries]);
   const normalizedApiBase = useMemo(() => normalizeApiBase(apiBase), [apiBase]);
+  const prefetchSnapshotId = useMemo(
+    () => firstNonEmptyString(snapshotId, apiPingSummary.dbSnapshotId, buildResponse?.db_snapshot_id) || "",
+    [apiPingSummary.dbSnapshotId, buildResponse?.db_snapshot_id, snapshotId],
+  );
+  const prefetchSnapshotImagesCommand = useMemo(
+    () => buildPrefetchCardImagesCommand(prefetchSnapshotId),
+    [prefetchSnapshotId],
+  );
+  // Phase 4.13.2 single persistence useEffect with explicit guard.
+  // BLOCKED unless `isHydrated && source !== "fallback"` — this guard
+  // eliminates the race-condition class of bugs that drove 4.12.1 / 4.13 /
+  // 4.13.1 hotfixes. Default Krenko state never writes to the slot; the
+  // first real user edit (USER_EDIT_*) upgrades source to "manual" and
+  // unlocks persistence. Imported decks land via HYDRATE_FROM_IMPORT_SLOT
+  // with their actual source ("archidekt" / "arena_text" / etc) and write
+  // immediately. GoldfishView reads the slot directly — its 3-source
+  // precedence chain (HARD #13) is unchanged.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!deckState.isHydrated) return;
+    if (deckState.source === "fallback") return;
+    if (!deckState.commander || deckState.commander.trim() === "") return;
+    if (!deckState.deckText || deckState.deckText.trim() === "") return;
+    try {
+      const payload = buildActiveDeckPayload({
+        commander: deckState.commander,
+        decklist: deckState.deckText,
+        source: deckState.source,
+      });
+      window.localStorage.setItem(ACTIVE_DECK_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // QuotaExceededError or serialization failure — silent per
+      // autonomous_repair_log #4 (storage adapter pattern).
+    }
+  }, [deckState.commander, deckState.deckText, deckState.source, deckState.buildResponse, deckState.isHydrated]);
+
+  const missingImageCount = useMemo(() => Object.keys(missingImageOracleIds).length, [missingImageOracleIds]);
   const uiModeLabel: "DEV" | "PROD" = import.meta.env.DEV ? "DEV" : "PROD";
   const uiCommit = useMemo(() => {
     const env = import.meta.env as Record<string, unknown>;
@@ -1391,7 +1808,7 @@ export default function WorkspaceView() {
     }
     return "-";
   }, []);
-  const isAnyToolRunning = runningSmartTrim || runningSmartTune || runningSmartComplete || runningDevSmokeCompleteApply;
+  const isAnyToolRunning = runningSmartTrim || runningSmartTune || runningSmartComplete;
 
   useEffect(() => {
     try {
@@ -1400,6 +1817,58 @@ export default function WorkspaceView() {
       // Ignore persistence failures (privacy mode/quota).
     }
   }, [workspaceMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      if (savedDecks.length === 0) {
+        window.localStorage.removeItem(SAVED_DECKS_STORAGE_KEY);
+        return;
+      }
+      window.localStorage.setItem(SAVED_DECKS_STORAGE_KEY, JSON.stringify(savedDecks));
+    } catch {
+      // Ignore persistence failures (privacy mode/quota).
+    }
+  }, [savedDecks]);
+
+  useEffect(() => {
+    const normalizedSelection = normalizeSavedDeckName(selectedSavedDeckName);
+    if (normalizedSelection === "") {
+      return;
+    }
+
+    const matchingSavedDeck = savedDecks.find(
+      (entry: SavedDeckEntry) => entry.name.toLowerCase() === normalizedSelection.toLowerCase(),
+    );
+    if (!matchingSavedDeck) {
+      setSelectedSavedDeckName("");
+      return;
+    }
+
+    if (selectedSavedDeckName !== matchingSavedDeck.name) {
+      setSelectedSavedDeckName(matchingSavedDeck.name);
+    }
+  }, [savedDecks, selectedSavedDeckName]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const normalizedSelection = normalizeSavedDeckName(selectedSavedDeckName);
+      if (normalizedSelection === "") {
+        window.localStorage.removeItem(SELECTED_SAVED_DECK_STORAGE_KEY);
+        return;
+      }
+      window.localStorage.setItem(SELECTED_SAVED_DECK_STORAGE_KEY, normalizedSelection);
+    } catch {
+      // Ignore persistence failures (privacy mode/quota).
+    }
+  }, [selectedSavedDeckName]);
 
   useEffect(() => {
     if (!toastMessage) {
@@ -1412,6 +1881,107 @@ export default function WorkspaceView() {
       window.clearTimeout(timerId);
     };
   }, [toastMessage]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined" || !savedDeckDialogMode) {
+      return;
+    }
+
+    const dialogShell = savedDeckDialogShellRef.current;
+    const resolveFocusableElements = (): HTMLElement[] => {
+      if (!dialogShell) {
+        return [];
+      }
+
+      return Array.from(
+        dialogShell.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element: HTMLElement) => element.getAttribute("aria-hidden") !== "true");
+    };
+
+    const preferredFocusTarget =
+      savedDeckDialogMode === "DELETE"
+        ? dialogShell?.querySelector<HTMLElement>('[data-saved-deck-submit="true"]')
+        : dialogShell?.querySelector<HTMLElement>('[data-saved-deck-name-input="true"]');
+    if (preferredFocusTarget && !preferredFocusTarget.hasAttribute("disabled")) {
+      preferredFocusTarget.focus();
+      if (preferredFocusTarget instanceof HTMLInputElement) {
+        preferredFocusTarget.select();
+      }
+    } else {
+      const focusableElements = resolveFocusableElements();
+      if (focusableElements.length > 0) {
+        focusableElements[0].focus();
+      } else {
+        dialogShell?.focus();
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeSavedDeckDialog();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const tabOrderedElements = resolveFocusableElements();
+      if (tabOrderedElements.length === 0) {
+        event.preventDefault();
+        dialogShell?.focus();
+        return;
+      }
+
+      const firstElement = tabOrderedElements[0];
+      const lastElement = tabOrderedElements[tabOrderedElements.length - 1];
+      const activeElement = document.activeElement;
+      const activeWithinDialog = activeElement instanceof Node ? dialogShell?.contains(activeElement) : false;
+
+      if (event.shiftKey) {
+        if (!activeWithinDialog || activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus();
+        }
+        return;
+      }
+
+      if (!activeWithinDialog || activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [savedDeckDialogMode]);
+
+  function captureSavedDeckDialogFocusOrigin(): void {
+    if (typeof document === "undefined") {
+      savedDeckDialogRestoreFocusRef.current = null;
+      return;
+    }
+    const activeElement = document.activeElement;
+    savedDeckDialogRestoreFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+  }
+
+  useEffect(() => {
+    if (savedDeckDialogMode) {
+      return;
+    }
+
+    const focusTarget = savedDeckDialogRestoreFocusRef.current;
+    savedDeckDialogRestoreFocusRef.current = null;
+    if (!focusTarget || typeof focusTarget.focus !== "function") {
+      return;
+    }
+    focusTarget.focus();
+  }, [savedDeckDialogMode]);
 
   useEffect(() => {
     let disposed = false;
@@ -1537,10 +2107,19 @@ export default function WorkspaceView() {
   }, [apiBase, snapshotId]);
 
   useEffect(() => {
-    const imageUrl = buildHoverPreviewImageUrl(hoverCard?.oracle_id || "");
+    const imageUrl = buildHoverPreviewImageUrl(normalizedApiBase, hoverCard?.oracle_id || "");
     if (imageUrl === "") {
       return;
     }
+
+    setPreviewImageFailures((previous: Record<string, true>) => {
+      if (!previous[imageUrl]) {
+        return previous;
+      }
+      const next = { ...previous };
+      delete next[imageUrl];
+      return next;
+    });
 
     const lru = hoverPrefetchLruRef.current;
     if (lru.has(imageUrl)) {
@@ -1561,7 +2140,7 @@ export default function WorkspaceView() {
 
     const prefetchImage = new Image();
     prefetchImage.src = imageUrl;
-  }, [hoverCard?.oracle_id]);
+  }, [hoverCard?.oracle_id, normalizedApiBase]);
 
   function runLocalValidate(): { ok: boolean; message: string } {
     if (commander.trim() === "") {
@@ -1580,12 +2159,19 @@ export default function WorkspaceView() {
     const targets: string[] = [];
     const seen = new Set<string>();
 
+    const hasResolvedHint = (nameKey: string): boolean => {
+      const hint = deckEditorCardHints[nameKey];
+      return Boolean(hint && hint.oracleId.trim() !== "");
+    };
+
     const commanderToken = commanderName.trim();
     if (commanderToken !== "") {
       const commanderKey = normalizeNameToken(commanderToken);
       if (commanderKey !== "") {
         seen.add(commanderKey);
-        targets.push(commanderToken);
+        if (!hasResolvedHint(commanderKey)) {
+          targets.push(commanderToken);
+        }
       }
     }
 
@@ -1596,6 +2182,9 @@ export default function WorkspaceView() {
         continue;
       }
       seen.add(cardKey);
+      if (hasResolvedHint(cardKey)) {
+        continue;
+      }
       targets.push(cardName);
     }
 
@@ -1636,7 +2225,7 @@ export default function WorkspaceView() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(requestPayload),
+          body: serializeRequestBodyForNetwork("/cards/resolve_names", requestPayload),
         });
       } catch (error) {
         const details = buildApiErrorDetails("/cards/resolve_names", null, "", null, {
@@ -1743,6 +2332,289 @@ export default function WorkspaceView() {
     setHoverCard(null);
   }
 
+  function handleSelectedSavedDeckNameChange(deckNameRaw: string): void {
+    setSelectedSavedDeckName(normalizeSavedDeckName(deckNameRaw));
+  }
+
+  function closeSavedDeckDialog(): void {
+    setSavedDeckDialogMode(null);
+    setSavedDeckDialogTargetName("");
+    setSavedDeckDialogNameInput("");
+  }
+
+  function saveDeckByName(deckNameRaw: string): boolean {
+    const deckName = normalizeSavedDeckName(deckNameRaw);
+    if (deckName === "") {
+      setToastMessage("Deck name is required to save.");
+      return false;
+    }
+
+    const normalizedCommanderName = commander.trim();
+    if (normalizedCommanderName === "" || deckText.trim() === "") {
+      setToastMessage("Add a commander and deck cards before saving.");
+      return false;
+    }
+
+    const existingDeck = savedDecks.find((entry: SavedDeckEntry) => entry.name.toLowerCase() === deckName.toLowerCase());
+    if (existingDeck) {
+      const hasChanged = existingDeck.commander !== normalizedCommanderName || existingDeck.deckText !== deckText;
+      if (!hasChanged) {
+        setSelectedSavedDeckName(existingDeck.name);
+        setToastMessage(`Deck "${existingDeck.name}" is already up to date.`);
+        return true;
+      }
+    }
+
+    if (!existingDeck && savedDecks.length >= SAVED_DECKS_MAX) {
+      setToastMessage(`Saved deck limit (${SAVED_DECKS_MAX}) reached. Delete a saved deck before creating a new one.`);
+      return false;
+    }
+
+    const now = Date.now();
+    setSavedDecks((previous: SavedDeckEntry[]) => {
+      const filtered = previous.filter((entry: SavedDeckEntry) => entry.name.toLowerCase() !== deckName.toLowerCase());
+      const next: SavedDeckEntry[] = [
+        {
+          name: deckName,
+          commander: normalizedCommanderName,
+          deckText,
+          updatedAtMs: now,
+        },
+        ...filtered,
+      ];
+      next.sort((left: SavedDeckEntry, right: SavedDeckEntry) => {
+        if (left.updatedAtMs !== right.updatedAtMs) {
+          return right.updatedAtMs - left.updatedAtMs;
+        }
+        return left.name.localeCompare(right.name);
+      });
+      return next.slice(0, SAVED_DECKS_MAX);
+    });
+
+    // Phase 4 BUNDLE Integration (4.13) Stage 2: ALSO persist via the
+    // lib/decks/savedDecks.ts adapter (writes to mtgdb:decks:* per Phase
+    // 4.12a). Legacy mtg_saved_decks_v1 stays as a fallback for backward
+    // compat through this release per autonomous_repair_log #4. Errors are
+    // swallowed so the legacy save path remains the source of truth.
+    try {
+      _persistDeckViaAdapter({
+        name: deckName,
+        decklist: deckText,
+        commander_oracle_id: null,
+        nowMs: now,
+      });
+    } catch {
+      /* legacy slot still wrote successfully above; surface noise here would be misleading */
+    }
+
+    setSelectedSavedDeckName(deckName);
+    setToastMessage(`Saved deck "${deckName}".`);
+    return true;
+  }
+
+  function handleSaveDeck(): void {
+    captureSavedDeckDialogFocusOrigin();
+    const suggestedName = normalizeSavedDeckName(selectedSavedDeckName || commander || "My Deck");
+    setSavedDeckDialogMode("SAVE");
+    setSavedDeckDialogTargetName("");
+    setSavedDeckDialogNameInput(suggestedName);
+  }
+
+  function handleLoadSavedDeck(deckNameRaw: string): void {
+    const normalizedDeckName = normalizeSavedDeckName(deckNameRaw);
+    if (normalizedDeckName === "") {
+      return;
+    }
+
+    const savedDeck = savedDecks.find(
+      (entry: SavedDeckEntry) => entry.name.toLowerCase() === normalizedDeckName.toLowerCase(),
+    );
+    if (!savedDeck) {
+      setToastMessage(`Saved deck "${normalizedDeckName}" was not found.`);
+      return;
+    }
+
+    setSelectedSavedDeckName(savedDeck.name);
+    setCommander(savedDeck.commander);
+    applyDeckText(savedDeck.deckText, "load_saved_deck");
+    setBuildResponse(null);
+    setDeckTuneResponse(null);
+    setDeckTrimResult(null);
+    setCompletionResult(null);
+    setCompletionError(null);
+    setToastMessage(`Opened deck "${savedDeck.name}".`);
+  }
+
+  function renameSavedDeckByName(deckNameRaw: string, nextDeckNameRaw: string): boolean {
+    const normalizedDeckName = normalizeSavedDeckName(deckNameRaw);
+    if (normalizedDeckName === "") {
+      return false;
+    }
+
+    const existingDeck = savedDecks.find(
+      (entry: SavedDeckEntry) => entry.name.toLowerCase() === normalizedDeckName.toLowerCase(),
+    );
+    if (!existingDeck) {
+      setToastMessage(`Saved deck "${normalizedDeckName}" was not found.`);
+      return false;
+    }
+
+    const renamedDeckName = normalizeSavedDeckName(nextDeckNameRaw);
+    if (renamedDeckName === "") {
+      setToastMessage("Deck name is required to rename.");
+      return false;
+    }
+
+    if (renamedDeckName.toLowerCase() === existingDeck.name.toLowerCase()) {
+      setSelectedSavedDeckName(renamedDeckName);
+      if (renamedDeckName === existingDeck.name) {
+        setToastMessage(`Deck "${existingDeck.name}" is already named that.`);
+      } else {
+        setSavedDecks((previous: SavedDeckEntry[]) => {
+          return previous.map((entry: SavedDeckEntry) => {
+            if (entry.name.toLowerCase() !== existingDeck.name.toLowerCase()) {
+              return entry;
+            }
+            return {
+              ...entry,
+              name: renamedDeckName,
+            };
+          });
+        });
+        setToastMessage(`Renamed deck "${existingDeck.name}" to "${renamedDeckName}".`);
+      }
+      return true;
+    }
+
+    const conflictingDeck = savedDecks.find(
+      (entry: SavedDeckEntry) => entry.name.toLowerCase() === renamedDeckName.toLowerCase(),
+    );
+    if (conflictingDeck) {
+      setToastMessage(`Saved deck "${renamedDeckName}" already exists.`);
+      return false;
+    }
+
+    const now = Date.now();
+    setSavedDecks((previous: SavedDeckEntry[]) => {
+      const next = previous.map((entry: SavedDeckEntry) => {
+        if (entry.name.toLowerCase() !== existingDeck.name.toLowerCase()) {
+          return entry;
+        }
+        return {
+          ...entry,
+          name: renamedDeckName,
+          updatedAtMs: now,
+        };
+      });
+
+      next.sort((left: SavedDeckEntry, right: SavedDeckEntry) => {
+        if (left.updatedAtMs !== right.updatedAtMs) {
+          return right.updatedAtMs - left.updatedAtMs;
+        }
+        return left.name.localeCompare(right.name);
+      });
+      return next;
+    });
+
+    setSelectedSavedDeckName(renamedDeckName);
+    setToastMessage(`Renamed deck "${existingDeck.name}" to "${renamedDeckName}".`);
+    return true;
+  }
+
+  function handleRenameSavedDeck(deckNameRaw: string): void {
+    const normalizedDeckName = normalizeSavedDeckName(deckNameRaw);
+    if (normalizedDeckName === "") {
+      return;
+    }
+
+    const existingDeck = savedDecks.find(
+      (entry: SavedDeckEntry) => entry.name.toLowerCase() === normalizedDeckName.toLowerCase(),
+    );
+    if (!existingDeck) {
+      setToastMessage(`Saved deck "${normalizedDeckName}" was not found.`);
+      return;
+    }
+
+    captureSavedDeckDialogFocusOrigin();
+    setSavedDeckDialogMode("RENAME");
+    setSavedDeckDialogTargetName(existingDeck.name);
+    setSavedDeckDialogNameInput(existingDeck.name);
+  }
+
+  function deleteSavedDeckByName(deckNameRaw: string): boolean {
+    const normalizedDeckName = normalizeSavedDeckName(deckNameRaw);
+    if (normalizedDeckName === "") {
+      return false;
+    }
+
+    const existingDeck = savedDecks.find(
+      (entry: SavedDeckEntry) => entry.name.toLowerCase() === normalizedDeckName.toLowerCase(),
+    );
+    if (!existingDeck) {
+      setToastMessage(`Saved deck "${normalizedDeckName}" was not found.`);
+      return false;
+    }
+
+    setSavedDecks((previous: SavedDeckEntry[]) => {
+      return previous.filter((entry: SavedDeckEntry) => entry.name.toLowerCase() !== existingDeck.name.toLowerCase());
+    });
+
+    if (selectedSavedDeckName.toLowerCase() === existingDeck.name.toLowerCase()) {
+      setSelectedSavedDeckName("");
+    }
+    setToastMessage(`Deleted deck "${existingDeck.name}".`);
+    return true;
+  }
+
+  function handleDeleteSavedDeck(deckNameRaw: string): void {
+    const normalizedDeckName = normalizeSavedDeckName(deckNameRaw);
+    if (normalizedDeckName === "") {
+      return;
+    }
+
+    const existingDeck = savedDecks.find(
+      (entry: SavedDeckEntry) => entry.name.toLowerCase() === normalizedDeckName.toLowerCase(),
+    );
+    if (!existingDeck) {
+      setToastMessage(`Saved deck "${normalizedDeckName}" was not found.`);
+      return;
+    }
+
+    captureSavedDeckDialogFocusOrigin();
+    setSavedDeckDialogMode("DELETE");
+    setSavedDeckDialogTargetName(existingDeck.name);
+    setSavedDeckDialogNameInput(existingDeck.name);
+  }
+
+  function handleSubmitSavedDeckDialog(): void {
+    if (savedDeckDialogSubmitDisabled) {
+      return;
+    }
+
+    if (savedDeckDialogMode === "SAVE") {
+      const didSave = saveDeckByName(savedDeckDialogNameInput);
+      if (didSave) {
+        closeSavedDeckDialog();
+      }
+      return;
+    }
+
+    if (savedDeckDialogMode === "RENAME") {
+      const didRename = renameSavedDeckByName(savedDeckDialogTargetName, savedDeckDialogNameInput);
+      if (didRename) {
+        closeSavedDeckDialog();
+      }
+      return;
+    }
+
+    if (savedDeckDialogMode === "DELETE") {
+      const didDelete = deleteSavedDeckByName(savedDeckDialogTargetName);
+      if (didDelete) {
+        closeSavedDeckDialog();
+      }
+    }
+  }
+
   function persistSmartToolHistory(
     toolLabel: string,
     payloadCards: string[],
@@ -1842,6 +2714,79 @@ export default function WorkspaceView() {
     setIsCompletionBlockedModalOpen(true);
   }
 
+  function showSnapshotNotReadyModal(toolLabel: string, status: string, errors: SnapshotPreflightErrorRow[]): void {
+    setIsCompletionBlockedModalOpen(false);
+    setSnapshotNotReadyToolLabel(toolLabel);
+    setSnapshotNotReadyStatus(status || "UNKNOWN");
+    setSnapshotNotReadyErrors(errors);
+    setIsSnapshotNotReadyModalOpen(true);
+  }
+
+  async function runSnapshotPreflightOrBlock(
+    toolLabel: string,
+    base: string,
+    resolvedSnapshotId: string,
+    requestDebug?: unknown,
+  ): Promise<boolean> {
+    const endpoint = `/snapshot/preflight/${encodeURIComponent(resolvedSnapshotId)}`;
+    const requestPayload = {
+      snapshot_id: resolvedSnapshotId,
+      tool_label: toolLabel,
+    };
+
+    let preflightResponse: Response;
+    try {
+      preflightResponse = await fetch(`${base}${endpoint}`, {
+        method: "GET",
+      });
+    } catch (error) {
+      setIsApiReachable(false);
+      const details = buildApiErrorDetails(endpoint, null, "", null, {
+        method: "GET",
+        requestPayload,
+        requestDebug,
+        error,
+      });
+      setApiErrorDetails(details);
+      const message = error instanceof Error ? error.message : "Network request failed.";
+      throw new Error(`Request failed for ${endpoint}: ${message}`);
+    }
+
+    const preflightText = await preflightResponse.text();
+    const preflightParsed = safeParseJson(preflightText);
+    setIsApiReachable(true);
+
+    if (!preflightResponse.ok) {
+      const details = buildApiErrorDetails(endpoint, preflightResponse, preflightText, preflightParsed, {
+        method: "GET",
+        requestPayload,
+        requestDebug,
+      });
+      setApiErrorDetails(details);
+      throw new Error(`HTTP ${preflightResponse.status} from ${endpoint}`);
+    }
+
+    const preflightRoot = asRecord(preflightParsed) ?? {};
+    const preflightStatus = asString(preflightRoot.status) || "UNKNOWN";
+    if (preflightStatus === "OK") {
+      return true;
+    }
+
+    const preflightErrors = asSnapshotPreflightErrorRows(preflightRoot.errors);
+    setSmartToolBlockUnknowns([]);
+    setSmartToolBlockViolations([]);
+    setSmartToolBlockMessage(`${toolLabel} blocked by snapshot preflight (${preflightStatus}).`);
+    setApiErrorDetails(
+      buildSyntheticApiErrorDetails(endpoint, 200, preflightRoot, {
+        method: "GET",
+        requestPayload,
+        requestDebug,
+      }),
+    );
+    showSnapshotNotReadyModal(toolLabel, preflightStatus, preflightErrors);
+    return false;
+  }
+
   async function runSmartToolPreflight(toolLabel: string): Promise<PreflightSmartToolResult | null> {
     setLastValidatePassed(false);
     const localValidation = runLocalValidate();
@@ -1878,7 +2823,7 @@ export default function WorkspaceView() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(validatePayload),
+        body: serializeRequestBodyForNetwork("/deck/validate", validatePayload),
       });
     } catch (error) {
       setIsApiReachable(false);
@@ -1989,16 +2934,20 @@ export default function WorkspaceView() {
         buildRoot = buildResponse;
         buildRequestForState = requestPayload;
         trimSource = "REUSED_BUILD";
+        _phase46MarkBuildLatency(0, "reused");
       } else {
         let buildResponseRaw: Response;
+        const _phase46BuildStartMs = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
         try {
           buildResponseRaw = await fetch(`${base}/build`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify(buildPayload),
+            body: serializeRequestBodyForNetwork("/build", buildPayload),
           });
+          const _phase46BuildEndMs = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+          _phase46MarkBuildLatency(_phase46BuildEndMs - _phase46BuildStartMs, "fresh");
         } catch (error) {
           const details = buildApiErrorDetails("/build", null, "", null, {
             method: "POST",
@@ -2226,17 +3175,26 @@ export default function WorkspaceView() {
   }
 
   async function handleManaTuneTool(): Promise<void> {
-    setActiveTool("MANA_TUNE");
     setLastValidatePassed(false);
+    setLastSmokeSucceeded(false);
     const requestId = completionRequestIdRef.current + 1;
     completionRequestIdRef.current = requestId;
 
     setRunningSmartComplete(true);
     setRuntimeError(null);
     setApiErrorDetails(null);
+    // Phase 4.14.1: synchronous ref clears alongside the React state setters
+    // so handleUnifiedCompleteDeck observes the cleared values without
+    // depending on the render→useEffect chain (HARD #15 additive only).
+    completionErrorRef.current = null;
     setCompletionError(null);
+    completionResultRef.current = null;
     setCompletionResult(null);
     setIsCompletionBlockedModalOpen(false);
+    setIsSnapshotNotReadyModalOpen(false);
+    setSnapshotNotReadyToolLabel("Complete to 100");
+    setSnapshotNotReadyStatus("");
+    setSnapshotNotReadyErrors([]);
     setCompletionBlockedUnknowns([]);
     setCompletionBlockedViolations([]);
     setCompletionBlockedStatus("");
@@ -2283,7 +3241,7 @@ export default function WorkspaceView() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(validatePayload),
+          body: serializeRequestBodyForNetwork("/deck/validate", validatePayload),
         });
       } catch (error) {
         if (completionRequestIdRef.current !== requestId) {
@@ -2322,7 +3280,7 @@ export default function WorkspaceView() {
       const validateStatus = asString(validateRoot.status);
 
       if (unknowns.length > 0 || violations.length > 0 || validateStatus !== "OK") {
-        showValidateBlockedModal("Mana Tune", validateStatus, unknowns, violations);
+        showValidateBlockedModal("Complete to 100", validateStatus, unknowns, violations);
         const details = buildSyntheticApiErrorDetails("/deck/validate", 200, validateRoot, {
           method: "POST",
           requestPayload: validatePayload,
@@ -2336,6 +3294,21 @@ export default function WorkspaceView() {
       setSmartToolBlockViolations([]);
       setSmartToolBlockMessage(null);
       setLastValidatePassed(true);
+
+      const preflightReady = await runSnapshotPreflightOrBlock("Complete to 100", base, resolvedSnapshotId, {
+        api_base: base,
+        snapshot_id: resolvedSnapshotId,
+        stage: "before_complete_v1",
+        tool: "COMPLETE_TO_100",
+      });
+      if (completionRequestIdRef.current !== requestId) {
+        return;
+      }
+      if (!preflightReady) {
+        setCompletionError("Complete to 100 blocked: snapshot not ready.");
+        setValidationMessage("Complete to 100 blocked: snapshot not ready.");
+        return;
+      }
 
       const payload: DeckCompleteRequestPayload = {
         db_snapshot_id: resolvedSnapshotId,
@@ -2358,6 +3331,13 @@ export default function WorkspaceView() {
         payload.name_overrides_v1 = normalizedOverrides;
       }
 
+      const completeRequestDebug = {
+        api_base: base,
+        line_count: countNonEmptyTextLines(payload.raw_decklist_text),
+        first120Chars: payload.raw_decklist_text.slice(0, 120),
+      };
+      const completeBodySent = serializeRequestBodyForNetwork("/deck/complete_v1", payload);
+
       let response: Response;
       try {
         response = await fetch(`${base}/deck/complete_v1`, {
@@ -2365,7 +3345,7 @@ export default function WorkspaceView() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(payload),
+          body: completeBodySent,
         });
       } catch (error) {
         if (completionRequestIdRef.current !== requestId) {
@@ -2373,7 +3353,8 @@ export default function WorkspaceView() {
         }
         const details = buildApiErrorDetails("/deck/complete_v1", null, "", null, {
           method: "POST",
-          requestPayload: payload,
+          requestPayload: completeBodySent,
+          requestDebug: completeRequestDebug,
           error,
         });
         setApiErrorDetails(details);
@@ -2389,14 +3370,23 @@ export default function WorkspaceView() {
       if (!response.ok) {
         const details = buildApiErrorDetails("/deck/complete_v1", response, text, parsed, {
           method: "POST",
-          requestPayload: payload,
+          requestPayload: completeBodySent,
+          requestDebug: completeRequestDebug,
         });
         setApiErrorDetails(details);
         throw new Error(`HTTP ${response.status} from /deck/complete_v1`);
       }
 
       const root = (asRecord(parsed) ?? {}) as DeckCompleteResponseV1;
+      // Phase 4.14.1: synchronous ref write alongside the React state
+      // setter so handleUnifiedCompleteDeck (the await-then-read consumer)
+      // sees the correct value without depending on React's
+      // render→useEffect→ref-mirror chain having flushed. User-visible
+      // toolbar behavior unchanged (HARD #15 — additive instrumentation
+      // only). Same pattern applied to setCompletionError below.
+      completionResultRef.current = root;
       setCompletionResult(root);
+      completionErrorRef.current = null;
       setCompletionError(null);
 
       const canonicalInput = asRecord(validateRoot.canonical_deck_input);
@@ -2423,7 +3413,7 @@ export default function WorkspaceView() {
         resolvedSnapshotId,
         canonicalCommanderForHistory,
         {
-          toolType: "MANA_TUNE",
+          toolType: "complete_to_100",
           inputDeckText: deckText,
           outputDeckText: completionDeckText || deckText,
           inputCards: canonicalCards.length > 0 ? canonicalCards : deckCardsInPayloadOrder,
@@ -2434,14 +3424,19 @@ export default function WorkspaceView() {
           },
         },
       );
+      setLastSmokeSucceeded(true);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown Mana Tune runtime error";
+      const message = error instanceof Error ? error.message : "Unknown Complete to 100 runtime error";
       if (completionRequestIdRef.current !== requestId) {
         return;
       }
       setRuntimeError(message);
+      // Phase 4.14.1: synchronous ref write so handleUnifiedCompleteDeck
+      // sees the error immediately after await resolves.
+      completionErrorRef.current = message;
       setCompletionError(message);
       setCompletionResult(null);
+      setLastSmokeSucceeded(false);
     } finally {
       if (completionRequestIdRef.current === requestId) {
         setRunningSmartComplete(false);
@@ -2568,7 +3563,7 @@ export default function WorkspaceView() {
       snapshotId,
       nextCommander,
       {
-        toolType: "MANA_TUNE_APPLY",
+        toolType: "COMPLETE_TO_100_APPLY",
         inputDeckText,
         outputDeckText: completedDecklistText,
         inputCards,
@@ -2580,309 +3575,42 @@ export default function WorkspaceView() {
     );
   }
 
-  async function handleCopyCompletedDecklist(): Promise<void> {
-    const completedDecklistText = asString(completionResult?.completed_decklist_text_v1);
-    if (completedDecklistText.trim() === "") {
-      setRuntimeError("No completed_decklist_text_v1 available to copy.");
+  // Phase 4.14 Stage 1: unified "Complete deck" handler. Replaces the
+  // two-button Complete-to-100 + Apply-Complete flow (single click runs
+  // /deck/complete_v1 then auto-applies the result). Dispatches reducer
+  // COMPLETE_PENDING / COMPLETE_SUCCESS / COMPLETE_ERROR actions per
+  // Phase 4.14 contract. Existing handleManaTuneTool +
+  // handleApplyCompletedDecklist stay BYTE-IDENTICAL (HARD #15) — this
+  // wrapper invokes them in sequence and observes their outcomes via
+  // completionResult / completionError state.
+  async function handleUnifiedCompleteDeck(): Promise<void> {
+    if (deckState.completePending) return;
+    dispatchDeckAction({ type: "COMPLETE_PENDING" });
+    try {
+      await handleManaTuneTool();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Complete failed";
+      dispatchDeckAction({ type: "COMPLETE_ERROR", error: message });
       return;
     }
-
-    try {
-      await copyTextToClipboard(completedDecklistText);
-      setToastMessage("Copied completed decklist.");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to copy completed decklist.";
-      setRuntimeError(message);
-    }
-  }
-
-  function handleDismissCompletionResult(): void {
-    setCompletionResult(null);
-    setCompletionError(null);
-  }
-
-  async function handleDevSmokeTestCompleteApply(): Promise<void> {
-    if (!isDevMode) {
+    // handleManaTuneTool sets completionResult on success; if it surfaced
+    // an error via setCompletionError, treat that as the failure path.
+    // Read the current refs synchronously after await — React's setters
+    // queued during handleManaTuneTool have flushed by now.
+    const finalCompletedText = completionResultRef.current?.completed_decklist_text_v1;
+    const finalCompletionError = completionErrorRef.current;
+    if (finalCompletionError) {
+      dispatchDeckAction({ type: "COMPLETE_ERROR", error: finalCompletionError });
       return;
     }
-
-    const requestId = devSmokeRequestIdRef.current + 1;
-    devSmokeRequestIdRef.current = requestId;
-
-    const isActiveRequest = (): boolean => devSmokeRequestIdRef.current === requestId;
-    const throwIfStale = (): void => {
-      if (!isActiveRequest()) {
-        throw new Error(DEV_SMOKE_STALE_REQUEST_MESSAGE);
-      }
-    };
-
-    const smokeCommander = DEV_SMOKE_TEST_COMMANDER;
-    const smokeInputCards = DEV_SMOKE_TEST_CARDS.map((name: string) => name.trim()).filter((name: string) => name !== "");
-    const smokeDeckText = collapseCardNamesInInputOrder(smokeInputCards);
-    const smokeText = smokeDeckText;
-    const smokeLineCountBefore = parseDecklistInput(smokeText).length;
-    const base = normalizeApiBase(apiBase);
-    const smokeRequestDebug = {
-      api_base: base,
-      line_count: countNonEmptyTextLines(smokeText),
-      first120Chars: smokeText.slice(0, 120),
-    };
-    const smokeErrorFallbackPayload: DeckCompleteRequestPayload = {
-      db_snapshot_id: snapshotId.trim() || "(auto-latest)",
-      raw_decklist_text: smokeText,
-      format: "commander",
-      profile_id: profileId.trim(),
-      bracket_id: bracketId.trim(),
-      mulligan_model_id: mulliganModelId,
-      target_deck_size: DEFAULT_COMPLETE_TARGET_DECK_SIZE,
-      max_adds: clampInteger(completeMaxAdds, 1, MAX_COMPLETE_ADDS),
-      allow_basic_lands: true,
-      land_target_mode: "AUTO",
-      commander: smokeCommander,
-    };
-
-    setActiveTool("MANA_TUNE");
-    setLastSmokeSucceeded(false);
-    setLastValidatePassed(false);
-    setRunningDevSmokeCompleteApply(true);
-    setRuntimeError(null);
-    setApiErrorDetails(null);
-    setCompletionError(null);
-    setCompletionResult(null);
-    setValidationMessage("Running DEV smoke test: Complete + Apply...");
-    setCommander(smokeCommander);
-    applyDeckText(smokeDeckText, "smoke_seed_input");
-    setBuildResponse(null);
-    setDeckTuneResponse(null);
-    setDeckTrimResult(null);
-    setPendingCutOrder([]);
-    setSmartToolValidateResponse(null);
-    setSmartToolBlockMessage(null);
-    setSmartToolBlockUnknowns([]);
-    setSmartToolBlockViolations([]);
-    setIsCompletionBlockedModalOpen(false);
-    setCompletionBlockedToolLabel("Smoke Test");
-    setCompletionBlockedUnknowns([]);
-    setCompletionBlockedViolations([]);
-    setCompletionBlockedStatus("");
-    const normalizedOverrides = normalizeNameOverrides(nameOverridesV1);
-
-    const postJson = async (
-      endpoint: string,
-      payload: unknown,
-      requestDebug?: Record<string, unknown>,
-    ): Promise<unknown> => {
-      throwIfStale();
-      let response: Response;
-      try {
-        response = await fetch(`${base}${endpoint}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        });
-      } catch (error) {
-        throwIfStale();
-        setIsApiReachable(false);
-        const details = buildApiErrorDetails(endpoint, null, "", null, {
-          method: "POST",
-          requestPayload: payload,
-          requestDebug,
-          error,
-        });
-        setApiErrorDetails(details);
-        const networkMessage = error instanceof Error ? error.message : "Network request failed.";
-        throw new Error(`${endpoint} failed (status: network)\n${networkMessage}`);
-      }
-
-      throwIfStale();
-      const responseText = await response.text();
-      setIsApiReachable(true);
-      throwIfStale();
-      const parsed = safeParseJson(responseText);
-      if (!response.ok) {
-        const details = buildApiErrorDetails(endpoint, response, responseText, parsed, {
-          method: "POST",
-          requestPayload: payload,
-          requestDebug,
-        });
-        setApiErrorDetails(details);
-        throw new Error(formatApiErrorMessage(details));
-      }
-
-      return parsed;
-    };
-
-    try {
-      const resolvedSnapshotId = await ensureSmartToolSnapshotId(base);
-      throwIfStale();
-
-      const validatePayload: DeckValidateRequestPayload = {
-        db_snapshot_id: resolvedSnapshotId,
-        raw_decklist_text: smokeText,
-        format: "commander",
-        profile_id: profileId.trim(),
-        bracket_id: bracketId.trim(),
-        commander: smokeCommander,
-      };
-      if (normalizedOverrides.length > 0) {
-        validatePayload.name_overrides_v1 = normalizedOverrides;
-      }
-
-      const validateParsed = await postJson("/deck/validate", validatePayload, smokeRequestDebug);
-      throwIfStale();
-      const validateRoot = (asRecord(validateParsed) ?? {}) as DeckValidateResponsePayload;
-      setSmartToolValidateResponse(validateRoot);
-
-      const validateUnknowns = asValidateUnknownRows(validateRoot.unknowns);
-      const validateViolations = asValidateViolationRows(validateRoot.violations_v1);
-      const validateStatus = asString(validateRoot.status) || "UNKNOWN";
-      if (validateUnknowns.length > 0 || validateViolations.length > 0 || validateStatus !== "OK") {
-        setSmartToolBlockUnknowns(validateUnknowns);
-        setSmartToolBlockViolations(validateViolations);
-        setSmartToolBlockMessage(`Smoke Test blocked by validate (${validateStatus}).`);
-        showValidateBlockedModal("Smoke Test", validateStatus, validateUnknowns, validateViolations);
-        const details = buildSyntheticApiErrorDetails("/deck/validate", 200, validateRoot, {
-          method: "POST",
-          requestPayload: validatePayload,
-          requestDebug: smokeRequestDebug,
-        });
-        setApiErrorDetails(details);
-        throw new Error(`/deck/validate failed (status: ${validateStatus})\n${details.responseJsonText || "(empty)"}`);
-      }
-
-      setLastValidatePassed(true);
-
-      setSmartToolBlockUnknowns([]);
-      setSmartToolBlockViolations([]);
-      setSmartToolBlockMessage(null);
-
-      const completeEndpointPayload: DeckCompleteRequestPayload = {
-        db_snapshot_id: resolvedSnapshotId,
-        raw_decklist_text: smokeText,
-        format: "commander",
-        profile_id: profileId.trim(),
-        bracket_id: bracketId.trim(),
-        mulligan_model_id: mulliganModelId,
-        target_deck_size: DEFAULT_COMPLETE_TARGET_DECK_SIZE,
-        max_adds: clampInteger(completeMaxAdds, 1, MAX_COMPLETE_ADDS),
-        allow_basic_lands: true,
-        land_target_mode: "AUTO",
-        commander: smokeCommander,
-      };
-      if (normalizedOverrides.length > 0) {
-        completeEndpointPayload.name_overrides_v1 = normalizedOverrides;
-      }
-
-      const completeParsed = await postJson("/deck/complete_v1", completeEndpointPayload, smokeRequestDebug);
-      throwIfStale();
-      const completeRoot = (asRecord(completeParsed) ?? {}) as DeckCompleteResponseV1;
-      const completionStatus = asString(completeRoot.status) || "UNKNOWN";
-      const completedDecklistText = asString(completeRoot.completed_decklist_text_v1);
-      if (completionStatus !== "OK" || completedDecklistText.trim() === "") {
-        const details = buildSyntheticApiErrorDetails("/deck/complete_v1", 200, completeRoot, {
-          method: "POST",
-          requestPayload: completeEndpointPayload,
-          requestDebug: smokeRequestDebug,
-        });
-        setApiErrorDetails(details);
-        throw new Error(`/deck/complete_v1 failed (status: ${completionStatus})\n${details.responseJsonText || "(empty)"}`);
-      }
-
-      setCompletionResult(completeRoot);
-      setCompletionError(null);
-
-      const parsedCompletedDecklist = parseCompletedDecklistText(completedDecklistText);
-      const resolvedCommander = parsedCompletedDecklist.commander || smokeCommander;
-      const parsedAppliedRows = parseDecklistInput(completedDecklistText);
-      if (parsedAppliedRows.length === 0) {
-        const details = buildSyntheticApiErrorDetails("/deck/complete_v1", 200, completeRoot, {
-          method: "POST",
-          requestPayload: completeEndpointPayload,
-          requestDebug: smokeRequestDebug,
-        });
-        setApiErrorDetails(details);
-        throw new Error(`/deck/complete_v1 failed (status: ${completionStatus})\n${details.responseJsonText || "(empty)"}`);
-      }
-
-      applyDeckText(completedDecklistText, "smoke_auto_apply_complete");
-      setCommander(resolvedCommander);
-      setBuildResponse(null);
-
-      const resolveResultsCount = await resolveDeckRowsAndStoreHints(
-        parsedAppliedRows,
-        resolvedSnapshotId,
-        resolvedCommander,
-      );
-      throwIfStale();
-
-      const appliedCards = expandDecklistRowsInInputOrder(parsedAppliedRows);
-      persistSmartToolHistory(
-        "Smoke: Complete+Apply",
-        smokeInputCards,
-        {
-          tool: "mana_tune",
-          completion_result_v1: completeRoot,
-          completion_status: completionStatus,
-          applied_lines: parsedAppliedRows.length,
-          resolve_names_count: resolveResultsCount,
-        },
-        "SMART_TOOL_MANA_TUNE_SMOKE",
-        resolvedSnapshotId,
-        resolvedCommander,
-        {
-          toolType: "mana_tune",
-          inputDeckText: smokeDeckText,
-          outputDeckText: completedDecklistText,
-          inputCards: smokeInputCards,
-          outputCards: appliedCards,
-          summaryCounts: {
-            applied_lines: parsedAppliedRows.length,
-            resolve_names_count: resolveResultsCount,
-          },
-        },
-      );
-
-      const toast = `Smoke pass: deck now has ${parsedAppliedRows.length} lines (was ${smokeLineCountBefore})`;
-      setValidationMessage(toast);
-      setToastMessage(toast);
-      setLastSmokeSucceeded(true);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown smoke test runtime error";
-      if (message === DEV_SMOKE_STALE_REQUEST_MESSAGE || !isActiveRequest()) {
-        return;
-      }
-      setApiErrorDetails((previous: ApiErrorDetails | null) => {
-        if (previous) {
-          return previous;
-        }
-        return buildSyntheticApiErrorDetails(
-          "/dev/smoke/complete_apply",
-          500,
-          {
-            status: "ERROR",
-            message,
-          },
-          {
-            method: "POST",
-            requestPayload: smokeErrorFallbackPayload,
-            requestDebug: smokeRequestDebug,
-            error,
-          },
-        );
-      });
-      setRuntimeError(message);
-      setCompletionError(message);
-      setValidationMessage("Smoke failed");
-      setToastMessage("Smoke failed");
-      setLastSmokeSucceeded(false);
-      setWorkspaceMode("ANALYZE");
-      setErrorDetailsOpenSignal((previous: number) => previous + 1);
-    } finally {
-      if (isActiveRequest()) {
-        setRunningDevSmokeCompleteApply(false);
-      }
+    if (typeof finalCompletedText === "string" && finalCompletedText.trim() !== "") {
+      // Fire the existing Apply path so Build History entries + hint cache
+      // refresh stay BYTE-IDENTICAL behavior.
+      handleApplyCompletedDecklist();
+      dispatchDeckAction({ type: "COMPLETE_SUCCESS", deckText: finalCompletedText });
+    } else {
+      // Engine returned no completed text — surface as soft error.
+      dispatchDeckAction({ type: "COMPLETE_ERROR", error: "Complete returned no decklist." });
     }
   }
 
@@ -2928,7 +3656,7 @@ export default function WorkspaceView() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(payload),
+          body: serializeRequestBodyForNetwork("/deck/tune_v1", payload),
         });
       } catch (error) {
         const details = buildApiErrorDetails("/deck/tune_v1", null, "", null, {
@@ -3135,6 +3863,20 @@ export default function WorkspaceView() {
     setReleaseChecklistCopyNotice(null);
     setReleaseChecklistCopyError(null);
 
+    const parsedRequestDebug =
+      apiErrorDetails && apiErrorDetails.requestDebugText.trim() !== ""
+        ? asRecord(safeParseJson(apiErrorDetails.requestDebugText))
+        : null;
+    const requestDebugPayload =
+      parsedRequestDebug ??
+      (apiErrorDetails && apiErrorDetails.requestDebugText.trim() !== ""
+        ? { raw_text_debug_only: apiErrorDetails.requestDebugText }
+        : null);
+    const requestBodySentText =
+      apiErrorDetails === null
+        ? ""
+        : apiErrorDetails.requestBodyText || apiErrorDetails.requestPayloadText || "";
+
     const lastErrorPayload =
       apiErrorDetails === null
         ? null
@@ -3143,9 +3885,11 @@ export default function WorkspaceView() {
             status_code: apiErrorDetails.statusCode,
             method: apiErrorDetails.method || "POST",
             request_id: apiErrorDetails.requestId,
-            request_payload_text: apiErrorDetails.requestPayloadText || "",
-            request_body_text: apiErrorDetails.requestBodyText || apiErrorDetails.requestPayloadText || "",
-            request_debug_text: apiErrorDetails.requestDebugText || "",
+            request_body_sent_text: requestBodySentText,
+            request_debug: requestDebugPayload,
+            ...(apiErrorDetails.requestPayloadText.trim() !== "" && apiErrorDetails.requestPayloadText !== requestBodySentText
+              ? { request_payload_text_debug_only: apiErrorDetails.requestPayloadText }
+              : {}),
             response_payload_text: apiErrorDetails.responseJsonText || "",
             stack_trace: apiErrorDetails.stackTrace || "",
           };
@@ -3188,7 +3932,23 @@ export default function WorkspaceView() {
     }
   }
 
-  function markPreviewImageFailure(imageUrl: string): void {
+  function clearMissingImageForOracle(oracleIdRaw: string): void {
+    const oracleId = oracleIdRaw.trim();
+    if (oracleId === "") {
+      return;
+    }
+
+    setMissingImageOracleIds((previous: Record<string, true>) => {
+      if (!previous[oracleId]) {
+        return previous;
+      }
+      const next = { ...previous };
+      delete next[oracleId];
+      return next;
+    });
+  }
+
+  function markPreviewImageFailure(imageUrl: string, oracleIdRaw: string): void {
     setPreviewImageFailures((previous: Record<string, true>) => {
       if (previous[imageUrl]) {
         return previous;
@@ -3198,6 +3958,43 @@ export default function WorkspaceView() {
         [imageUrl]: true,
       };
     });
+
+    const oracleId = oracleIdRaw.trim();
+    if (imageUrl === "" || oracleId === "") {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const response = await fetch(imageUrl, { method: "GET" });
+        if (response.status !== 404) {
+          if (response.ok) {
+            clearMissingImageForOracle(oracleId);
+          }
+          return;
+        }
+
+        const text = await response.text();
+        const parsed = safeParseJson(text);
+        const root = asRecord(parsed);
+        const errorCode = firstNonEmptyString(root?.code, root?.status) || "";
+        if (errorCode !== "IMAGE_URI_MISSING") {
+          return;
+        }
+
+        setMissingImageOracleIds((previous: Record<string, true>) => {
+          if (previous[oracleId]) {
+            return previous;
+          }
+          return {
+            ...previous,
+            [oracleId]: true,
+          };
+        });
+      } catch {
+        // Keep UI resilient if image diagnostics probe fails.
+      }
+    })();
   }
 
   function buildCardModalList(oracleId: string, oracleIdsContext?: string[]): string[] {
@@ -3278,6 +4075,168 @@ export default function WorkspaceView() {
             <p className="workspace-subtitle">Local-first deck input → build → analysis loop with deterministic rendering.</p>
           </header>
 
+          {/* Phase 4 BUNDLE Integration (4.13): wire the orphaned panels.
+              Mode tabs are PARENT-LEVEL (Workspace vs Seed Builder) per
+              autonomous_repair_log #8; existing EDIT/TOOLS/ANALYZE remain
+              children of Workspace mode. Panels render additively above the
+              existing tree without modifying it.
+              Phase 4.13.1 Stage 2: standalone "Build" button wired here so
+              users have an explicit trigger that populates the dashboards. */}
+          <section className="phase4-bundle-integration" aria-label="Phase 4 panels">
+            {/* Phase 4.14 Stage 2: status pill — derived from reducer state.
+                Variants per spec: source==="fallback" → neutral "No deck loaded";
+                !isCompleted → info "{cmdr} · {N} cards · imported from {source}";
+                isCompleted && !buildResponse → info "{cmdr} · {N} cards · ready to build";
+                buildResponse → success "{cmdr} · {N} cards · built · sufficiency {summary}". */}
+            {(() => {
+              const sufficiencyStatus = (() => {
+                const summary = extractSufficiencySummary(buildResponse);
+                if (!summary || typeof summary.status !== "string") return null;
+                return summary.status;
+              })();
+              const pill = buildWorkspacePillText({
+                source: deckState.source,
+                isHydrated: deckState.isHydrated,
+                isCompleted: deckState.isCompleted,
+                hasBuildResponse: deckState.buildResponse !== null,
+                commander: commander,
+                cardCount: parsedDeckRows.length,
+                sufficiencyStatus,
+              });
+              return (
+                <div className="mb-token-2" role="status" aria-live="polite" aria-label="Workspace status">
+                  <Badge variant={pill.variant === "success" ? "success" : pill.variant === "info" ? "info" : "neutral"}>
+                    {pill.text}
+                  </Badge>
+                </div>
+              );
+            })()}
+
+            <div className="flex flex-wrap items-center gap-token-2 mb-token-2">
+              <div className="flex flex-wrap gap-token-2" role="tablist" aria-label="Page mode">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={pageMode === "WORKSPACE"}
+                  className={`workspace-mode-tab ${pageMode === "WORKSPACE" ? "workspace-mode-tab-active" : ""}`}
+                  onClick={() => setPageMode("WORKSPACE")}
+                >
+                  Workspace
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={pageMode === "SEED_BUILDER"}
+                  className={`workspace-mode-tab ${pageMode === "SEED_BUILDER" ? "workspace-mode-tab-active" : ""}`}
+                  onClick={() => setPageMode("SEED_BUILDER")}
+                >
+                  Seed Builder
+                </button>
+              </div>
+              {/* Phase 4.14 Stage 1+2: numbered "1. Complete deck" → unified
+                  Complete + Apply (single click). Tooltip text hardcoded per
+                  spec — describes the action, not engine output, so Decision
+                  10 doesn't restrict. */}
+              <button
+                type="button"
+                disabled={deckState.completePending || commander.trim() === "" || deckText.trim() === ""}
+                className="workspace-mode-tab"
+                onClick={() => {
+                  void handleUnifiedCompleteDeck();
+                }}
+                title="Asks the engine to fill the deck to 99 cards by adding suggested staples. ~3 sec."
+                aria-label="Step 1: Complete deck — fills to 99 cards"
+              >
+                {deckState.completePending ? "Completing…" : "1. Complete deck"}
+              </button>
+              {deckState.completeError ? (
+                <span className="text-xs text-amber-300" role="status">
+                  {deckState.completeError}
+                </span>
+              ) : null}
+              {/* Phase 4.14 Stage 2: numbered "2. Build" + tooltip. */}
+              <button
+                type="button"
+                disabled={runningBuild || commander.trim() === "" || deckText.trim() === ""}
+                className="workspace-mode-tab"
+                onClick={async () => {
+                  if (runningBuild) return;
+                  dispatchDeckAction({ type: "BUILD_PENDING" });
+                  const body = buildBuildRequestBody({
+                    snapshotId: snapshotId,
+                    profileId: profileId,
+                    bracketId: bracketId,
+                    commander: commander,
+                    cards: deckCardsInPayloadOrder,
+                  });
+                  const result = await callBuildEndpoint(apiBase, body);
+                  if (result.ok) {
+                    dispatchDeckAction({
+                      type: "BUILD_SUCCESS",
+                      response: result.response as Record<string, unknown>,
+                    });
+                  } else {
+                    dispatchDeckAction({ type: "BUILD_ERROR", error: result.error });
+                    setToastMessage(result.error);
+                  }
+                }}
+                title="Runs the full sufficiency + recommendation pipeline. ~2 sec."
+                aria-label="Step 2: Build — runs sufficiency + recommendation pipeline"
+              >
+                {runningBuild ? "Building…" : "2. Build"}
+              </button>
+              {buildError ? (
+                <span className="text-xs text-amber-300" role="status">
+                  {buildError}
+                </span>
+              ) : null}
+            </div>
+
+            {pageMode === "WORKSPACE" ? (
+              <div className="flex flex-col gap-token-3 mb-token-3">
+                {shouldShowSufficiencyDashboard(buildResponse) ? (
+                  <div className="phase4-sufficiency-wrap">
+                    <SufficiencyDashboard summary={extractSufficiencySummary(buildResponse)} />
+                    {shouldShowSwapSuggestions(buildResponse) ? (
+                      <SwapSuggestionsList swaps={extractSwapSuggestions(buildResponse) as ReadonlyArray<SwapSuggestion>} />
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {shouldShowCommanderRecommendation(commander) ? (
+                  <CommanderRecommendationPanel
+                    recommendation={extractCommanderRecommendation(buildResponse)}
+                    onPick={(candidate) => setCommander(candidate.name)}
+                  />
+                ) : null}
+
+                {/* Phase 4.14 Stage 3: GroupedDeckList render call removed.
+                    The DeckEditorPanel + DeckPanel two-column visual list
+                    (with working CardHoverPreview) below is the canonical
+                    deck view. The 4.6 components remain in the codebase
+                    BYTE-IDENTICAL per HARD #14 — only this render call
+                    was removed. */}
+              </div>
+            ) : (
+              <div className="mb-token-3">
+                <SeedBuilderPanel
+                  apiBase={normalizedApiBase}
+                  snapshotId={(snapshotId || "").trim()}
+                  profileId={(profileId || "").trim() || "focused"}
+                  initialBracketId={(bracketId || "").trim() || "B2"}
+                  initialSeedText={deckText}
+                  initialCommander={commander}
+                  recommendationSlot={
+                    <CommanderRecommendationPanel
+                      recommendation={extractCommanderRecommendation(buildResponse)}
+                      onPick={(candidate) => setCommander(candidate.name)}
+                    />
+                  }
+                />
+              </div>
+            )}
+          </section>
+
           {showExternalBackendBanner ? (
             <GlassPanel className="workspace-external-backend-banner">
               <div className="workspace-external-backend-banner-row">
@@ -3356,6 +4315,31 @@ export default function WorkspaceView() {
                 </button>
               ))}
             </div>
+
+            <p className="workspace-muted">
+              Resolved: {hoverArtReleaseMetrics.resolvedCount}/{hoverArtReleaseMetrics.targetCount} (art ready)
+            </p>
+            {isAnalyzeMode && missingImageCount > 0 ? (
+              <div className="workspace-chip-row">
+                <span className="workspace-chip workspace-chip-alert">Image missing for {missingImageCount} cards</span>
+                <button
+                  type="button"
+                  className="workspace-link-button"
+                  title={prefetchSnapshotImagesCommand}
+                  onClick={() => {
+                    void copyTextToClipboard(prefetchSnapshotImagesCommand)
+                      .then(() => {
+                        setToastMessage("Prefetch Snapshot Images command copied.");
+                      })
+                      .catch(() => {
+                        setToastMessage("Failed to copy prefetch command.");
+                      });
+                  }}
+                >
+                  Prefetch Snapshot Images
+                </button>
+              </div>
+            ) : null}
           </GlassPanel>
 
           <div className={`workspace-grid workspace-grid-${workspaceMode.toLowerCase()}`}>
@@ -3390,17 +4374,55 @@ export default function WorkspaceView() {
                   <DeckEditorPanel
                     apiBase={apiBase}
                     snapshotId={snapshotId}
+                    commanderName={commander}
+                    commanderOracleId={deckPanelCommander?.oracleId || null}
                     cardsInput={deckText}
                     parsedDeckRows={parsedDeckRows}
                     deckLineCount={deckTextLineCount}
                     deckTextRevision={deckTextRevision}
                     cardHintsByName={deckEditorCardHints}
+                    savedDeckNames={savedDeckNames}
+                    selectedSavedDeckName={selectedSavedDeckName}
+                    onSelectedSavedDeckNameChange={handleSelectedSavedDeckNameChange}
+                    onSaveDeck={handleSaveDeck}
+                    onLoadSavedDeck={handleLoadSavedDeck}
+                    onRenameSavedDeck={handleRenameSavedDeck}
+                    onDeleteSavedDeck={handleDeleteSavedDeck}
                     onCardsInputChange={(value: string) => {
                       applyDeckText(value, "deck_editor_input");
                     }}
                     onHoverCard={setHoverCard}
                     onResolveNamesMissingChange={setResolveNamesMissingNames}
                     onOpenCard={openCardModal}
+                    onCommanderChange={(nextCommanderName: string) => {
+                      const normalizedCommanderName = nextCommanderName.trim();
+                      if (normalizedCommanderName === "" || normalizedCommanderName === commander.trim()) {
+                        return;
+                      }
+                      setCommander(normalizedCommanderName);
+                      setBuildResponse(null);
+                      setHoverCard(null);
+                    }}
+                    /* Phase 4.14.1: legacy "Complete to 100" + "Apply
+                       Complete" button props omitted — DeckEditorPanel
+                       conditionally renders both on prop presence
+                       (`{onCompleteTo100 ? ... : null}`), so omitting the
+                       props HIDES the buttons from the user-visible UI
+                       without modifying DeckEditorPanel internals (HARD #8
+                       holds — the panel's internal code is BYTE-IDENTICAL).
+                       The unified "1. Complete deck" button in the Phase 4
+                       panel section above is the canonical action.
+                       handleManaTuneTool + handleApplyCompletedDecklist
+                       stay in the file — handleUnifiedCompleteDeck still
+                       invokes them via the await pattern (HARD #15 — the
+                       handlers themselves are BYTE-IDENTICAL behavior). */
+                    runningCompleteTo100={runningSmartComplete}
+                    disableCompleteActions={isAnyToolRunning}
+                    canApplyCompletedDecklist={canApplyCompletedDecklist}
+                    completionStatus={asString(completionResult?.status)}
+                    completionAddedCards={completionCardsAddedCount}
+                    completionLandsAdded={completionLandsAddedCount}
+                    completionError={completionError}
                   />
                 ) : null}
 
@@ -3417,18 +4439,6 @@ export default function WorkspaceView() {
                         }}
                       >
                         {runningSmartTrim ? "Deck Trim..." : "Deck Trim"}
-                      </button>
-
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={activeTool === "MANA_TUNE"}
-                        className={`workspace-tool-action-button ${activeTool === "MANA_TUNE" ? "workspace-tool-action-button-active" : ""}`}
-                        onClick={() => {
-                          setActiveTool("MANA_TUNE");
-                        }}
-                      >
-                        {runningSmartComplete ? "Mana Tune..." : "Mana Tune"}
                       </button>
 
                       <button
@@ -3456,124 +4466,7 @@ export default function WorkspaceView() {
 
                     </div>
 
-                    {isDevMode ? (
-                      <div className="workspace-tool-dev-row">
-                        <button
-                          type="button"
-                          className="workspace-tool-dev-button"
-                          onClick={() => {
-                            void handleDevSmokeTestCompleteApply();
-                          }}
-                          disabled={isAnyToolRunning}
-                        >
-                          {runningDevSmokeCompleteApply ? "Running Smoke..." : "Smoke: Complete+Apply"}
-                        </button>
-                      </div>
-                    ) : null}
-
                     <section className="workspace-tool-results" aria-live="polite">
-                    {activeTool === "MANA_TUNE" ? (
-                      <section className="workspace-tool-panel">
-                        <div className="workspace-tool-panel-header">
-                          <h3>Mana Tune</h3>
-                          <button
-                            type="button"
-                            className="workspace-tool-run-button"
-                            onClick={() => {
-                              void handleManaTuneTool();
-                            }}
-                            disabled={runningSmartComplete || isAnyToolRunning}
-                          >
-                            {runningSmartComplete ? "Running Mana Tune..." : "Run Mana Tune"}
-                          </button>
-                        </div>
-                        {!completionResult ? (
-                          <p className="workspace-muted">Run Mana Tune to view additions and apply the completed deck.</p>
-                        ) : (
-                          <>
-                            <h4>Completion Result</h4>
-                            <div className="workspace-chip-row">
-                              <span className="workspace-chip">status: {asString(completionResult.status) || "(missing)"}</span>
-                              <span className="workspace-chip">cards_added_count: {completionCardsAddedCount}</span>
-                              {hasCompletionLandsAddedCount ? (
-                                <span className="workspace-chip">lands_added_count: {completionLandsAddedCount}</span>
-                              ) : null}
-                              <span className="workspace-chip">final_deck_size: {completionDecklistCounts.totalCount}</span>
-                            </div>
-
-                            {completeAddedRows.length > 0 ? (
-                              <ul className="workspace-compact-list workspace-scroll-list">
-                                {completeAddedRows.map((row: DeckCompleteAddedCardV1, index: number) => {
-                                  const cardName = asString(row.name) || "(unnamed add)";
-                                  const reasons = asStringArray(row.reasons_v1).slice().sort();
-                                  const primitives = asStringArray(row.primitives_added_v1).slice().sort();
-                                  const cardHint = deckEditorCardHints[normalizeNameToken(cardName)];
-                                  return (
-                                    <li
-                                      key={`tool-complete-add-${index}`}
-                                      onMouseEnter={() => {
-                                        setHoverCard({
-                                          name: cardName,
-                                          oracle_id: cardHint?.oracleId || "",
-                                          type_line: cardHint?.typeLine || null,
-                                          primitive_tags: primitives,
-                                          source: "deck",
-                                        });
-                                      }}
-                                      onMouseLeave={() => {
-                                        setHoverCard(null);
-                                      }}
-                                    >
-                                      <strong>{cardName}</strong>
-                                      {reasons.length > 0 ? <div className="workspace-muted">why: {reasons.join(", ")}</div> : null}
-                                      {primitives.length > 0 ? <div className="workspace-muted">primitives: {primitives.join(", ")}</div> : null}
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            ) : (
-                              <p className="workspace-muted">No added_cards_v1 rows were returned.</p>
-                            )}
-
-                            <details className="workspace-collapsible">
-                              <summary>Completed decklist text</summary>
-                              <textarea
-                                className="workspace-readonly-textarea"
-                                value={completedDecklistText}
-                                readOnly
-                                rows={Math.max(8, Math.min(completedDecklistText.split(/\r?\n/).length + 1, 24))}
-                              />
-                            </details>
-
-                            <div className="workspace-action-row">
-                              <button
-                                type="button"
-                                className="workspace-tool-run-button"
-                                onClick={handleApplyCompletedDecklist}
-                                disabled={completedDecklistText.trim() === "" || runningSmartComplete}
-                              >
-                                Apply Complete
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  void handleCopyCompletedDecklist();
-                                }}
-                                disabled={completedDecklistText.trim() === ""}
-                              >
-                                Copy Completed Decklist
-                              </button>
-
-                              <button type="button" className="workspace-link-button" onClick={handleDismissCompletionResult}>
-                                Dismiss
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </section>
-                    ) : null}
-
                     {activeTool === "POWER_TUNE" ? (
                       <section className="workspace-tool-panel">
                         <div className="workspace-tool-panel-header">
@@ -3807,7 +4700,7 @@ export default function WorkspaceView() {
                               <span className={`workspace-status-dot ${lastSmokeSucceeded ? "status-ok" : "status-error"}`}>
                                 {lastSmokeSucceeded ? "PASS" : "FAIL"}
                               </span>{" "}
-                              Complete works (smoke button last run success)
+                              Complete works (last run success)
                             </li>
                             <li>
                               <span className={`workspace-status-dot ${lastTuneSucceeded ? "status-ok" : "status-error"}`}>
@@ -3876,25 +4769,22 @@ export default function WorkspaceView() {
             </section>
             ) : null}
 
-            {isEditMode || isToolsMode ? (
-            <aside className="workspace-col-right" aria-label="Card art preview dock">
-              <div className="workspace-col-right-inner">
-                <ArtDock
-                  hoverCard={hoverCard}
-                  onClear={() => {
-                    setHoverCard(null);
-                  }}
-                  previewImageFailures={previewImageFailures}
-                  markPreviewImageFailure={markPreviewImageFailure}
-                />
-              </div>
-            </aside>
-            ) : null}
           </div>
         </div>
       </main>
 
+      {!isCardModalOpen ? (
+        <HoverCardPreview
+          apiBase={normalizedApiBase}
+          hoverCard={hoverCard}
+          previewImageFailures={previewImageFailures}
+          markPreviewImageFailure={markPreviewImageFailure}
+          clearMissingImageForOracle={clearMissingImageForOracle}
+        />
+      ) : null}
+
       <CardModal
+        apiBase={normalizedApiBase}
         isOpen={isCardModalOpen}
         oracleId={cardModalOracleId}
         oracleIds={cardModalList}
@@ -3903,6 +4793,116 @@ export default function WorkspaceView() {
         onPrev={cardModalList.length > 1 ? goPrev : undefined}
         onNext={cardModalList.length > 1 ? goNext : undefined}
       />
+
+      {savedDeckDialogMode ? (
+        <div
+          className="card-modal-scrim"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeSavedDeckDialog();
+            }
+          }}
+        >
+          <div
+            className="card-modal-shell smart-tools-modal-shell workspace-saved-deck-modal-shell"
+            ref={savedDeckDialogShellRef}
+            role="dialog"
+            aria-modal="true"
+            aria-describedby={savedDeckDialogDescribedBy}
+            tabIndex={-1}
+            aria-label={
+              savedDeckDialogMode === "SAVE"
+                ? "Save deck"
+                : savedDeckDialogMode === "RENAME"
+                  ? "Rename deck"
+                  : "Delete deck"
+            }
+          >
+            <div className="smart-tools-modal-header">
+              <h3>
+                {savedDeckDialogMode === "SAVE"
+                  ? "Save deck"
+                  : savedDeckDialogMode === "RENAME"
+                    ? "Rename deck"
+                    : "Delete deck"}
+              </h3>
+              <button type="button" className="workspace-link-button" onClick={closeSavedDeckDialog}>
+                Close
+              </button>
+            </div>
+
+            <form
+              className="workspace-saved-deck-modal-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleSubmitSavedDeckDialog();
+              }}
+            >
+              <p id={savedDeckDialogDescriptionId} className="workspace-muted workspace-saved-deck-modal-copy">
+                {savedDeckDialogMode === "SAVE"
+                  ? "Choose a deck name. Reusing a name updates that saved deck."
+                  : savedDeckDialogMode === "RENAME"
+                    ? `Rename "${savedDeckDialogTargetName}" to a new deck name.`
+                    : `Delete "${savedDeckDialogTargetName}" from saved decks?`}
+              </p>
+
+              {savedDeckDialogMode === "SAVE" && savedDeckDialogExistingDeck ? (
+                <p className="workspace-muted workspace-saved-deck-modal-copy">
+                  {saveDialogHasChanges
+                    ? `Saving will overwrite "${savedDeckDialogExistingDeck.name}".`
+                    : `"${savedDeckDialogExistingDeck.name}" is already up to date.`}
+                </p>
+              ) : null}
+
+              {savedDeckDialogValidationMessage !== "" ? (
+                <p
+                  id={savedDeckDialogValidationId}
+                  className="workspace-saved-deck-modal-validation"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {savedDeckDialogValidationMessage}
+                </p>
+              ) : null}
+
+              {savedDeckDialogMode === "DELETE" ? (
+                <p className="workspace-saved-deck-modal-target">{savedDeckDialogTargetName}</p>
+              ) : (
+                <label className="workspace-field">
+                  <span>Deck name</span>
+                  <input
+                    type="text"
+                    value={savedDeckDialogNameInput}
+                    onChange={(event) => {
+                      setSavedDeckDialogNameInput(event.target.value);
+                    }}
+                    placeholder="Deck name"
+                    data-saved-deck-name-input="true"
+                    aria-invalid={savedDeckDialogValidationMessage !== ""}
+                    aria-describedby={savedDeckDialogValidationMessage !== "" ? savedDeckDialogValidationId : undefined}
+                    autoFocus
+                  />
+                </label>
+              )}
+
+              <div className="workspace-action-row workspace-saved-deck-modal-actions">
+                <button type="button" className="workspace-link-button" onClick={closeSavedDeckDialog}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="workspace-link-button workspace-saved-deck-modal-submit"
+                  data-saved-deck-submit="true"
+                  disabled={savedDeckDialogSubmitDisabled}
+                  autoFocus={savedDeckDialogMode === "DELETE"}
+                >
+                  {savedDeckDialogSubmitLabel}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
 
       {isHistoryModalOpen ? (
         <div
@@ -4022,6 +5022,73 @@ export default function WorkspaceView() {
                 </ul>
               </div>
             ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {isSnapshotNotReadyModalOpen ? (
+        <div
+          className="card-modal-scrim"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsSnapshotNotReadyModalOpen(false);
+            }
+          }}
+        >
+          <div className="card-modal-shell smart-tools-modal-shell" role="dialog" aria-modal="true" aria-label="Snapshot not ready">
+            <div className="smart-tools-modal-header">
+              <h3>Snapshot not ready</h3>
+              <button
+                type="button"
+                className="workspace-link-button"
+                onClick={() => {
+                  setIsSnapshotNotReadyModalOpen(false);
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            <p>
+              Tool: <strong>{snapshotNotReadyToolLabel || "Smart Tool"}</strong>
+            </p>
+
+            <p>
+              Preflight status: <strong>{snapshotNotReadyStatus || "UNKNOWN"}</strong>
+            </p>
+
+            <p className="workspace-muted">
+              Snapshot preflight reported blocking errors. Resolve these issues before running Complete.
+            </p>
+
+            {snapshotNotReadyErrors.length > 0 ? (
+              <div>
+                <h4>Errors</h4>
+                <ul className="workspace-compact-list workspace-scroll-list">
+                  {snapshotNotReadyErrors.map((row: SnapshotPreflightErrorRow, index: number) => (
+                    <li key={`snapshot-preflight-error-${index}`}>
+                      <strong>{asString(row.code) || "UNKNOWN"}</strong>
+                      {asString(row.message) ? ` :: ${asString(row.message)}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="workspace-muted">No explicit preflight errors were returned.</p>
+            )}
+
+            <div>
+              <h4>Fix instructions</h4>
+              <ul className="workspace-compact-list">
+                {snapshotNotReadyFixInstructions.length > 0 ? (
+                  snapshotNotReadyFixInstructions.map((instruction: string, index: number) => (
+                    <li key={`snapshot-preflight-fix-${index}`}>{instruction}</li>
+                  ))
+                ) : (
+                  <li>Review preflight error codes/messages, fix snapshot readiness, then rerun the tool.</li>
+                )}
+              </ul>
+            </div>
           </div>
         </div>
       ) : null}

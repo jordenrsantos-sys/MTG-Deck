@@ -3,8 +3,22 @@
   "rules": {
     "B1": {"min": 0, "max": 0},
     "B2": {"min": 0, "max": 0},
-    "B3": {"min": 1, "max": 3}
+    "B3": {"min": 1, "max": 3},
+    "B4": {"min": null, "max": 5},
+    "B5": {"min": 6, "max": null}
   },
   "default_for_b_ge_4": {"min": null, "max": null},
-  "default_for_unknown": {"min": null, "max": null}
+  "default_for_unknown": {"min": null, "max": null},
+  "non_canonical_engineering": {
+    "_doc": "These thresholds extend canonical BRACKET_RULES.md (which treats B4 and B5 as policy-identical) with deliberate engineering choices that capture WotC's design intent (cEDH-density distinction). Documented here so future readers know they are not strictly canonical.",
+    "b4_max_5": {
+      "added_in": "5a.5.2",
+      "rationale": "Canonical WotC says unlimited GCs at B4. Capping at 5 forces decks with 6+ GCs into B5, capturing the cEDH-density distinction. Without this cap, B5 is structurally unreachable because the bracket-walk's first-match logic stops at B4."
+    },
+    "b5_min_6": {
+      "added_in": "5a.5.2",
+      "rationale": "Canonical WotC says no minimum criteria for B5. Setting a 6-GC floor prevents low-GC decks from accidentally landing at B5 when B4 has been pushed past via b4_max_5; floor anchors B5 to actual cEDH-density compositions."
+    },
+    "preserved_in": "5a.6"
+  }
 }

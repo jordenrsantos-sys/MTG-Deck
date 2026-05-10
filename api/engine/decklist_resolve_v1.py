@@ -156,6 +156,14 @@ def _normalize_dfc_combined_name(value: Any) -> str | None:
     return f"{face_a_norm}//{face_b_norm}"
 
 
+def _is_token_type_line(value: Any) -> bool:
+    type_line = _nonempty_str(value)
+    if type_line is None:
+        return False
+    lowered = type_line.casefold()
+    return lowered == "token" or lowered.startswith("token ")
+
+
 def _load_cards_index(con, db_snapshot_id: str) -> Tuple[
     Dict[str, Dict[str, str]],
     Dict[str, List[Dict[str, str]]],
@@ -164,13 +172,18 @@ def _load_cards_index(con, db_snapshot_id: str) -> Tuple[
     Dict[str, List[Dict[str, str]]],
     Dict[str, List[Dict[str, str]]],
 ]:
+    cards_columns = set(_table_columns(con, "cards"))
+    select_columns = ["oracle_id", "name"]
+    if "type_line" in cards_columns:
+        select_columns.append("type_line")
+
     rows = con.execute(
-        """
-        SELECT oracle_id, name
-        FROM cards
-        WHERE snapshot_id = ?
-        ORDER BY LOWER(name) ASC, name ASC, oracle_id ASC
-        """,
+        (
+            f"SELECT {', '.join(select_columns)} "
+            "FROM cards "
+            "WHERE snapshot_id = ? "
+            "ORDER BY LOWER(name) ASC, name ASC, oracle_id ASC"
+        ),
         (db_snapshot_id,),
     ).fetchall()
 
@@ -186,6 +199,8 @@ def _load_cards_index(con, db_snapshot_id: str) -> Tuple[
         oracle_id = _nonempty_str(row_dict.get("oracle_id"))
         name = _nonempty_str(row_dict.get("name"))
         if oracle_id is None or name is None:
+            continue
+        if _is_token_type_line(row_dict.get("type_line")):
             continue
 
         candidate = _make_candidate(oracle_id=oracle_id, name=name)

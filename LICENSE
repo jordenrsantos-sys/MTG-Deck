@@ -1,0 +1,37 @@
+MIT License
+
+Copyright (c) 2026 Jorden Santos
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Notes on bundled / consumed data:
+
+- Card data: Magic: The Gathering card metadata (names, oracle text, type
+  lines, color identity, etc.) sourced from Scryfall is licensed under
+  Creative Commons Attribution 4.0 International (CC-BY 4.0). See
+  `docs/LICENSE_AUDIT.md` for attribution details. Magic: The Gathering and
+  its associated trademarks are property of Wizards of the Coast LLC. This
+  project is unaffiliated.
+- Card images cached locally under `data/card_images/` derive from Scryfall's
+  bulk image endpoints. Same CC-BY 4.0 attribution applies.
+- Bundled dependency licenses: see `docs/LICENSE_AUDIT.md` for the top-level
+  npm + pip dependency audit. All top-level dependencies as of v1.0 are
+  permissively licensed (MIT / BSD-3-Clause / Apache-2.0).

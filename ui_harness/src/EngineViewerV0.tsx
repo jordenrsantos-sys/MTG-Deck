@@ -170,6 +170,7 @@ type RunHistoryEntry = {
 const API_BASE =
   (import.meta.env.VITE_API_BASE_URL && import.meta.env.VITE_API_BASE_URL.trim()) ||
   `http://${window.location.hostname}:8000`;
+const DISALLOWED_NETWORK_WRAPPER_KEYS = ["endpoint_payload", "smoke_request_debug"] as const;
 
 async function debugFetch(url: string, options: RequestInit): Promise<Response> {
   if (import.meta.env.DEV) {
@@ -224,6 +225,21 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     return null;
   }
   return value as Record<string, unknown>;
+}
+
+function findDisallowedNetworkWrapperKey(value: unknown): (typeof DISALLOWED_NETWORK_WRAPPER_KEYS)[number] | null {
+  const row = asRecord(value);
+  if (!row) {
+    return null;
+  }
+
+  for (const key of DISALLOWED_NETWORK_WRAPPER_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(row, key)) {
+      return key;
+    }
+  }
+
+  return null;
 }
 
 function asString(value: unknown): string {
@@ -718,6 +734,12 @@ export default function EngineViewerV0() {
 
   async function postJson(path: string, payload: unknown): Promise<unknown> {
     const requestUrl = `${API_BASE}${path}`;
+    const disallowedKey = findDisallowedNetworkWrapperKey(payload);
+    if (disallowedKey) {
+      throw new Error(
+        `Refusing to send wrapped payload to ${path}: unexpected key "${disallowedKey}". Send the flat endpoint request model.`,
+      );
+    }
     const requestBody = JSON.stringify(payload);
 
     try {

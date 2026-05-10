@@ -1,0 +1,216 @@
+{
+  "axes": [
+    "cheap_tutor",
+    "fast_mana",
+    "interaction_staple",
+    "value_staple"
+  ],
+  "entries": [
+    {
+      "axis": "cheap_tutor",
+      "min_bracket_marker": "B3",
+      "name": "Green Sun's Zenith",
+      "oracle_id": "0d96b60b-a060-48ee-bb83-93f1c4a10669"
+    },
+    {
+      "axis": "cheap_tutor",
+      "min_bracket_marker": "B3",
+      "name": "Eldritch Evolution",
+      "oracle_id": "0f77c0c9-4dc4-489a-b547-e93287c4d1a5"
+    },
+    {
+      "axis": "value_staple",
+      "min_bracket_marker": "B3",
+      "name": "Sensei's Divining Top",
+      "oracle_id": "13575cf9-65c1-4861-b21e-eb2155e07766"
+    },
+    {
+      "axis": "fast_mana",
+      "min_bracket_marker": "B2",
+      "name": "Jeweled Lotus",
+      "oracle_id": "23216e59-f147-4bb7-a698-12777c2f8584"
+    },
+    {
+      "axis": "fast_mana",
+      "min_bracket_marker": "B2",
+      "name": "Mana Crypt",
+      "oracle_id": "2c63e4e1-89d2-4bc6-a232-94e75c4b1c8a"
+    },
+    {
+      "axis": "cheap_tutor",
+      "min_bracket_marker": "B3",
+      "name": "Yawgmoth's Will",
+      "oracle_id": "322f0459-f394-44f0-977b-55fd0cbe0712"
+    },
+    {
+      "axis": "fast_mana",
+      "min_bracket_marker": "B2",
+      "name": "Lotus Petal",
+      "oracle_id": "32e5339e-9e4f-46f8-b305-f9d6d3ba8bb5"
+    },
+    {
+      "axis": "interaction_staple",
+      "min_bracket_marker": "B3",
+      "name": "Wrath of God",
+      "oracle_id": "34515b16-c9a4-4f98-8c77-416a7a523407"
+    },
+    {
+      "axis": "cheap_tutor",
+      "min_bracket_marker": "B3",
+      "name": "Tooth and Nail",
+      "oracle_id": "382b7873-e78d-473b-8346-d92d16e8f634"
+    },
+    {
+      "axis": "cheap_tutor",
+      "min_bracket_marker": "B3",
+      "name": "Eladamri's Call",
+      "oracle_id": "4acb6612-54e8-428d-acb6-c7259a5ad6a8"
+    },
+    {
+      "axis": "cheap_tutor",
+      "min_bracket_marker": "B3",
+      "name": "Idyllic Tutor",
+      "oracle_id": "57c9ff89-dd30-467b-bb3e-499eeea8cb94"
+    },
+    {
+      "axis": "value_staple",
+      "min_bracket_marker": "B3",
+      "name": "Esper Sentinel",
+      "oracle_id": "5def9f38-0a0b-4e8d-9f9d-29dcb46520b4"
+    },
+    {
+      "axis": "value_staple",
+      "min_bracket_marker": "B3",
+      "name": "Skullclamp",
+      "oracle_id": "65986c1b-8e51-4604-b685-d82fa7d1263a"
+    },
+    {
+      "axis": "value_staple",
+      "min_bracket_marker": "B3",
+      "name": "Dockside Extortionist",
+      "oracle_id": "697bcfe1-ecbf-42a1-bfc7-0766d48ca56b"
+    },
+    {
+      "axis": "interaction_staple",
+      "min_bracket_marker": "B3",
+      "name": "Mana Drain",
+      "oracle_id": "74d3277a-38e5-4732-afed-084a56148f20"
+    },
+    {
+      "axis": "interaction_staple",
+      "min_bracket_marker": "B3",
+      "name": "Beast Within",
+      "oracle_id": "7735eeba-693b-47e2-bd51-414379cf1016"
+    },
+    {
+      "axis": "fast_mana",
+      "min_bracket_marker": "B2",
+      "name": "Mox Amber",
+      "oracle_id": "7a43bd27-fdd8-41f0-9bc4-92568f3408f1"
+    },
+    {
+      "axis": "cheap_tutor",
+      "min_bracket_marker": "B3",
+      "name": "Wishclaw Talisman",
+      "oracle_id": "81c70ae7-3c18-4c9b-8505-e4db9e0e6518"
+    },
+    {
+      "axis": "value_staple",
+      "min_bracket_marker": "B3",
+      "name": "Mystic Remora",
+      "oracle_id": "8a52f3c0-2552-4425-b2e3-5496eb2232a7"
+    },
+    {
+      "axis": "cheap_tutor",
+      "min_bracket_marker": "B3",
+      "name": "Personal Tutor",
+      "oracle_id": "90f54959-2c9b-4b8a-84c9-d6893eb43553"
+    },
+    {
+      "axis": "value_staple",
+      "min_bracket_marker": "B3",
+      "name": "Sylvan Library",
+      "oracle_id": "92eed395-62ca-4293-882b-8565c40daab5"
+    },
+    {
+      "axis": "interaction_staple",
+      "min_bracket_marker": "B3",
+      "name": "Assassin's Trophy",
+      "oracle_id": "ac10d218-f9a6-4058-9cda-a15ca1b0b7b5"
+    },
+    {
+      "axis": "interaction_staple",
+      "min_bracket_marker": "B3",
+      "name": "Force of Negation",
+      "oracle_id": "ac2173f9-f223-440a-9231-fd98762bdc6f"
+    },
+    {
+      "axis": "interaction_staple",
+      "min_bracket_marker": "B3",
+      "name": "Anguished Unmaking",
+      "oracle_id": "ad09b3c3-c8e7-481c-8c45-e7f234935117"
+    },
+    {
+      "axis": "interaction_staple",
+      "min_bracket_marker": "B3",
+      "name": "Toxic Deluge",
+      "oracle_id": "afaef788-34d1-460b-b884-9d7ae6ddeb18"
+    },
+    {
+      "axis": "interaction_staple",
+      "min_bracket_marker": "B3",
+      "name": "Swords to Plowshares",
+      "oracle_id": "b1544f21-7e98-461b-aed5-e748b0168c52"
+    },
+    {
+      "axis": "interaction_staple",
+      "min_bracket_marker": "B3",
+      "name": "Counterspell",
+      "oracle_id": "cc187110-1148-4090-bbb8-e205694a39f5"
+    },
+    {
+      "axis": "value_staple",
+      "min_bracket_marker": "B3",
+      "name": "Land Tax",
+      "oracle_id": "d2d9ecea-7925-420e-98b9-2f87f41f387c"
+    },
+    {
+      "axis": "interaction_staple",
+      "min_bracket_marker": "B3",
+      "name": "Damnation",
+      "oracle_id": "d57a8f0b-7989-4db5-8756-6f2690097252"
+    },
+    {
+      "axis": "interaction_staple",
+      "min_bracket_marker": "B3",
+      "name": "Path to Exile",
+      "oracle_id": "d683d985-9888-4d21-8b5f-69e69ce4a03b"
+    },
+    {
+      "axis": "fast_mana",
+      "min_bracket_marker": "B2",
+      "name": "Mox Opal",
+      "oracle_id": "de2440de-e948-4811-903c-0bbe376ff64d"
+    },
+    {
+      "axis": "value_staple",
+      "min_bracket_marker": "B3",
+      "name": "Phyrexian Arena",
+      "oracle_id": "ee579a32-a048-4335-b966-231ba731cdea"
+    },
+    {
+      "axis": "value_staple",
+      "min_bracket_marker": "B3",
+      "name": "Trouble in Pairs",
+      "oracle_id": "f349f58b-8cc8-45e4-9565-2b46fdf976c9"
+    },
+    {
+      "axis": "interaction_staple",
+      "min_bracket_marker": "B3",
+      "name": "Pact of Negation",
+      "oracle_id": "f3e213a4-ba5a-468a-93b3-c0a34e1bd725"
+    }
+  ],
+  "pack_id": "power_staples_v1",
+  "version": "power_staples_v1"
+}

@@ -9,6 +9,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Sequence
 
+from engine.db import resolve_image_cache_dir
+
 BULK_INDEX_URL = "https://api.scryfall.com/bulk-data"
 DEFAULT_BULK_FILENAME = "default-cards.json"
 
@@ -82,7 +84,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run Update Mode bulk/enrich/prefetch pipeline")
     parser.add_argument("--db", required=True, help="Path to SQLite DB")
     parser.add_argument("--snapshot-id", required=True, dest="snapshot_id", help="Snapshot ID used by prefetch")
-    parser.add_argument("--cache-dir", default="./data/card_images", dest="cache_dir", help="Local card image cache directory")
+    parser.add_argument("--cache-dir", default=resolve_image_cache_dir(), dest="cache_dir", help="Local card image cache directory")
     parser.add_argument("--bulk-dir", default="./data/scryfall/bulk", dest="bulk_dir", help="Directory for bulk downloads")
     parser.add_argument("--bulk-json", default="", dest="bulk_json", help="Path to default-cards bulk JSON")
     parser.add_argument("--workers", type=int, default=4, help="Prefetch worker count")
@@ -175,26 +177,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             prefetch_command = [
                 sys.executable,
                 "-m",
-                "snapshot_build.prefetch_card_images",
+                "snapshot_build.prefetch_images",
                 "--db",
                 str(db_path),
                 "--snapshot_id",
                 snapshot_id,
-                "--source",
-                "card_images",
-                "--out",
-                str(cache_dir),
-                "--sizes",
-                "normal,small",
-                "--workers",
-                str(int(args.workers)),
-                "--progress",
-                str(int(args.progress)),
+                "--size",
+                "normal",
             ]
-            if bool(args.resume):
-                prefetch_command.append("--resume")
-            else:
-                prefetch_command.append("--no-resume")
             _run_checked(prefetch_command, cwd=repo_root)
             steps["prefetch"] = "RAN"
         else:
@@ -202,7 +192,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.launch:
             current_step = "launch"
-            launch_command = [sys.executable, str((repo_root / "launch_dev.py").resolve())]
+            launch_command = [
+                sys.executable,
+                str((repo_root / "launch.py").resolve()),
+                "--mode",
+                "dev",
+            ]
             _run_checked(launch_command, cwd=repo_root)
             steps["launch"] = "RAN"
 

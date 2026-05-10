@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -48,6 +49,27 @@ class ImageCacheContractTests(unittest.TestCase):
             root = Path(tmp_dir)
             ensured = ensure_size_dir(cache_root=str(root), size="small")
             self.assertEqual(ensured, str((root / "small").resolve()))
+            self.assertTrue((root / "small").is_dir())
+
+    @unittest.skipUnless(os.name == "nt", "Windows-only extended-length path behavior")
+    def test_contract_accepts_windows_extended_path_prefixes(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir).resolve()
+            (root / "normal").mkdir(parents=True, exist_ok=True)
+            image_path = root / "normal" / f"{ORACLE_ID}.jpg"
+            image_path.write_bytes(b"jpg")
+
+            extended_root = f"\\\\?\\{root}"
+            resolved = resolve_local_image_path(
+                cache_root=extended_root,
+                oracle_id=ORACLE_ID,
+                size="normal",
+            )
+
+            self.assertEqual(Path(resolved) if resolved else None, image_path.resolve())
+
+            ensured = ensure_size_dir(cache_root=extended_root, size="small")
+            self.assertEqual(Path(ensured), (root / "small").resolve())
             self.assertTrue((root / "small").is_dir())
 
 

@@ -98,6 +98,17 @@ def _normalize_entry(raw: Any, *, index: int) -> Dict[str, Any]:
     if created_by is not None:
         normalized["created_by"] = created_by
 
+    calibration_only_raw = raw.get("calibration_only")
+    if calibration_only_raw is True:
+        normalized["calibration_only"] = True
+    elif calibration_only_raw is False:
+        pass
+    elif calibration_only_raw is not None:
+        raise _runtime_error(
+            "CURATED_PACK_MANIFEST_V1_INVALID",
+            f"packs[{index}].calibration_only must be a boolean if present",
+        )
+
     return normalized
 
 
@@ -237,6 +248,20 @@ def resolve_pack_file_path(
     if not abs_path.is_file():
         raise _runtime_error("CURATED_PACK_MANIFEST_V1_FILE_MISSING", rel_path)
     return abs_path
+
+
+def iter_runtime_pack_entries(*, manifest_path: Path | None = None) -> List[Dict[str, Any]]:
+    """Return manifest entries safe to load at runtime.
+
+    Filters out entries flagged `calibration_only: true` per the calibration boundary
+    (see 05_VALIDATION/CALIBRATION_BOUNDARY.md). Calibration packs remain SHA-pinned
+    and `validate_manifest_hashes` still verifies them — they're just not exposed
+    to runtime broad-iteration code paths. Calibration tooling should call
+    `resolve_pack_entry(pack_id=...)` explicitly for the calibration packs it needs.
+    """
+    manifest = load_curated_pack_manifest_v1(manifest_path=manifest_path)
+    packs = manifest.get("packs") if isinstance(manifest.get("packs"), list) else []
+    return [dict(entry) for entry in packs if entry.get("calibration_only") is not True]
 
 
 def collect_taxonomy_pack_refs(*, taxonomy_version: str, manifest_path: Path | None = None) -> List[Dict[str, Any]]:

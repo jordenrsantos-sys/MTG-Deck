@@ -1,20 +1,23 @@
 import type { HoverCard } from "../workspaceTypes";
+import { normalizeApiBase } from "../workspaceUtils";
 
 import GlassPanel from "../../ui/primitives/GlassPanel";
 
 type ArtDockProps = {
+  apiBase: string;
   hoverCard: HoverCard | null;
   onClear?: () => void;
   previewImageFailures: Record<string, true>;
-  markPreviewImageFailure: (imageUrl: string) => void;
+  markPreviewImageFailure: (imageUrl: string, oracleId: string) => void;
+  clearMissingImageForOracle: (oracleId: string) => void;
 };
 
-function buildArtImageUrl(oracleIdRaw: string): string {
+function buildArtImageUrl(apiBase: string, oracleIdRaw: string): string {
   const oracleId = oracleIdRaw.trim();
   if (oracleId === "") {
     return "";
   }
-  return `/cards/image/${encodeURIComponent(oracleId)}?size=normal`;
+  return `${normalizeApiBase(apiBase)}/cards/image/${encodeURIComponent(oracleId)}?size=normal`;
 }
 
 function renderSourceLabel(source: HoverCard["source"]): string {
@@ -31,9 +34,9 @@ function renderSourceLabel(source: HoverCard["source"]): string {
 }
 
 export default function ArtDock(props: ArtDockProps) {
-  const { hoverCard, onClear, previewImageFailures, markPreviewImageFailure } = props;
+  const { apiBase, hoverCard, onClear, previewImageFailures, markPreviewImageFailure, clearMissingImageForOracle } = props;
 
-  const imageUrl = buildArtImageUrl(hoverCard?.oracle_id || "");
+  const imageUrl = buildArtImageUrl(apiBase, hoverCard?.oracle_id || "");
   const imageFailed = imageUrl !== "" && Boolean(previewImageFailures[imageUrl]);
   const canRenderImage = imageUrl !== "" && !imageFailed;
 
@@ -76,13 +79,16 @@ export default function ArtDock(props: ArtDockProps) {
                   src={imageUrl}
                   alt={`Card art for ${hoverCard.name}`}
                   loading="lazy"
+                  onLoad={() => {
+                    clearMissingImageForOracle(hoverCard.oracle_id || "");
+                  }}
                   onError={() => {
-                    markPreviewImageFailure(imageUrl);
+                    markPreviewImageFailure(imageUrl, hoverCard.oracle_id || "");
                   }}
                 />
               ) : (
                 <div className="workspace-image-placeholder art-dock-image-placeholder">
-                  {imageUrl === "" ? <p>No local oracle ID is available for this card row.</p> : <p>Art not cached for this local card image.</p>}
+                  {imageUrl === "" ? <p>No local oracle ID is available for this card row.</p> : <p>Image missing for this local card.</p>}
                 </div>
               )}
             </div>

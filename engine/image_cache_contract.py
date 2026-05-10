@@ -13,6 +13,14 @@ IMAGE_CACHE_EXTENSIONS_PREFERRED: Sequence[str] = ("jpg", "jpeg", "png", "webp")
 _IMAGE_CACHE_EXTENSIONS_SET = set(IMAGE_CACHE_EXTENSIONS_PREFERRED)
 
 
+def _strip_windows_extended_prefix(path_value: str) -> str:
+    if path_value.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + path_value[8:]
+    if path_value.startswith("\\\\?\\"):
+        return path_value[4:]
+    return path_value
+
+
 def _nonempty_str(value: object) -> str:
     if isinstance(value, str):
         token = value.strip()
@@ -53,7 +61,7 @@ def _resolve_cache_root(cache_root: object) -> Path:
     candidate = Path(token).expanduser()
     if not candidate.is_absolute():
         candidate = (Path.cwd() / candidate).resolve()
-    return candidate.resolve()
+    return Path(_strip_windows_extended_prefix(str(candidate.resolve())))
 
 
 def image_relpath(oracle_id: str, size: str, ext: str) -> str:
@@ -70,7 +78,11 @@ def resolve_local_image_path(cache_root: str, oracle_id: str, size: str) -> Opti
     normalized_size = normalize_image_size(size)
 
     for extension in IMAGE_CACHE_EXTENSIONS_PREFERRED:
-        candidate = (cache_root_path / image_relpath(normalized_oracle_id, normalized_size, extension)).resolve()
+        candidate = Path(
+            _strip_windows_extended_prefix(
+                str((cache_root_path / image_relpath(normalized_oracle_id, normalized_size, extension)).resolve())
+            )
+        )
         try:
             candidate.relative_to(cache_root_path)
         except ValueError as exc:
@@ -85,7 +97,7 @@ def ensure_size_dir(cache_root: str, size: str) -> str:
     cache_root_path = _resolve_cache_root(cache_root)
     normalized_size = normalize_image_size(size)
 
-    target_dir = (cache_root_path / IMAGE_CACHE_SIZE_DIR_BY_SIZE[normalized_size]).resolve()
+    target_dir = Path(_strip_windows_extended_prefix(str((cache_root_path / IMAGE_CACHE_SIZE_DIR_BY_SIZE[normalized_size]).resolve())))
     try:
         target_dir.relative_to(cache_root_path)
     except ValueError as exc:

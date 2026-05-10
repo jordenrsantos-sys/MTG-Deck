@@ -160,7 +160,7 @@ function buildLocalCardImageUrl(apiBaseUrl: string, oracleId: string, size: "nor
 }
 
 function buildPrefetchCardImagesCommand(snapshotId: string): string {
-  return `python -m snapshot_build.prefetch_card_images --db ./data/mtg.sqlite --snapshot_id ${snapshotId} --out ./data/card_images --sizes normal,small --workers 4 --resume --progress 100`;
+  return `python -m snapshot_build.prefetch_images --db ./data/mtg.sqlite --snapshot_id ${snapshotId} --size normal`;
 }
 
 function clampSuggestLimit(value: number): number {

@@ -41,6 +41,7 @@ tmp_*.json
 /data/mtg.sqlite
 /data/*.sqlite
 /data/card_images/
+/data/image_cache/
 /data/scryfall/
 
 # --- Local data dumps / generated exports ---

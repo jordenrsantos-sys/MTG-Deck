@@ -20,6 +20,7 @@ type CardSuggestInputProps = {
   apiBase: string;
   snapshotId: string;
   limit?: number;
+  commanderOnly?: boolean;
   disabled?: boolean;
   onChange: (value: string) => void;
   onSelect?: (row: CardSuggestRow) => void;
@@ -34,6 +35,7 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
     apiBase,
     snapshotId,
     limit = 12,
+    commanderOnly = false,
     disabled = false,
     onChange,
     onSelect,
@@ -180,9 +182,10 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
     const base = normalizeApiBase(apiBase);
     const safeLimit = clampSuggestLimit(limit);
     const snapshotToken = snapshotId.trim();
+    const commanderPart = commanderOnly ? "&commander_only=1" : "";
     const snapshotPart = snapshotToken !== "" ? `&snapshot_id=${encodeURIComponent(snapshotToken)}` : "";
-    const primaryRequestUrl = `${base}/cards/suggest?q=${encodeURIComponent(query)}${snapshotPart}&limit=${safeLimit}`;
-    const fallbackRequestUrl = `${base}/cards/suggest?q=${encodeURIComponent(query)}&limit=${safeLimit}`;
+    const primaryRequestUrl = `${base}/cards/suggest?q=${encodeURIComponent(query)}${snapshotPart}&limit=${safeLimit}${commanderPart}`;
+    const fallbackRequestUrl = `${base}/cards/suggest?q=${encodeURIComponent(query)}&limit=${safeLimit}${commanderPart}`;
 
     setLoading(true);
     setError(null);
@@ -242,7 +245,7 @@ export default function CardSuggestInput(props: CardSuggestInputProps) {
       controller.abort();
       window.clearTimeout(timerId);
     };
-  }, [apiBase, disabled, limit, snapshotId, value]);
+  }, [apiBase, commanderOnly, disabled, limit, snapshotId, value]);
 
   const suggestItems = useMemo(() => {
     return rows.map((row: CardSuggestRow, index: number) => {

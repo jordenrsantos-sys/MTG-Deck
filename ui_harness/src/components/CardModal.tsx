@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { buildLocalCardImageUrl } from "./workspaceUtils";
 import IconButton from "../ui/primitives/IconButton";
 
 type CardModalProps = {
+  apiBase: string;
   isOpen: boolean;
   oracleId: string | null;
   oracleIds?: string[];
@@ -12,7 +14,7 @@ type CardModalProps = {
   onNext?(): void;
 };
 
-function toCardImageSrc(oracleId: string | null): string {
+function toCardImageSrc(apiBase: string, oracleId: string | null): string {
   if (!oracleId) {
     return "";
   }
@@ -20,11 +22,11 @@ function toCardImageSrc(oracleId: string | null): string {
   if (value === "") {
     return "";
   }
-  return `/cards/image/${value}?size=normal`;
+  return buildLocalCardImageUrl(apiBase, value, "normal");
 }
 
 export default function CardModal(props: CardModalProps) {
-  const { isOpen, oracleId, oracleIds, index, onClose, onPrev, onNext } = props;
+  const { apiBase, isOpen, oracleId, oracleIds, index, onClose, onPrev, onNext } = props;
 
   const [failedOracleIds, setFailedOracleIds] = useState<Record<string, true>>({});
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -79,7 +81,7 @@ export default function CardModal(props: CardModalProps) {
     return selected === "" ? null : selected;
   }, [oracleId, orderedOracleIds, resolvedIndex]);
 
-  const mainImageSrc = toCardImageSrc(activeOracleId);
+  const mainImageSrc = toCardImageSrc(apiBase, activeOracleId);
   const canNavigate = orderedOracleIds.length > 1;
   const prevOracleId =
     canNavigate && onPrev
@@ -162,7 +164,7 @@ export default function CardModal(props: CardModalProps) {
               <div className="card-modal-peek-fallback">Art not cached</div>
             ) : (
               <img
-                src={toCardImageSrc(prevOracleId)}
+                src={toCardImageSrc(apiBase, prevOracleId)}
                 alt=""
                 loading="lazy"
                 onError={() => {
@@ -201,7 +203,7 @@ export default function CardModal(props: CardModalProps) {
               <div className="card-modal-peek-fallback">Art not cached</div>
             ) : (
               <img
-                src={toCardImageSrc(nextOracleId)}
+                src={toCardImageSrc(apiBase, nextOracleId)}
                 alt=""
                 loading="lazy"
                 onError={() => {

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from api.engine.decklist_parse_v1 import parse_decklist_text
 from api.engine.decklist_resolve_v1 import DECKLIST_RESOLVE_VERSION, resolve_parsed_decklist
+from engine.db import connect as cards_db_connect
 from tests.decklist_fixture_harness import (
     DECKLIST_FIXTURE_SNAPSHOT_ID,
     create_decklist_fixture_db,
@@ -160,6 +161,48 @@ class DecklistResolveV1Tests(unittest.TestCase):
                     "count": 1,
                     "source_line_no": 5,
                 },
+            ],
+        )
+
+    def test_resolve_ignores_token_when_non_token_name_matches(self) -> None:
+        con = cards_db_connect()
+        try:
+            con.execute(
+                """
+                INSERT INTO cards (snapshot_id, oracle_id, name, type_line)
+                VALUES (?, ?, ?, ?)
+                """,
+                (DECKLIST_FIXTURE_SNAPSHOT_ID, "ORA_SCRAP_SPELL_001", "Scrap", "Instant"),
+            )
+            con.execute(
+                """
+                INSERT INTO cards (snapshot_id, oracle_id, name, type_line)
+                VALUES (?, ?, ?, ?)
+                """,
+                (DECKLIST_FIXTURE_SNAPSHOT_ID, "ORA_SCRAP_TOKEN_001", "Scrap", "Token Artifact"),
+            )
+            con.commit()
+        finally:
+            con.close()
+
+        parsed = parse_decklist_text(
+            """
+1 Scrap
+"""
+        )
+
+        payload = resolve_parsed_decklist(parsed, DECKLIST_FIXTURE_SNAPSHOT_ID)
+        self.assertEqual(payload.get("status"), "OK")
+        self.assertEqual(payload.get("unknowns"), [])
+        self.assertEqual(
+            payload.get("resolved_cards"),
+            [
+                {
+                    "oracle_id": "ORA_SCRAP_SPELL_001",
+                    "name": "Scrap",
+                    "count": 1,
+                    "source_line_no": 2,
+                }
             ],
         )
 

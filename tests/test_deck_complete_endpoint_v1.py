@@ -161,6 +161,44 @@ class DeckCompleteEndpointV1Tests(unittest.TestCase):
         mocked_run_build.assert_not_called()
         mocked_run_complete.assert_not_called()
 
+    def test_complete_rejects_empty_ingest_with_structured_detail(self) -> None:
+        if _IMPORT_ERROR is not None:
+            self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")
+
+        payload = {
+            "db_snapshot_id": DECKLIST_FIXTURE_SNAPSHOT_ID,
+            "raw_decklist_text": "Commander\nDeck\n",
+            "format": "commander",
+            "profile_id": "focused",
+            "bracket_id": "B2",
+            "mulligan_model_id": "NORMAL",
+            "target_deck_size": 100,
+            "max_adds": 200,
+            "allow_basic_lands": True,
+            "land_target_mode": "AUTO",
+        }
+
+        with (
+            patch("api.main.run_build_pipeline") as mocked_run_build,
+            patch("api.main.run_deck_complete_engine_v1") as mocked_run_complete,
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            response = client.post("/deck/complete_v1", json=payload)
+
+        self.assertEqual(response.status_code, 422)
+        body = response.json() if isinstance(response.json(), dict) else {}
+        detail = body.get("detail") if isinstance(body.get("detail"), dict) else {}
+        self.assertEqual(detail.get("code"), "EMPTY_INGEST")
+        self.assertEqual(detail.get("message"), "No deck lines parsed from raw_decklist_text")
+        self.assertEqual(detail.get("raw_first120"), "Commander\nDeck\n")
+
+        parse_totals = detail.get("parse_totals") if isinstance(detail.get("parse_totals"), dict) else {}
+        self.assertEqual(parse_totals.get("items_total"), 0)
+        self.assertEqual(parse_totals.get("card_count_total"), 0)
+
+        mocked_run_build.assert_not_called()
+        mocked_run_complete.assert_not_called()
+
     def test_complete_happy_path_invokes_build_then_complete_engine(self) -> None:
         if _IMPORT_ERROR is not None:
             self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")
@@ -217,6 +255,10 @@ Deck
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body.get("status"), "OK")
+        self.assertEqual(body.get("codes_v1"), [])
+        self.assertEqual(body.get("baseline_build_status_v1"), "OK")
+        self.assertEqual(body.get("baseline_unknowns_v1"), [])
+        self.assertIsNone(body.get("snapshot_preflight_v1"))
         self.assertEqual(body.get("complete_engine_version"), "deck_complete_engine_v1")
         self.assertIsInstance(body.get("added_cards_v1"), list)
         self.assertEqual(body.get("added_cards_v1")[0].get("name"), "Plains")
@@ -346,6 +388,10 @@ Deck
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body.get("status"), "WARN")
+        self.assertEqual(
+            body.get("codes_v1"),
+            ["BASIC_LANDS_DISALLOWED", "CANDIDATE_POOL_EMPTY", "TARGET_SIZE_NOT_REACHED"],
+        )
         violations = body.get("violations_v1") if isinstance(body.get("violations_v1"), list) else []
         violation_codes = sorted(
             {
@@ -357,6 +403,64 @@ Deck
         self.assertIn("BASIC_LANDS_DISALLOWED", violation_codes)
         self.assertIn("CANDIDATE_POOL_EMPTY", violation_codes)
         self.assertIn("TARGET_SIZE_NOT_REACHED", violation_codes)
+
+    def test_complete_returns_error_when_baseline_build_unavailable(self) -> None:
+        if _IMPORT_ERROR is not None:
+            self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")
+
+        payload = {
+            "db_snapshot_id": DECKLIST_FIXTURE_SNAPSHOT_ID,
+            "raw_decklist_text": """
+Commander
+1 Krenko, Mob Boss
+Deck
+1 Sol Ring
+1 Arcane Signet
+""",
+            "format": "commander",
+            "profile_id": "focused",
+            "bracket_id": "B2",
+            "mulligan_model_id": "NORMAL",
+            "target_deck_size": 100,
+            "max_adds": 200,
+            "allow_basic_lands": True,
+            "land_target_mode": "AUTO",
+        }
+
+        mocked_build_payload = {
+            "status": "SKIP",
+            "unknowns": [
+                {
+                    "code": "SNAPSHOT_PREFLIGHT_FAILED",
+                    "message": "manifest missing",
+                }
+            ],
+            "result": {
+                "snapshot_preflight_v1": {
+                    "tags_compiled": False,
+                    "manifest_present": False,
+                    "card_images_schema_valid": False,
+                }
+            },
+        }
+
+        with (
+            patch.dict(os.environ, {"MTG_ENGINE_DEV_METRICS": "0"}, clear=False),
+            patch("api.main.run_build_pipeline", return_value=mocked_build_payload) as mocked_run_build,
+            patch("api.main.run_deck_complete_engine_v1") as mocked_run_complete,
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            response = client.post("/deck/complete_v1", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body.get("status"), "ERROR")
+        self.assertEqual(body.get("codes_v1"), ["BASELINE_BUILD_UNAVAILABLE"])
+        self.assertEqual(body.get("baseline_build_status_v1"), "SKIP")
+        self.assertEqual(body.get("baseline_unknowns_v1"), mocked_build_payload["unknowns"])
+        self.assertEqual(body.get("snapshot_preflight_v1"), mocked_build_payload["result"]["snapshot_preflight_v1"])
+        mocked_run_build.assert_called_once()
+        mocked_run_complete.assert_not_called()
 
 
 if __name__ == "__main__":

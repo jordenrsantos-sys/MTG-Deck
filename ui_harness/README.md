@@ -11,6 +11,14 @@ Desktop-first UI harness for viewing MTG Engine `/build` payloads using `UI_CONT
   - decklist paste + deterministic normalized preview (`1 Card Name` lines sorted by card name)
   - supports `1 Card`, `1x Card`, and `Card` input
   - ignores blank lines and full-line comments starting with `#` or `//`
+- Deck editor workspace polish:
+  - balanced 3-column section layout (core / spells / lands) to reduce long single-column scrolling
+  - floating hover art preview near cursor (instead of fixed right dock)
+  - hover preview gracefully shows card metadata + placeholder when local card art is unavailable
+  - local saved deck management (Save, Open, Rename, Delete) persisted in browser localStorage
+  - saved deck actions run through in-app modal dialogs (no native browser prompt/confirm)
+  - saved deck modals include inline validation + keyboard focus trapping/restoration
+  - stale saved deck selections are explicitly surfaced, highlighted in the selector, and recoverable via clear-selection action
 - Header chips + analysis status bar
 - Optional v2 panels:
   - `commander_dependency_v2`
@@ -50,7 +58,7 @@ npm run build
 Run production mode from repo root:
 
 ```bash
-python launch_prod.py
+python launch.py --mode prod
 ```
 
 Notes:

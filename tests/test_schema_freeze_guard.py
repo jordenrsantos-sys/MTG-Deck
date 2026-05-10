@@ -13,8 +13,8 @@ from api.engine.pipeline_build import run_build_pipeline
 
 
 TEST_SNAPSHOT_ID = "TEST_SNAPSHOT_0001"
-_EXPECTED_RESULT_KEY_COUNT = 190
-_EXPECTED_RESULT_KEYS_SHA256 = "ea0a851bf9cef9664c59383c8813fad5abeb8b280ad1f61df6987b3ac732e34e"
+_EXPECTED_RESULT_KEY_COUNT = 193
+_EXPECTED_RESULT_KEYS_SHA256 = "447c44847b2ace7b2fdd41b43fbc513be07cbd0ca5df068ab734f55d8ad55732"
 
 
 class _BuildResponse(dict):

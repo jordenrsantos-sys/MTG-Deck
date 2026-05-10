@@ -476,14 +476,10 @@ export function buildLocalCardImageUrl(
 
 export function buildPrefetchCardImagesCommand(snapshotId: string): string {
   return [
-    "python -m snapshot_build.prefetch_card_images",
+    "python -m snapshot_build.prefetch_images",
     `--db ${SQLITE_HEADER_PREFETCH_DB_PATH}`,
     `--snapshot_id ${snapshotId || "<snapshot_id>"}`,
-    "--out .\\data\\card_images",
-    "--sizes normal,small",
-    "--workers 4",
-    "--resume",
-    "--progress 100",
+    "--size normal",
   ].join(" ");
 }
 

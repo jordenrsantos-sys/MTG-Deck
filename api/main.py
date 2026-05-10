@@ -1,9 +1,11 @@
 import json
+import logging
 import os
-from datetime import datetime
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, AsyncIterator
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
@@ -12,12 +14,19 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from engine.db import DB_PATH as CARDS_DB_PATH, connect as cards_db_connect, list_snapshots
+from engine.db import (
+    commander_legality,
+    connect as cards_db_connect,
+    is_legal_in_format,
+    list_snapshots,
+    resolve_db_path,
+    resolve_image_cache_dir,
+)
 from engine.image_cache_contract import (
     IMAGE_CACHE_ALLOWED_SIZES,
     normalize_image_size,
-    resolve_local_image_path,
 )
+from engine.image_runtime import ensure_card_image_cached
 from api.engine.constants import (
     ENGINE_VERSION,
     RULESET_VERSION,
@@ -37,23 +46,29 @@ from api.engine.deck_complete_engine_v1 import (
 from api.engine.deck_completion_v0 import generate_deck_completion_v0
 from api.engine.deck_tune_engine_v1 import VERSION as DECK_TUNE_ENGINE_V1_VERSION, run_deck_tune_engine_v1
 from api.engine.pipeline_build import run_build_pipeline
+from api.engine.layer_registry import (
+    filter_response_to_resolved as _filter_response_to_resolved,
+    resolve_partial as _resolve_partial,
+)
+from api.import_url_v1 import import_from_url as _import_from_url
 from api.engine.run_history_v0 import diff_runs_v0, get_run_v0, list_runs_v0, save_run_v0
 from api.engine.run_bundle_v0 import build_run_bundle_v0
+from api.engine.layers.snapshot_preflight_v1 import run_snapshot_preflight_v1
 from api.engine.strategy_hypothesis_v0 import generate_strategy_hypotheses_v0
 from api.engine.tag_index_query_v0 import (
     get_cards_for_primitive_v0,
     get_primitive_tag_index_status_v0,
     resolve_ruleset_version_v0,
 )
+from snapshot_build.migrate_card_images_table import REQUIRED_CARD_IMAGES_COLUMNS, ensure_card_images_table
+
+_UTC_NOW = datetime.now
 
 
-DB_PATH_ENV = "MTG_ENGINE_DB_PATH"
-DB_PATH_OVERRIDE = os.getenv(DB_PATH_ENV, "").strip()
-if DB_PATH_OVERRIDE != "":
-    db_path_candidate = Path(DB_PATH_OVERRIDE).expanduser()
-    if not db_path_candidate.is_absolute():
-        db_path_candidate = (Path(REPO_ROOT) / db_path_candidate).resolve()
-    CARDS_DB_PATH = db_path_candidate.resolve()
+@asynccontextmanager
+async def _app_lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    startup_image_system_hardening()
+    yield
 
 
 class BuildRequest(BaseModel):
@@ -247,9 +262,13 @@ class DeckCompleteV1Response(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: str
+    codes_v1: List[str] = Field(default_factory=list)
     db_snapshot_id: str
     format: str
     baseline_summary_v1: Dict[str, Any]
+    baseline_build_status_v1: str = ""
+    baseline_unknowns_v1: List[Dict[str, Any]] = Field(default_factory=list)
+    snapshot_preflight_v1: Optional[Dict[str, Any]] = None
     added_cards_v1: List[DeckCompleteAddedCardV1]
     completed_decklist_text_v1: str
     request_hash_v1: str
@@ -315,7 +334,8 @@ class CardsResolveNamesResponse(BaseModel):
     missing: List[str] = Field(default_factory=list)
 
 
-app = FastAPI(title="MTG Strategy Engine", version=ENGINE_VERSION)
+app = FastAPI(title="MTG Strategy Engine", version=ENGINE_VERSION, lifespan=_app_lifespan)
+logger = logging.getLogger(__name__)
 
 DEV_CORS = os.getenv("MTG_ENGINE_DEV_CORS", "0") == "1"
 
@@ -354,9 +374,90 @@ UI_STATIC_ENABLED = os.path.isdir(UI_DIST_PATH) and os.path.isfile(UI_INDEX_PATH
 if UI_STATIC_ENABLED and os.path.isdir(UI_ASSETS_PATH):
     app.mount("/assets", StaticFiles(directory=UI_ASSETS_PATH), name="assets")
 
-DEFAULT_CARD_IMAGE_CACHE_DIR = (Path(REPO_ROOT) / "data" / "card_images").resolve()
-CARD_IMAGE_CACHE_DIR_ENV = "MTG_ENGINE_IMAGE_CACHE_DIR"
 CARD_IMAGE_CACHE_CONTROL = "public, max-age=31536000"
+
+
+def _card_images_schema_ok(con) -> bool:
+    try:
+        rows = con.execute("PRAGMA table_info(card_images)").fetchall()
+    except Exception:
+        return False
+
+    available_columns: set[str] = set()
+    for row in rows:
+        try:
+            row_dict = dict(row)
+        except Exception:
+            continue
+        column_name = row_dict.get("name")
+        if isinstance(column_name, str) and column_name != "":
+            available_columns.add(column_name)
+
+    return all(column in available_columns for column in REQUIRED_CARD_IMAGES_COLUMNS)
+
+
+def _health_cached_image_count(con) -> int:
+    try:
+        row = con.execute("SELECT COUNT(*) AS total FROM card_images").fetchone()
+    except Exception:
+        return 0
+
+    if row is None:
+        return 0
+    try:
+        row_dict = dict(row)
+        total = row_dict.get("total")
+    except Exception:
+        total = row[0] if isinstance(row, (tuple, list)) and len(row) > 0 else 0
+
+    if isinstance(total, int):
+        return max(0, total)
+    return 0
+
+
+def _health_sample_oracle_id(con) -> str:
+    try:
+        row = con.execute(
+            """
+            SELECT oracle_id
+            FROM cards
+            ORDER BY snapshot_id DESC, oracle_id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+    except Exception:
+        return ""
+
+    if row is None:
+        return ""
+
+    try:
+        row_dict = dict(row)
+        oracle_id = row_dict.get("oracle_id")
+    except Exception:
+        oracle_id = row[0] if isinstance(row, (tuple, list)) and len(row) > 0 else ""
+
+    return _coerce_nonempty_str(oracle_id)
+
+
+def startup_image_system_hardening() -> None:
+    try:
+        db_path = resolve_db_path()
+    except Exception as exc:
+        logger.exception("Failed resolving DB path at startup")
+        raise RuntimeError("Failed resolving DB path at startup") from exc
+
+    image_cache_dir = resolve_image_cache_dir()
+    logger.info("DB_PATH=%s", db_path)
+    logger.info("IMAGE_CACHE_DIR=%s", image_cache_dir)
+
+    try:
+        ensure_card_images_table(db_path=db_path)
+    except Exception as exc:
+        logger.exception("card_images schema migration failed")
+        raise RuntimeError("card_images schema migration failed") from exc
+
+    logger.info("card_images schema migration OK")
 
 
 @app.get("/health")
@@ -373,13 +474,45 @@ def health():
         or os.getenv("UI_COMMIT", "").strip()
     )
 
+    image_cache_dir = resolve_image_cache_dir()
+    image_cache_exists = Path(image_cache_dir).is_dir()
+    card_images_schema_ok = False
+    cached_image_count = 0
+    sample_oracle_id = ""
+    sample_exists_on_disk = False
+
+    try:
+        with cards_db_connect() as con:
+            card_images_schema_ok = _card_images_schema_ok(con)
+            cached_image_count = _health_cached_image_count(con)
+            sample_oracle_id = _health_sample_oracle_id(con)
+    except Exception:
+        card_images_schema_ok = False
+        cached_image_count = 0
+        sample_oracle_id = ""
+
+    if sample_oracle_id != "":
+        sample_exists_on_disk = (
+            Path(image_cache_dir)
+            .joinpath("normal", f"{sample_oracle_id}.jpg")
+            .is_file()
+        )
+
     payload = {
         "status": "OK",
         "engine_version": ENGINE_VERSION,
         "db_snapshot_id": latest_snapshot_id,
         "ruleset_version": RULESET_VERSION,
         "bracket_definition_version": BRACKET_DEFINITION_VERSION,
-        "server_time": datetime.utcnow().isoformat() + "Z",
+        "server_time": _UTC_NOW(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "image_cache_dir": image_cache_dir,
+        "image_cache_exists": bool(image_cache_exists),
+        "card_images_schema_ok": bool(card_images_schema_ok),
+        "cached_image_count": int(cached_image_count),
+        "image_sample_test": {
+            "oracle_id": sample_oracle_id,
+            "exists_on_disk": bool(sample_exists_on_disk),
+        },
     }
     if git_commit != "":
         payload["git_commit"] = git_commit
@@ -391,11 +524,19 @@ def snapshots(limit: int = 20):
     return {"snapshots": list_snapshots(limit=limit)}
 
 
+@app.get("/snapshot/preflight/{snapshot_id}")
+def snapshot_preflight_v1(snapshot_id: str):
+    with cards_db_connect() as con:
+        return run_snapshot_preflight_v1(db=con, snapshot_id=snapshot_id)
+
+
 @app.get("/cards/suggest")
-def cards_suggest(q: str, snapshot_id: Optional[str] = None, limit: int = 20):
+def cards_suggest(q: str, snapshot_id: Optional[str] = None, limit: int = 20, commander_only: bool = False):
     query = _coerce_nonempty_str(q).lower()
     normalized_snapshot_id = _coerce_nonempty_str(snapshot_id)
     safe_limit = min(max(_coerce_positive_int(limit, default=20), 1), 20)
+    require_legal_commander = bool(commander_only)
+    candidate_limit = safe_limit if not require_legal_commander else min(max(safe_limit * 8, safe_limit), 200)
 
     if len(query) < 2:
         return {
@@ -473,11 +614,29 @@ def cards_suggest(q: str, snapshot_id: Optional[str] = None, limit: int = 20):
                 f"SELECT {select_clause} FROM cards "
                 "WHERE snapshot_id = ? AND LOWER(name) LIKE ? "
                 "ORDER BY name ASC LIMIT ?",
-                (normalized_snapshot_id, query + "%", safe_limit),
+                (normalized_snapshot_id, query + "%", candidate_limit),
             ).fetchall()
 
             results: List[Dict[str, Any]] = []
             dedupe_keys: set[str] = set()
+            commander_eligibility_cache: Dict[str, bool] = {}
+
+            def _is_legal_commander_suggestion(card_name: str) -> bool:
+                cache_key = _coerce_nonempty_str(card_name).lower()
+                if cache_key in commander_eligibility_cache:
+                    return commander_eligibility_cache[cache_key]
+
+                try:
+                    commander_ok, _, resolved_card = commander_legality(normalized_snapshot_id, card_name)
+                    format_ok = False
+                    if commander_ok and isinstance(resolved_card, dict):
+                        format_ok, _ = is_legal_in_format(resolved_card, "commander")
+                    is_legal = bool(commander_ok and format_ok)
+                except Exception:
+                    is_legal = False
+
+                commander_eligibility_cache[cache_key] = is_legal
+                return is_legal
 
             def _append_rows(rows: Any) -> None:
                 for row in rows:
@@ -492,6 +651,10 @@ def cards_suggest(q: str, snapshot_id: Optional[str] = None, limit: int = 20):
                     if dedupe_key in dedupe_keys:
                         continue
                     dedupe_keys.add(dedupe_key)
+
+                    if require_legal_commander and not _is_legal_commander_suggestion(str(result_row.get("name") or "")):
+                        continue
+
                     results.append(result_row)
                     if len(results) >= safe_limit:
                         return
@@ -499,7 +662,7 @@ def cards_suggest(q: str, snapshot_id: Optional[str] = None, limit: int = 20):
             _append_rows(prefix_rows)
 
             if len(results) < safe_limit:
-                remaining = safe_limit - len(results)
+                remaining = candidate_limit if require_legal_commander else safe_limit - len(results)
                 contains_rows = con.execute(
                     f"SELECT {select_clause} FROM cards "
                     "WHERE snapshot_id = ? AND LOWER(name) LIKE ? AND LOWER(name) NOT LIKE ? "
@@ -529,34 +692,55 @@ def cards_image(oracle_id: str, size: str = "normal"):
     normalized_size = _normalize_card_image_size(size)
     normalized_oracle_id = _normalize_oracle_id(oracle_id)
     cache_dir = _resolve_card_image_cache_dir()
-    try:
-        image_path_value = resolve_local_image_path(
-            cache_root=str(cache_dir),
+    with cards_db_connect() as con:
+        current_snapshot_id = _latest_snapshot_id_from_connection(con)
+        fetch_result = ensure_card_image_cached(
+            con=con,
+            cache_dir=str(cache_dir),
             oracle_id=normalized_oracle_id,
             size=normalized_size,
+            current_snapshot_id=current_snapshot_id,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid image cache path.") from exc
 
-    if image_path_value is None:
+    result_status = _coerce_nonempty_str(fetch_result.get("status"))
+    result_path = Path(_coerce_nonempty_str(fetch_result.get("image_path")))
+
+    if result_status == "IMAGE_URI_MISSING":
+        logger.warning("IMAGE_URI_MISSING %s %s", normalized_oracle_id, normalized_size)
         return JSONResponse(
             status_code=404,
             content={
-                "status": "MISSING_IMAGE",
+                "code": "IMAGE_URI_MISSING",
                 "oracle_id": normalized_oracle_id,
                 "size": normalized_size,
             },
         )
 
-    image_path = Path(image_path_value)
-    suffix = image_path.suffix.lower()
-    if suffix == ".png":
-        media_type = "image/png"
-    elif suffix == ".webp":
-        media_type = "image/webp"
-    else:
-        media_type = "image/jpeg"
-    response = FileResponse(path=str(image_path), media_type=media_type)
+    if result_status == "IMAGE_FETCH_FAILED":
+        logger.error(
+            "IMAGE_FETCH_FAILED %s %s error=%s",
+            normalized_oracle_id,
+            normalized_size,
+            _coerce_nonempty_str(fetch_result.get("error")),
+        )
+        return JSONResponse(
+            status_code=502,
+            content={
+                "code": "IMAGE_FETCH_FAILED",
+                "oracle_id": normalized_oracle_id,
+                "size": normalized_size,
+            },
+        )
+
+    if result_status == "CACHE_HIT":
+        logger.info("IMAGE_CACHE_HIT %s %s", normalized_oracle_id, normalized_size)
+    elif result_status == "IMAGE_FETCHED":
+        logger.info("IMAGE_FETCHED %s %s", normalized_oracle_id, normalized_size)
+
+    if result_path == Path("") or not result_path.is_file():
+        raise HTTPException(status_code=500, detail="Image cache resolution failed.")
+
+    response = FileResponse(path=str(result_path), media_type="image/jpeg")
     response.headers["Cache-Control"] = CARD_IMAGE_CACHE_CONTROL
     return response
 
@@ -705,6 +889,80 @@ def build(req: BuildRequest):
     return BuildResponse(**payload)
 
 
+# Engine-4A: POST /build/partial — fast incremental engine call.
+# Per HARD safety: this endpoint does NOT modify pipeline_build or any engine
+# layer. It runs the full pipeline (existing behavior) and filters the
+# response down to the requested layers + their transitive deps via the
+# layer_registry topological resolver. A future Phase 6 sub-task may
+# short-circuit pipeline_build for true incremental performance; Engine-4A
+# ships the API surface so the UI seed-builder (Phase 4.4) can consume it.
+@app.post("/build/partial")
+def build_partial(req: BuildRequest, request: Request):
+    layers_param = request.query_params.get("layers", "")
+    requested_layer_ids = [s.strip() for s in layers_param.split(",") if s.strip()]
+    resolution = _resolve_partial(requested_layer_ids)
+
+    if resolution["unknown"]:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "INVALID_REQUEST",
+                "reason_code": "unknown_layer_ids",
+                "unknown_layer_ids": resolution["unknown"],
+                "resolution": resolution,
+            },
+        )
+
+    canonical_request = build_canonical_deck_input_v1(
+        db_snapshot_id=req.db_snapshot_id,
+        profile_id=req.profile_id,
+        bracket_id=req.bracket_id,
+        format=req.format,
+        commander=req.commander if isinstance(req.commander, str) else "",
+        cards=req.cards,
+        engine_patches_v0=req.engine_patches_v0,
+    )
+    request_hash_v1 = compute_request_hash_v1(canonical_request)
+    payload = run_build_pipeline(req=req, conn=None, repo_root_path=REPO_ROOT)
+
+    full_result = payload.get("result") if isinstance(payload, dict) else None
+    filtered_result = _filter_response_to_resolved(
+        full_result if isinstance(full_result, dict) else {},
+        resolution["resolved"],
+    )
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "OK",
+            "request_hash_v1": request_hash_v1,
+            "resolution": resolution,
+            "result": filtered_result,
+            "engine_version": payload.get("engine_version") if isinstance(payload, dict) else None,
+        },
+    )
+
+
+# Engine-4A: POST /import/url — server-side CORS proxy + parser registry.
+class ImportUrlRequest(BaseModel):
+    url: str = Field(..., description="Public deck-source URL to import")
+
+
+@app.post("/import/url")
+def import_url(req: ImportUrlRequest):
+    result = _import_from_url(req.url)
+    # Per Engine-4A: status_code reflects outcome semantics.
+    if result.get("status") == "OK":
+        return JSONResponse(status_code=200, content=result)
+    if result.get("status") == "DEFERRED":
+        return JSONResponse(status_code=200, content=result)  # 200 + deferred body
+    if result.get("status") == "INVALID_REQUEST":
+        return JSONResponse(status_code=400, content=result)
+    if result.get("status") in ("PARSE_ERROR", "FETCH_ERROR"):
+        return JSONResponse(status_code=502, content=result)  # bad gateway-ish
+    return JSONResponse(status_code=500, content=result)
+
+
 def _coerce_nonnegative_int(value: Any, *, default: int = 0) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         return int(default)
@@ -820,14 +1078,37 @@ def _latest_snapshot_id() -> str:
     return _coerce_nonempty_str(first_row.get("snapshot_id"))
 
 
+def _runtime_db_path_str() -> str:
+    return str(resolve_db_path())
+
+
+def _latest_snapshot_id_from_connection(con) -> str:
+    try:
+        row = con.execute(
+            """
+            SELECT snapshot_id
+            FROM snapshots
+            ORDER BY created_at DESC, snapshot_id DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    except Exception:
+        return ""
+
+    if row is None:
+        return ""
+
+    try:
+        row_dict = dict(row)
+        value = row_dict.get("snapshot_id")
+    except Exception:
+        value = row[0] if isinstance(row, (tuple, list)) and len(row) > 0 else ""
+
+    return _coerce_nonempty_str(value)
+
+
 def _resolve_card_image_cache_dir() -> Path:
-    env_value = os.getenv(CARD_IMAGE_CACHE_DIR_ENV, "")
-    if isinstance(env_value, str) and env_value.strip() != "":
-        candidate = Path(env_value.strip()).expanduser()
-        if not candidate.is_absolute():
-            candidate = (Path(REPO_ROOT) / candidate).resolve()
-        return candidate.resolve()
-    return DEFAULT_CARD_IMAGE_CACHE_DIR
+    return Path(resolve_image_cache_dir()).resolve()
 
 
 def _normalize_card_image_size(size: Any) -> str:
@@ -1340,6 +1621,24 @@ async def deck_complete_v1(req: DeckCompleteV1Request, request: Request):
         name_overrides_v1=name_overrides_v1,
     )
 
+    parsed_payload = ingest_payload.get("parsed") if isinstance(ingest_payload.get("parsed"), dict) else {}
+    parse_totals_raw = parsed_payload.get("totals") if isinstance(parsed_payload.get("totals"), dict) else {}
+    parse_totals = {
+        "items_total": _coerce_nonnegative_int(parse_totals_raw.get("items_total"), default=0),
+        "card_count_total": _coerce_nonnegative_int(parse_totals_raw.get("card_count_total"), default=0),
+        "ignored_line_total": _coerce_nonnegative_int(parse_totals_raw.get("ignored_line_total"), default=0),
+    }
+    if parse_totals["items_total"] == 0:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "EMPTY_INGEST",
+                "message": "No deck lines parsed from raw_decklist_text",
+                "raw_first120": req.raw_decklist_text[:120],
+                "parse_totals": parse_totals,
+            },
+        )
+
     canonical_from_ingest = (
         ingest_payload.get("canonical_deck_input")
         if isinstance(ingest_payload.get("canonical_deck_input"), dict)
@@ -1434,9 +1733,13 @@ async def deck_complete_v1(req: DeckCompleteV1Request, request: Request):
     if len(unknowns) > 0:
         return DeckCompleteV1Response(
             status="UNKNOWN_PRESENT",
+            codes_v1=[],
             db_snapshot_id=req.db_snapshot_id,
             format=canonical_deck_input_dict.get("format") if isinstance(canonical_deck_input_dict.get("format"), str) else "commander",
             baseline_summary_v1={},
+            baseline_build_status_v1="",
+            baseline_unknowns_v1=[],
+            snapshot_preflight_v1=None,
             added_cards_v1=[],
             completed_decklist_text_v1=_build_commander_decklist_text_v1(
                 commander=canonical_deck_input_dict.get("commander")
@@ -1470,6 +1773,42 @@ async def deck_complete_v1(req: DeckCompleteV1Request, request: Request):
     baseline_build_started_at = perf_counter()
     baseline_build_payload = run_build_pipeline(req=build_req, conn=None, repo_root_path=REPO_ROOT)
     baseline_build_ms = _round6(max((perf_counter() - baseline_build_started_at) * 1000.0, 0.0))
+
+    baseline_build_status_v1 = _coerce_nonempty_str(baseline_build_payload.get("status"))
+    if baseline_build_status_v1 == "":
+        baseline_build_status_v1 = "UNKNOWN"
+    baseline_unknowns_raw = baseline_build_payload.get("unknowns") if isinstance(baseline_build_payload.get("unknowns"), list) else []
+    baseline_unknowns_v1 = [dict(row) for row in baseline_unknowns_raw if isinstance(row, dict)]
+    baseline_result_payload = baseline_build_payload.get("result") if isinstance(baseline_build_payload.get("result"), dict) else {}
+    snapshot_preflight_v1 = (
+        dict(baseline_result_payload.get("snapshot_preflight_v1"))
+        if isinstance(baseline_result_payload.get("snapshot_preflight_v1"), dict)
+        else None
+    )
+
+    if baseline_build_status_v1 not in {"OK", "WARN"}:
+        return DeckCompleteV1Response(
+            status="ERROR",
+            codes_v1=["BASELINE_BUILD_UNAVAILABLE"],
+            db_snapshot_id=build_req.db_snapshot_id,
+            format=build_req.format,
+            baseline_summary_v1={},
+            baseline_build_status_v1=baseline_build_status_v1,
+            baseline_unknowns_v1=baseline_unknowns_v1,
+            snapshot_preflight_v1=snapshot_preflight_v1,
+            added_cards_v1=[],
+            completed_decklist_text_v1=_build_commander_decklist_text_v1(
+                commander=build_req.commander if isinstance(build_req.commander, str) else "",
+                cards=[name for name in canonical_deck_input_dict.get("cards", []) if isinstance(name, str)],
+            ),
+            request_hash_v1=request_hash_v1,
+            unknowns=unknowns,
+            violations_v1=violations_v1,
+            parse_version=ingest_payload.get("parse_version") if isinstance(ingest_payload.get("parse_version"), str) else "",
+            resolve_version=ingest_payload.get("resolve_version") if isinstance(ingest_payload.get("resolve_version"), str) else "",
+            ingest_version=ingest_payload.get("ingest_version") if isinstance(ingest_payload.get("ingest_version"), str) else "",
+            complete_engine_version=DECK_COMPLETE_ENGINE_V1_VERSION,
+        )
 
     complete_payload = run_deck_complete_engine_v1(
         canonical_deck_input=canonical_deck_input_dict,
@@ -1542,9 +1881,13 @@ async def deck_complete_v1(req: DeckCompleteV1Request, request: Request):
 
     response = DeckCompleteV1Response(
         status=complete_status,
+        codes_v1=complete_codes,
         db_snapshot_id=build_req.db_snapshot_id,
         format=build_req.format,
         baseline_summary_v1=complete_payload.get("baseline_summary_v1") if isinstance(complete_payload.get("baseline_summary_v1"), dict) else {},
+        baseline_build_status_v1=baseline_build_status_v1,
+        baseline_unknowns_v1=baseline_unknowns_v1,
+        snapshot_preflight_v1=snapshot_preflight_v1,
         added_cards_v1=added_cards_v1,
         completed_decklist_text_v1=(
             complete_payload.get("completed_decklist_text_v1")
@@ -1660,7 +2003,7 @@ def deck_complete_v0(req: DeckCompleteRequest):
             }
 
         save_run_v0(
-            db_path=str(CARDS_DB_PATH),
+            db_path=_runtime_db_path_str(),
             endpoint="deck_complete_v0",
             request=request_payload,
             response=response_payload,
@@ -1675,7 +2018,7 @@ def deck_complete_v0(req: DeckCompleteRequest):
 @app.get("/runs_v0")
 def runs_v0(limit: int = 50, endpoint: Optional[str] = None):
     rows = list_runs_v0(
-        db_path=str(CARDS_DB_PATH),
+        db_path=_runtime_db_path_str(),
         limit=limit,
         endpoint=endpoint,
     )
@@ -1684,13 +2027,13 @@ def runs_v0(limit: int = 50, endpoint: Optional[str] = None):
 
 @app.get("/run_v0/{run_id}")
 def run_v0(run_id: str):
-    return get_run_v0(db_path=str(CARDS_DB_PATH), run_id=run_id)
+    return get_run_v0(db_path=_runtime_db_path_str(), run_id=run_id)
 
 
 @app.get("/run_diff_v0")
 def run_diff_v0(run_id_a: str, run_id_b: str):
     return diff_runs_v0(
-        db_path=str(CARDS_DB_PATH),
+        db_path=_runtime_db_path_str(),
         run_id_a=run_id_a,
         run_id_b=run_id_b,
     )
@@ -1719,7 +2062,7 @@ def _attach_optional_run_diff(
 
     bundle_payload["previous_run_id"] = previous_run_id_clean
     bundle_payload["run_diff_v0"] = diff_runs_v0(
-        db_path=str(CARDS_DB_PATH),
+        db_path=_runtime_db_path_str(),
         run_id_a=previous_run_id_clean,
         run_id_b=current_run_id,
     )
@@ -1727,7 +2070,7 @@ def _attach_optional_run_diff(
 
 @app.get("/run_bundle_v0")
 def run_bundle_v0(run_id: str, previous_run_id: Optional[str] = None):
-    run_obj = get_run_v0(db_path=str(CARDS_DB_PATH), run_id=run_id)
+    run_obj = get_run_v0(db_path=_runtime_db_path_str(), run_id=run_id)
     if not isinstance(run_obj, dict):
         return _run_bundle_error(message="Run not found", run_id=run_id)
 
@@ -1757,7 +2100,7 @@ def run_bundle_v0_latest(
     bracket_id_filter = bracket_id.strip() if isinstance(bracket_id, str) and bracket_id.strip() != "" else None
 
     rows = list_runs_v0(
-        db_path=str(CARDS_DB_PATH),
+        db_path=_runtime_db_path_str(),
         limit=500,
         endpoint=endpoint_value,
     )
@@ -1788,7 +2131,7 @@ def run_bundle_v0_latest(
     if not isinstance(selected_run_id, str) or selected_run_id == "":
         return _run_bundle_error(message="Latest run row missing run_id")
 
-    run_obj = get_run_v0(db_path=str(CARDS_DB_PATH), run_id=selected_run_id)
+    run_obj = get_run_v0(db_path=_runtime_db_path_str(), run_id=selected_run_id)
     if not isinstance(run_obj, dict):
         return _run_bundle_error(message="Run not found", run_id=selected_run_id)
 
@@ -1823,7 +2166,7 @@ def primitive_tag_index_v0_status():
         else None
     )
     status_payload = get_primitive_tag_index_status_v0(
-        db_path=str(CARDS_DB_PATH),
+        db_path=_runtime_db_path_str(),
         db_snapshot_id=db_snapshot_id,
     )
     return {
@@ -1839,7 +2182,7 @@ def primitive_tag_index_v0_primitive(
     limit: int = 50,
 ):
     ruleset_version_value = resolve_ruleset_version_v0(
-        db_path=str(CARDS_DB_PATH),
+        db_path=_runtime_db_path_str(),
         requested_ruleset_version=ruleset_version,
     )
     if not isinstance(ruleset_version_value, str) or ruleset_version_value == "":
@@ -1849,7 +2192,7 @@ def primitive_tag_index_v0_primitive(
         }
 
     rows = get_cards_for_primitive_v0(
-        db_path=str(CARDS_DB_PATH),
+        db_path=_runtime_db_path_str(),
         ruleset_version=ruleset_version_value,
         primitive_id=primitive_id,
         limit=limit,

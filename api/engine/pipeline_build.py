@@ -5,6 +5,14 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List
 
+# Phase 6 Stage 6: opt-in per-layer timing instrumentation. `_time_layer`
+# is a near-zero-overhead pass-through when no probe is active (production
+# path); when a probe is active (perf-audit CLI / dedicated tests), each
+# wrapped layer call is timed + recorded in the probe's entries list.
+# HARD safety #5 (/build reproducibility): instrumentation is side-channel
+# only — BuildResponse shape + bytes are BYTE-IDENTICAL pre/post.
+from api.engine.perf.timing_instrumentation_v1 import time_layer as _time_layer
+
 from engine.db import (
     connect as cards_db_connect,
     find_card_by_name,
@@ -48,6 +56,9 @@ from api.engine.layers.engine_coherence_v2 import (
     run_engine_coherence_v2,
 )
 from api.engine.layers.engine_requirement_detection_v1 import run_engine_requirement_detection_v1
+from api.engine.layers.seed_synergy_detection_v1 import run_seed_synergy_detection_v1
+from api.engine.layers.commander_recommendation_v1 import run_commander_recommendation_v1
+from api.engine.layers.seed_to_deck_engine_v1 import run_seed_to_deck_engine_v1
 from api.engine.layers.graph_v1_schema_assert_v1 import (
     GRAPH_V1_SCHEMA_ASSERT_V1_VERSION,
     run_graph_v1_schema_assert_v1,
@@ -1727,6 +1738,34 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             slot_ids_by_primitive=slot_ids_by_primitive,
             commander_slot_id=(commander_canonical_slot or {}).get("slot_id"),
         )
+        with _time_layer("seed_synergy_detection_v1"):
+            seed_synergy_detection_v1 = run_seed_synergy_detection_v1(
+                primitive_index_by_slot=primitive_index_by_slot,
+                slot_ids_by_primitive=slot_ids_by_primitive,
+                bracket_id=req.bracket_id,
+                commander_slot_id=(commander_canonical_slot or {}).get("slot_id"),
+            )
+        with _time_layer("commander_recommendation_v1"):
+            commander_recommendation_v1 = run_commander_recommendation_v1(
+                seed_primitive_ids=sorted((slot_ids_by_primitive or {}).keys()),
+                seed_color_identity=list(
+                    (commander_resolved or {}).get("color_identity") or []
+                ),
+                snapshot_id=req.db_snapshot_id,
+            )
+        # Phase 3 reduced-ambition v1: orchestrator runs validation + commander
+        # resolution; deck-build delegation deferred to Phase 3.1 unless the
+        # caller injects a deck_build_runner.
+        with _time_layer("seed_to_deck_engine_v1"):
+            seed_to_deck_v1 = run_seed_to_deck_engine_v1(
+                seed_oracle_ids=[
+                    str(oid) for oid in (slot_ids_by_primitive or {}).keys() if isinstance(oid, str)
+                ],
+                commander_oracle_id=(commander_resolved or {}).get("oracle_id"),
+                snapshot_id=req.db_snapshot_id,
+                bracket_id=req.bracket_id,
+                profile_id=req.profile_id,
+            )
         engine_coherence_v1 = run_engine_coherence_v1(
             primitive_index_by_slot=primitive_index_by_slot,
             deck_slot_ids_playable=list(deck_cards_slot_ids_playable),
@@ -1844,6 +1883,13 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             deck_slot_ids_playable=list(deck_cards_slot_ids_playable),
         )
 
+        oracle_id_by_name: Dict[str, str] = {}
+        for resolved_name, oracle_queue in resolved_oracle_id_queues.items():
+            for oracle_id in oracle_queue:
+                if isinstance(oracle_id, str) and oracle_id != "":
+                    oracle_id_by_name[resolved_name.lower()] = oracle_id.lower()
+                    break
+
         profile_bracket_enforcement_v1 = run_profile_bracket_enforcement_v1(
             deck_cards=list(deck_cards_playable),
             commander=commander_for_profile_bracket,
@@ -1854,6 +1900,7 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             profile_definition_version=PROFILE_DEFINITION_VERSION,
             primitive_index_by_slot=primitive_index_by_slot,
             deck_slot_ids_playable=list(deck_cards_slot_ids_playable),
+            oracle_id_by_name=oracle_id_by_name,
         )
         bracket_compliance_summary_v1 = run_bracket_compliance_summary_v1(profile_bracket_enforcement_v1)
 
@@ -1873,25 +1920,26 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
             "calibration_snapshot_version": calibration_snapshot_version,
             "sufficiency_summary_version": SUFFICIENCY_SUMMARY_V1_VERSION,
         }
-        sufficiency_summary_v1 = run_sufficiency_summary_v1(
-            format=req.format,
-            profile_id=req.profile_id if isinstance(req.profile_id, str) else "",
-            profile_thresholds_v1_payload=profile_thresholds_v1_payload,
-            engine_requirement_detection_v1_payload=engine_requirement_detection_v1,
-            engine_coherence_v1_payload=engine_coherence_v1,
-            mulligan_model_v1_payload=mulligan_model_v1,
-            substitution_engine_v1_payload=substitution_engine_v1,
-            weight_multiplier_engine_v1_payload=weight_multiplier_engine_v1,
-            probability_math_core_v1_payload=probability_math_core_v1,
-            probability_checkpoint_layer_v1_payload=probability_checkpoint_layer_v1,
-            stress_model_definition_v1_payload=stress_model_definition_v1,
-            stress_transform_engine_v1_payload=stress_transform_engine_v1,
-            resilience_math_engine_v1_payload=resilience_math_engine_v1,
-            commander_reliability_model_v1_payload=commander_reliability_model_v1,
-            required_effects_coverage_v1_payload=required_effects_coverage_v1,
-            bracket_compliance_summary_v1_payload=bracket_compliance_summary_v1,
-            pipeline_versions=sufficiency_summary_versions_used,
-        )
+        with _time_layer("sufficiency_summary_v1"):
+            sufficiency_summary_v1 = run_sufficiency_summary_v1(
+                format=req.format,
+                profile_id=req.profile_id if isinstance(req.profile_id, str) else "",
+                profile_thresholds_v1_payload=profile_thresholds_v1_payload,
+                engine_requirement_detection_v1_payload=engine_requirement_detection_v1,
+                engine_coherence_v1_payload=engine_coherence_v1,
+                mulligan_model_v1_payload=mulligan_model_v1,
+                substitution_engine_v1_payload=substitution_engine_v1,
+                weight_multiplier_engine_v1_payload=weight_multiplier_engine_v1,
+                probability_math_core_v1_payload=probability_math_core_v1,
+                probability_checkpoint_layer_v1_payload=probability_checkpoint_layer_v1,
+                stress_model_definition_v1_payload=stress_model_definition_v1,
+                stress_transform_engine_v1_payload=stress_transform_engine_v1,
+                resilience_math_engine_v1_payload=resilience_math_engine_v1,
+                commander_reliability_model_v1_payload=commander_reliability_model_v1,
+                required_effects_coverage_v1_payload=required_effects_coverage_v1,
+                bracket_compliance_summary_v1_payload=bracket_compliance_summary_v1,
+                pipeline_versions=sufficiency_summary_versions_used,
+            )
 
         required_primitives_v1 = sorted(
             [primitive for primitive in effective_generic_minimums.keys() if isinstance(primitive, str)]
@@ -3063,6 +3111,9 @@ def run_build_pipeline(req, conn=None, repo_root_path: Path | None = None) -> di
                 "disruption_surface_v1": disruption_surface_v1,
                 "vulnerability_index_v1": vulnerability_index_v1,
                 "engine_requirement_detection_v1": engine_requirement_detection_v1,
+                "seed_synergy_detection_v1": seed_synergy_detection_v1,
+                "commander_recommendation_v1": commander_recommendation_v1,
+                "seed_to_deck_v1": seed_to_deck_v1,
                 "engine_coherence_v1": engine_coherence_v1,
                 "engine_coherence_v2": engine_coherence_v2,
                 "commander_dependency_v2": commander_dependency_v2,

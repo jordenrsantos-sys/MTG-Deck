@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 
 import CardSuggestInput from "../CardSuggestInput";
@@ -17,6 +17,8 @@ const RESOLVE_NAMES_MAX_NAMES_PER_REQUEST = 200;
 type DeckEditorPanelProps = {
   apiBase: string;
   snapshotId: string;
+  commanderName?: string;
+  commanderOracleId?: string | null;
   cardsInput: string;
   parsedDeckRows: ParsedDecklistRow[];
   deckLineCount?: number;
@@ -26,6 +28,7 @@ type DeckEditorPanelProps = {
   onHoverCard: (card: HoverCard | null) => void;
   onResolveNamesMissingChange?: (missingNames: string[]) => void;
   onOpenCard?: (oracleId: string, contextOracleIds?: string[]) => void;
+  onCommanderChange?: (commanderName: string) => void;
   onCompleteTo100?: () => void;
   runningCompleteTo100?: boolean;
   disableCompleteActions?: boolean;
@@ -35,6 +38,13 @@ type DeckEditorPanelProps = {
   completionAddedCards?: number;
   completionLandsAdded?: number;
   completionError?: string | null;
+  savedDeckNames?: string[];
+  selectedSavedDeckName?: string;
+  onSelectedSavedDeckNameChange?: (deckName: string) => void;
+  onSaveDeck?: () => void;
+  onLoadSavedDeck?: (deckName: string) => void;
+  onRenameSavedDeck?: (deckName: string) => void;
+  onDeleteSavedDeck?: (deckName: string) => void;
 };
 
 type WorkingDeckRow = {
@@ -45,6 +55,76 @@ type WorkingDeckRow = {
   oracleId: string;
   typeLine: string | null;
 };
+
+type DeckEditorTypeGroup =
+  | "Creature"
+  | "Instant"
+  | "Sorcery"
+  | "Artifact"
+  | "Enchantment"
+  | "Planeswalker"
+  | "Battle"
+  | "Land"
+  | "Other";
+
+type DeckEditorColumn = "core" | "spells" | "lands";
+
+type DeckEditorGroupSection = {
+  group: DeckEditorTypeGroup;
+  title: string;
+  rows: WorkingDeckRow[];
+  totalCount: number;
+};
+
+const DECK_EDITOR_GROUP_ORDER: DeckEditorTypeGroup[] = [
+  "Creature",
+  "Instant",
+  "Sorcery",
+  "Artifact",
+  "Enchantment",
+  "Planeswalker",
+  "Battle",
+  "Land",
+  "Other",
+];
+
+const DECK_EDITOR_TYPE_TOKEN_TO_GROUP: Record<string, DeckEditorTypeGroup> = {
+  creature: "Creature",
+  instant: "Instant",
+  sorcery: "Sorcery",
+  artifact: "Artifact",
+  enchantment: "Enchantment",
+  planeswalker: "Planeswalker",
+  battle: "Battle",
+  land: "Land",
+};
+
+function resolveDeckEditorGroup(typeLine: string | null | undefined): DeckEditorTypeGroup {
+  const normalizedTypeLine = normalizeTypeLine(typeLine);
+  if (normalizedTypeLine === null) {
+    return "Other";
+  }
+
+  const leftOfDash = normalizedTypeLine.split(/[—-]/)[0]?.trim() || "";
+  if (leftOfDash === "") {
+    return "Other";
+  }
+
+  const typeTokens = leftOfDash
+    .toLowerCase()
+    .split(/\s+/)
+    .map((token: string) => token.trim())
+    .filter(Boolean);
+
+  for (const token of typeTokens) {
+    const resolvedGroup = DECK_EDITOR_TYPE_TOKEN_TO_GROUP[token];
+    if (resolvedGroup) {
+      return resolvedGroup;
+    }
+  }
+
+  return "Other";
+}
 
 function normalizeDeckKey(name: string): string {
   return cardNameSortKey(name);
@@ -123,6 +203,8 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
   const {
     apiBase,
     snapshotId,
+    commanderName,
+    commanderOracleId,
     cardsInput,
     parsedDeckRows,
     deckLineCount,
@@ -132,6 +214,7 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
     onHoverCard,
     onResolveNamesMissingChange,
     onOpenCard,
+    onCommanderChange,
     onCompleteTo100,
     runningCompleteTo100 = false,
     disableCompleteActions = false,
@@ -141,9 +224,17 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
     completionAddedCards,
     completionLandsAdded,
     completionError,
+    savedDeckNames = [],
+    selectedSavedDeckName = "",
+    onSelectedSavedDeckNameChange,
+    onSaveDeck,
+    onLoadSavedDeck,
+    onRenameSavedDeck,
+    onDeleteSavedDeck,
   } = props;
 
   const [addCardInput, setAddCardInput] = useState("");
+  const [commanderInput, setCommanderInput] = useState(() => (typeof commanderName === "string" ? commanderName.trim() : ""));
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const [suggestedHintsByName, setSuggestedHintsByName] = useState<Record<string, DeckEditorCardHint>>({});
   const resolveRequestIdRef = useRef(0);
@@ -169,6 +260,18 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
     };
   }, [cardHintsByName, suggestedHintsByName]);
 
+  const normalizedCommanderName = useMemo(() => {
+    return typeof commanderName === "string" ? commanderName.trim() : "";
+  }, [commanderName]);
+
+  useEffect(() => {
+    setCommanderInput(normalizedCommanderName);
+  }, [normalizedCommanderName]);
+
+  const normalizedCommanderOracleId = useMemo(() => normalizeOracleId(commanderOracleId), [commanderOracleId]);
+
+  const normalizedCommanderKey = useMemo(() => normalizeDeckKey(normalizedCommanderName), [normalizedCommanderName]);
+
   const workingRows = useMemo(() => {
     const collapsedRows = collapseDeckRows(parsedDeckRows);
     return collapsedRows.map((row: WorkingDeckRow) => {
@@ -184,6 +287,15 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
   const unresolvedNames = useMemo(() => {
     const names: string[] = [];
     const seenKeys = new Set<string>();
+
+    if (normalizedCommanderName !== "" && normalizedCommanderKey !== "") {
+      seenKeys.add(normalizedCommanderKey);
+      const commanderHint = mergedHintsByName[normalizedCommanderKey];
+      const commanderHasOracleId = normalizedCommanderOracleId !== "" || normalizeOracleId(commanderHint?.oracleId) !== "";
+      if (!commanderHasOracleId) {
+        names.push(normalizedCommanderName);
+      }
+    }
 
     for (const row of workingRows) {
       if (normalizeOracleId(row.oracleId) !== "") {
@@ -204,7 +316,7 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
     }
 
     return names;
-  }, [mergedHintsByName, workingRows]);
+  }, [mergedHintsByName, normalizedCommanderKey, normalizedCommanderName, normalizedCommanderOracleId, workingRows]);
 
   useEffect(() => {
     if (unresolvedNames.length === 0) {
@@ -369,6 +481,35 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
     return workingRows.reduce((acc: number, row: WorkingDeckRow) => acc + row.count, 0);
   }, [workingRows]);
 
+  const commanderHint = useMemo(() => {
+    if (normalizedCommanderKey === "") {
+      return undefined;
+    }
+    return mergedHintsByName[normalizedCommanderKey];
+  }, [mergedHintsByName, normalizedCommanderKey]);
+
+  const resolvedCommanderOracleId = useMemo(() => {
+    return normalizedCommanderOracleId || normalizeOracleId(commanderHint?.oracleId);
+  }, [commanderHint, normalizedCommanderOracleId]);
+
+  const resolvedCommanderTypeLine = useMemo(() => {
+    return normalizeTypeLine(commanderHint?.typeLine);
+  }, [commanderHint]);
+
+  const commanderItems = useMemo(() => {
+    if (normalizedCommanderName === "") {
+      return [] as CardListItem[];
+    }
+
+    return [
+      {
+        name: normalizedCommanderName,
+        oracleId: resolvedCommanderOracleId || null,
+        className: "deck-commander-row",
+      } satisfies CardListItem,
+    ];
+  }, [normalizedCommanderName, resolvedCommanderOracleId]);
+
   const normalizedCompletionStatus = useMemo(() => {
     return typeof completionStatus === "string" ? completionStatus.trim() : "";
   }, [completionStatus]);
@@ -412,53 +553,155 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
   }, [workingRows]);
 
   const totalResolvableCards = workingRows.length;
+  const savedDeckStatusId = useId();
 
-  const rowItems = useMemo(() => {
-    return workingRows.map((row: WorkingDeckRow) => {
-      return {
-        name: row.name,
-        oracleId: row.oracleId || null,
-        className: "deck-editor-list-row",
-        rightMeta: (
-          <div className="deck-editor-row-controls">
-            <span className="workspace-chip workspace-chip-soft deck-editor-count-chip">x{row.count}</span>
-            <button
-              type="button"
-              className="deck-editor-stepper"
-              aria-label={`Decrease count for ${row.name}`}
-              onMouseDown={(event: MouseEvent<HTMLButtonElement>) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onClick={(event: MouseEvent<HTMLButtonElement>) => {
-                event.preventDefault();
-                event.stopPropagation();
-                handleAdjustCardCount(row.key, -1);
-              }}
-            >
-              −
-            </button>
-            <button
-              type="button"
-              className="deck-editor-stepper"
-              aria-label={`Increase count for ${row.name}`}
-              onMouseDown={(event: MouseEvent<HTMLButtonElement>) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onClick={(event: MouseEvent<HTMLButtonElement>) => {
-                event.preventDefault();
-                event.stopPropagation();
-                handleAdjustCardCount(row.key, 1);
-              }}
-            >
-              +
-            </button>
-          </div>
-        ),
-      } satisfies CardListItem;
-    });
+  const normalizedSavedDeckName = useMemo(() => selectedSavedDeckName.trim(), [selectedSavedDeckName]);
+
+  const hasSavedDeckOptions = savedDeckNames.length > 0;
+
+  const hasMatchingSavedDeck = useMemo(() => {
+    if (normalizedSavedDeckName === "") {
+      return false;
+    }
+
+    const normalizedSelection = normalizedSavedDeckName.toLowerCase();
+    return savedDeckNames.some((deckName: string) => deckName.trim().toLowerCase() === normalizedSelection);
+  }, [normalizedSavedDeckName, savedDeckNames]);
+
+  const canOpenSavedDeck = hasMatchingSavedDeck && Boolean(onLoadSavedDeck);
+  const canRenameSavedDeck = hasMatchingSavedDeck && Boolean(onRenameSavedDeck);
+  const canDeleteSavedDeck = hasMatchingSavedDeck && Boolean(onDeleteSavedDeck);
+  const hasMissingSavedDeckSelection = normalizedSavedDeckName !== "" && !hasMatchingSavedDeck;
+  const canSelectSavedDeck = hasSavedDeckOptions || hasMissingSavedDeckSelection;
+
+  const matchedSavedDeckName = useMemo(() => {
+    if (!hasMatchingSavedDeck) {
+      return "";
+    }
+
+    const normalizedSelection = normalizedSavedDeckName.toLowerCase();
+    const matchedDeck =
+      savedDeckNames.find((deckName: string) => deckName.trim().toLowerCase() === normalizedSelection)?.trim() || "";
+    return matchedDeck || normalizedSavedDeckName;
+  }, [hasMatchingSavedDeck, normalizedSavedDeckName, savedDeckNames]);
+
+  const savedDeckStatusMessage = useMemo(() => {
+    if (hasMissingSavedDeckSelection) {
+      return `Saved deck "${normalizedSavedDeckName}" is no longer available. Select another saved deck or clear the selection.`;
+    }
+    if (!hasSavedDeckOptions) {
+      return "No saved decks yet. Save the current deck to create one.";
+    }
+    if (matchedSavedDeckName === "") {
+      const deckCount = savedDeckNames.length;
+      return `${deckCount} saved deck${deckCount === 1 ? "" : "s"} available.`;
+    }
+    return `Selected saved deck: "${matchedSavedDeckName}".`;
+  }, [hasMissingSavedDeckSelection, hasSavedDeckOptions, matchedSavedDeckName, normalizedSavedDeckName, savedDeckNames.length]);
+
+  const savedDeckSelectValue = useMemo(() => {
+    if (hasMatchingSavedDeck) {
+      return matchedSavedDeckName;
+    }
+    if (hasMissingSavedDeckSelection) {
+      return normalizedSavedDeckName;
+    }
+    return "";
+  }, [hasMatchingSavedDeck, hasMissingSavedDeckSelection, matchedSavedDeckName, normalizedSavedDeckName]);
+
+  const groupedSections = useMemo(() => {
+    const rowsByGroup = new Map<DeckEditorTypeGroup, WorkingDeckRow[]>();
+    for (const group of DECK_EDITOR_GROUP_ORDER) {
+      rowsByGroup.set(group, []);
+    }
+
+    for (const row of workingRows) {
+      const group = resolveDeckEditorGroup(row.typeLine);
+      const bucket = rowsByGroup.get(group);
+      if (bucket) {
+        bucket.push(row);
+      }
+    }
+
+    const sections: DeckEditorGroupSection[] = [];
+    for (const group of DECK_EDITOR_GROUP_ORDER) {
+      const rows = rowsByGroup.get(group) || [];
+      if (rows.length === 0) {
+        continue;
+      }
+
+      const sortedRows = [...rows].sort((left: WorkingDeckRow, right: WorkingDeckRow) => left.name.localeCompare(right.name));
+      const totalSectionCount = sortedRows.reduce((acc: number, row: WorkingDeckRow) => acc + Math.max(1, Math.trunc(row.count)), 0);
+
+      sections.push({
+        group,
+        title: group,
+        rows: sortedRows,
+        totalCount: totalSectionCount,
+      });
+    }
+
+    return sections;
   }, [workingRows]);
+
+  const sectionsByColumn = useMemo(() => {
+    const columns: Record<DeckEditorColumn, DeckEditorGroupSection[]> = {
+      core: [],
+      spells: [],
+      lands: [],
+    };
+
+    const columnWeights: Record<DeckEditorColumn, number> = {
+      core: commanderItems.length > 0 ? 2 : 0,
+      spells: 0,
+      lands: 0,
+    };
+
+    const sectionWeight = (section: DeckEditorGroupSection): number => {
+      return section.totalCount + section.rows.length * 0.35;
+    };
+
+    for (const section of groupedSections) {
+      if (section.group === "Land") {
+        columns.lands.push(section);
+        columnWeights.lands += sectionWeight(section);
+        continue;
+      }
+
+      const targetColumn: DeckEditorColumn = columnWeights.core <= columnWeights.spells ? "core" : "spells";
+      columns[targetColumn].push(section);
+      columnWeights[targetColumn] += sectionWeight(section);
+    }
+
+    return columns;
+  }, [commanderItems.length, groupedSections]);
+
+  const deckContextOracleIds = useMemo(() => {
+    const seen = new Set<string>();
+    const oracleIds: string[] = [];
+
+    for (const row of workingRows) {
+      const fallbackHint = mergedHintsByName[row.key];
+      const resolvedOracleId = normalizeOracleId(row.oracleId) || normalizeOracleId(fallbackHint?.oracleId);
+      if (resolvedOracleId === "" || seen.has(resolvedOracleId)) {
+        continue;
+      }
+      seen.add(resolvedOracleId);
+      oracleIds.push(resolvedOracleId);
+    }
+
+    return oracleIds;
+  }, [mergedHintsByName, workingRows]);
+
+  const handleOpenDeckEditorCard = useMemo(() => {
+    if (!onOpenCard) {
+      return undefined;
+    }
+
+    return (oracleId: string) => {
+      onOpenCard(oracleId, deckContextOracleIds);
+    };
+  }, [deckContextOracleIds, onOpenCard]);
 
   function updateCardsInputFromRows(rows: WorkingDeckRow[]): void {
     onCardsInputChange(stringifyDeckRows(rows));
@@ -535,6 +778,118 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
     updateCardsInputFromRows(nextRows);
   }
 
+  function handleHoverDeckRow(cardRow: WorkingDeckRow | undefined): void {
+    if (!cardRow) {
+      return;
+    }
+
+    const fallbackHint = mergedHintsByName[cardRow.key];
+    const resolvedOracleId = normalizeOracleId(cardRow.oracleId) || normalizeOracleId(fallbackHint?.oracleId);
+    const resolvedTypeLine = cardRow.typeLine || normalizeTypeLine(fallbackHint?.typeLine);
+
+    if (import.meta.env.DEV) {
+      console.log("[DeckEditorPanel] deck_hover_oracle", {
+        name: cardRow.name,
+        has_oracle_id: resolvedOracleId !== "",
+        oracle_id: resolvedOracleId,
+      });
+    }
+
+    onHoverCard({
+      name: cardRow.name,
+      oracle_id: resolvedOracleId,
+      type_line: resolvedTypeLine,
+      primitive_tags: [],
+      source: "deck",
+    });
+  }
+
+  function buildDeckEditorRowItem(row: WorkingDeckRow): CardListItem {
+    const displayCount = Math.max(1, Math.trunc(row.count));
+
+    return {
+      name: `${displayCount} ${row.name}`,
+      oracleId: row.oracleId || null,
+      className: "deck-editor-list-row",
+      rightMeta: (
+        <div className="deck-editor-row-controls">
+          <button
+            type="button"
+            className="deck-editor-stepper"
+            aria-label={`Decrease count for ${row.name}`}
+            onMouseDown={(event: MouseEvent<HTMLButtonElement>) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event: MouseEvent<HTMLButtonElement>) => {
+              event.preventDefault();
+              event.stopPropagation();
+              handleAdjustCardCount(row.key, -1);
+            }}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            className="deck-editor-stepper"
+            aria-label={`Increase count for ${row.name}`}
+            onMouseDown={(event: MouseEvent<HTMLButtonElement>) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event: MouseEvent<HTMLButtonElement>) => {
+              event.preventDefault();
+              event.stopPropagation();
+              handleAdjustCardCount(row.key, 1);
+            }}
+          >
+            +
+          </button>
+        </div>
+      ),
+    } satisfies CardListItem;
+  }
+
+  function renderDeckEditorSection(section: DeckEditorGroupSection) {
+    const sectionItems = section.rows.map((row: WorkingDeckRow) => buildDeckEditorRowItem(row));
+
+    return (
+      <section className="deck-editor-section" key={`deck-editor-group-${section.group}`}>
+        <div className="deck-editor-section-header">
+          <h4 className="deck-editor-section-title">{section.title}</h4>
+          <span className="deck-editor-section-count">{section.totalCount}</span>
+        </div>
+
+        <CardList
+          items={sectionItems}
+          className="deck-editor-card-list deck-editor-section-card-list"
+          ariaLabel={`${section.title} cards`}
+          onOpenCard={handleOpenDeckEditorCard}
+          onRowMouseEnter={(_, index: number) => {
+            const cardRow = section.rows[index];
+            handleHoverDeckRow(cardRow);
+          }}
+          onRowMouseLeave={() => {
+            onHoverCard(null);
+          }}
+        />
+      </section>
+    );
+  }
+
+  function commitCommanderChange(nextCommanderRaw: string): void {
+    if (!onCommanderChange) {
+      return;
+    }
+
+    const nextCommanderName = nextCommanderRaw.trim();
+    if (nextCommanderName === "" || nextCommanderName === normalizedCommanderName) {
+      return;
+    }
+
+    onCommanderChange(nextCommanderName);
+  }
+
   function handleAdjustCardCount(rowKey: string, delta: number): void {
     if (!Number.isFinite(delta) || Math.trunc(delta) === 0) {
       return;
@@ -584,6 +939,107 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
         </div>
 
         <div className="deck-editor-actions">
+          {onSaveDeck || onLoadSavedDeck || onRenameSavedDeck || onDeleteSavedDeck ? (
+            <div className="deck-editor-saved-actions-group">
+              <div className="deck-editor-saved-actions">
+                <button
+                  type="button"
+                  className="deck-editor-save-button"
+                  onClick={onSaveDeck}
+                  disabled={!onSaveDeck}
+                >
+                  Save Deck
+                </button>
+
+                <label className="deck-editor-saved-select-wrap">
+                  <span className="sr-only">Saved decks</span>
+                  <select
+                    className={`deck-editor-saved-select${hasMissingSavedDeckSelection ? " deck-editor-saved-select-warning" : ""}`}
+                    aria-describedby={savedDeckStatusId}
+                    aria-invalid={hasMissingSavedDeckSelection}
+                    aria-errormessage={hasMissingSavedDeckSelection ? savedDeckStatusId : undefined}
+                    value={savedDeckSelectValue}
+                    onChange={(event) => {
+                      onSelectedSavedDeckNameChange?.(event.target.value);
+                    }}
+                    disabled={!canSelectSavedDeck}
+                  >
+                    <option value="">Saved decks...</option>
+                    {hasMissingSavedDeckSelection ? <option value={normalizedSavedDeckName}>[Missing] {normalizedSavedDeckName}</option> : null}
+                    {savedDeckNames.map((deckName: string) => (
+                      <option key={`saved-deck-option-${deckName}`} value={deckName}>
+                        {deckName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <button
+                  type="button"
+                  className="deck-editor-open-button"
+                  onClick={() => {
+                    if (!canOpenSavedDeck || !onLoadSavedDeck) {
+                      return;
+                    }
+                    onLoadSavedDeck(normalizedSavedDeckName);
+                  }}
+                  disabled={!canOpenSavedDeck}
+                >
+                  Open
+                </button>
+
+                <button
+                  type="button"
+                  className="deck-editor-rename-button"
+                  onClick={() => {
+                    if (!canRenameSavedDeck || !onRenameSavedDeck) {
+                      return;
+                    }
+                    onRenameSavedDeck(normalizedSavedDeckName);
+                  }}
+                  disabled={!canRenameSavedDeck}
+                >
+                  Rename
+                </button>
+
+                <button
+                  type="button"
+                  className="deck-editor-delete-button"
+                  onClick={() => {
+                    if (!canDeleteSavedDeck || !onDeleteSavedDeck) {
+                      return;
+                    }
+                    onDeleteSavedDeck(normalizedSavedDeckName);
+                  }}
+                  disabled={!canDeleteSavedDeck}
+                >
+                  Delete
+                </button>
+
+                {hasMissingSavedDeckSelection && onSelectedSavedDeckNameChange ? (
+                  <button
+                    type="button"
+                    className="deck-editor-clear-selection-button"
+                    onClick={() => {
+                      onSelectedSavedDeckNameChange("");
+                    }}
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+
+              <p
+                id={savedDeckStatusId}
+                className={`workspace-muted deck-editor-saved-status${hasMissingSavedDeckSelection ? " deck-editor-saved-status-warning" : ""}`}
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                {savedDeckStatusMessage}
+              </p>
+            </div>
+          ) : null}
+
           <button
             type="button"
             className="deck-editor-copy-button"
@@ -626,27 +1082,10 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
         </div>
       ) : null}
 
-      {normalizedCompletionStatus !== "" || normalizedCompletionAddedCards !== null || normalizedCompletionLandsAdded !== null ? (
-        <div className="deck-editor-complete-summary workspace-chip-row">
-          {normalizedCompletionStatus !== "" ? (
-            <span className="workspace-chip">Complete status: {normalizedCompletionStatus}</span>
-          ) : null}
-          {normalizedCompletionAddedCards !== null ? (
-            <span className="workspace-chip">Added cards: {normalizedCompletionAddedCards}</span>
-          ) : null}
-          {normalizedCompletionLandsAdded !== null ? (
-            <span className="workspace-chip">Added lands: {normalizedCompletionLandsAdded}</span>
-          ) : null}
-        </div>
-      ) : null}
-
-      <p className="workspace-muted">Deck lines: {normalizedDeckLineCount} (rev {normalizedDeckTextRevision})</p>
-      <p className="workspace-muted">Resolved: {resolvedArtReadyCount}/{totalResolvableCards} cards (art ready)</p>
-
       <CardSuggestInput
         label="Add card"
         value={addCardInput}
-        placeholder="Search cards to add"
+        placeholder="Add a card by name..."
         apiBase={apiBase}
         snapshotId={snapshotId}
         limit={20}
@@ -668,46 +1107,109 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
         }}
       />
 
+      {normalizedCompletionStatus !== "" || normalizedCompletionAddedCards !== null || normalizedCompletionLandsAdded !== null ? (
+        <div className="deck-editor-complete-summary workspace-chip-row">
+          {normalizedCompletionStatus !== "" ? <span className="workspace-chip">Complete status: {normalizedCompletionStatus}</span> : null}
+          {normalizedCompletionAddedCards !== null ? <span className="workspace-chip">Added cards: {normalizedCompletionAddedCards}</span> : null}
+          {normalizedCompletionLandsAdded !== null ? <span className="workspace-chip">Added lands: {normalizedCompletionLandsAdded}</span> : null}
+        </div>
+      ) : null}
+
+      <div className="workspace-chip-row deck-editor-stats-row">
+        <span className="workspace-chip">Deck lines: {normalizedDeckLineCount} (rev {normalizedDeckTextRevision})</span>
+        <span className="workspace-chip">Resolved art: {resolvedArtReadyCount}/{totalResolvableCards}</span>
+      </div>
+
       <div className="deck-editor-list-wrap">
-        {workingRows.length === 0 ? (
-          <p className="workspace-muted">No cards in the working deck yet.</p>
-        ) : (
-          <CardList
-            items={rowItems}
-            className="deck-editor-card-list"
-            ariaLabel="Working deck cards"
-            onOpenCard={onOpenCard}
-            onRowMouseEnter={(_, index: number) => {
-              const cardRow = workingRows[index];
-              if (!cardRow) {
-                return;
-              }
+        <div className="deck-editor-board">
+          <div className="deck-editor-column deck-editor-column-core">
+            <section className="deck-editor-section deck-commander-block deck-editor-commander-wrap">
+              <div className="deck-editor-section-header">
+                <h4 className="deck-editor-section-title">Commander</h4>
+                <span className="deck-editor-section-count">{commanderItems.length > 0 ? "1" : "0"}</span>
+              </div>
 
-              const fallbackHint = mergedHintsByName[cardRow.key];
-              const resolvedOracleId = normalizeOracleId(cardRow.oracleId) || normalizeOracleId(fallbackHint?.oracleId);
-              const resolvedTypeLine = cardRow.typeLine || normalizeTypeLine(fallbackHint?.typeLine);
+              {commanderItems.length > 0 ? (
+                <CardList
+                  items={commanderItems}
+                  className="deck-editor-card-list deck-editor-section-card-list"
+                  ariaLabel="Deck commander"
+                  onOpenCard={onOpenCard}
+                  onRowMouseEnter={() => {
+                    onHoverCard({
+                      name: normalizedCommanderName,
+                      oracle_id: resolvedCommanderOracleId,
+                      type_line: resolvedCommanderTypeLine,
+                      primitive_tags: [],
+                      source: "deck",
+                    });
+                  }}
+                  onRowMouseLeave={() => {
+                    onHoverCard(null);
+                  }}
+                />
+              ) : (
+                <p className="workspace-muted">No commander selected.</p>
+              )}
 
-              if (import.meta.env.DEV) {
-                console.log("[DeckEditorPanel] deck_hover_oracle", {
-                  name: cardRow.name,
-                  has_oracle_id: resolvedOracleId !== "",
-                  oracle_id: resolvedOracleId,
-                });
-              }
+              <div className="deck-editor-commander-controls">
+                <CardSuggestInput
+                  label="Change commander"
+                  value={commanderInput}
+                  placeholder="Search commander"
+                  apiBase={apiBase}
+                  snapshotId={snapshotId}
+                  limit={12}
+                  commanderOnly
+                  onChange={setCommanderInput}
+                  onSelect={(row: CardSuggestRow) => {
+                    learnSuggestedCard(row);
+                    commitCommanderChange(row.name);
+                  }}
+                  onHoverCard={(row: CardSuggestRow | null) => {
+                    if (!row) {
+                      onHoverCard(null);
+                      return;
+                    }
 
-              onHoverCard({
-                name: cardRow.name,
-                oracle_id: resolvedOracleId,
-                type_line: resolvedTypeLine,
-                primitive_tags: [],
-                source: "deck",
-              });
-            }}
-            onRowMouseLeave={() => {
-              onHoverCard(null);
-            }}
-          />
-        )}
+                    onHoverCard({
+                      name: row.name,
+                      oracle_id: row.oracle_id,
+                      type_line: row.type_line,
+                      primitive_tags: [],
+                      source: "suggest",
+                    });
+                  }}
+                />
+
+                <div className="workspace-action-row deck-editor-commander-set-row">
+                  <button
+                    type="button"
+                    className="workspace-link-button"
+                    onClick={() => {
+                      commitCommanderChange(commanderInput);
+                    }}
+                    disabled={!onCommanderChange || commanderInput.trim() === "" || commanderInput.trim() === normalizedCommanderName}
+                  >
+                    Set Commander
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            {sectionsByColumn.core.map((section: DeckEditorGroupSection) => renderDeckEditorSection(section))}
+
+            {groupedSections.length === 0 ? <p className="workspace-muted deck-editor-empty-message">No cards in the working deck yet.</p> : null}
+          </div>
+
+          <div className="deck-editor-column deck-editor-column-spells">
+            {sectionsByColumn.spells.map((section: DeckEditorGroupSection) => renderDeckEditorSection(section))}
+          </div>
+
+          <div className="deck-editor-column deck-editor-column-lands">
+            {sectionsByColumn.lands.map((section: DeckEditorGroupSection) => renderDeckEditorSection(section))}
+          </div>
+        </div>
       </div>
     </section>
   );

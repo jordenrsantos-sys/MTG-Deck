@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from urllib.error import HTTPError, URLError
@@ -35,7 +36,12 @@ def _nonempty_str(value: Any) -> str | None:
 
 def _canonical_card_key(value: Any) -> str | None:
     if isinstance(value, dict):
-        oracle_id = _nonempty_str(value.get("oracle_id"))
+        if isinstance(value.get("card"), dict):
+            return _canonical_card_key(value["card"])
+        oracle_id = (
+            _nonempty_str(value.get("oracle_id"))
+            or _nonempty_str(value.get("oracleId"))
+        )
         if oracle_id is not None:
             return oracle_id.lower()
         card_name = _nonempty_str(value.get("name"))
@@ -63,9 +69,19 @@ def _extract_rows_and_next(payload: Any) -> Tuple[List[Any], str | None]:
     if not isinstance(payload, dict):
         return [], None
 
-    rows_raw = payload.get("results")
-    if not isinstance(rows_raw, list):
-        rows_raw = payload.get("data") if isinstance(payload.get("data"), list) else []
+    rows_raw: List[Any] | None = None
+    for key in ("results", "data", "variants"):
+        candidate = payload.get(key)
+        if isinstance(candidate, list):
+            rows_raw = list(candidate)
+            break
+
+    if rows_raw is None and len(payload) > 0:
+        raise RuntimeError(
+            "Extracted zero rows from non-empty payload; response shape may have changed."
+        )
+    if rows_raw is None:
+        rows_raw = []
 
     next_url = payload.get("next")
     if not isinstance(next_url, str) or next_url.strip() == "":
@@ -122,6 +138,9 @@ def _build_variants_payload(rows: List[Any], *, generated_from: str) -> Dict[str
         normalized = _normalize_variant(row, index=index)
         if normalized is not None:
             normalized_rows.append(normalized)
+
+    if len(rows) > 0 and len(normalized_rows) == 0:
+        raise RuntimeError("Normalization dropped all rows; API response shape may have changed.")
 
     deduped: Dict[str, Dict[str, Any]] = {}
     for row in normalized_rows:
@@ -229,7 +248,8 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument("--endpoint", default="/variants/")
     parser.add_argument("--output-dir", default=str(Path(__file__).resolve().parents[1] / "api" / "engine" / "data" / "combos"))
     parser.add_argument("--timeout-seconds", type=int, default=30)
-    parser.add_argument("--max-pages", type=int, default=50)
+    parser.add_argument("--max-pages", type=int, default=500)
+    parser.add_argument("--request-delay-seconds", type=float, default=0.5)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--allow-partial-write", action="store_true")
     return parser.parse_args(argv)
@@ -245,11 +265,13 @@ def main(argv: List[str] | None = None) -> int:
     next_url: str | None = start_url
 
     try:
-        for _ in range(max(1, int(args.max_pages))):
+        for i in range(max(1, int(args.max_pages))):
             if next_url is None:
                 break
             if next_url in visited_urls:
                 break
+            if i > 0 and args.request_delay_seconds > 0:
+                time.sleep(args.request_delay_seconds)
 
             visited_urls.add(next_url)
             payload = _fetch_json(next_url, timeout_seconds=max(1, int(args.timeout_seconds)))

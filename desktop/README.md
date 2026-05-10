@@ -12,7 +12,7 @@ It starts the local backend if needed, waits for it to become ready, opens a des
 
 ## Production prerequisites
 
-The desktop app relies on backend production static serving (`launch_prod.py` -> FastAPI serves UI dist), but UI files are bundled into desktop resources for packaging.
+The desktop app relies on backend production static serving (`launch.py --mode prod` -> FastAPI serves UI dist), but UI files are bundled into desktop resources for packaging.
 It also ships a baseline SQLite DB snapshot (`mtg.sqlite`) as a bundled resource.
 
 Build UI first:

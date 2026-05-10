@@ -86,12 +86,12 @@ export default function StatusBar(props: StatusBarProps) {
         </p>
       </div>
 
-      <p className="workspace-topbar-title">request_debug (local)</p>
+      <p className="workspace-topbar-title">request_debug</p>
       <pre className="workspace-json-block workspace-error-response-json">
         {apiErrorDetails.requestDebugText || "(empty)"}
       </pre>
 
-      <p className="workspace-topbar-title">request_body (sent)</p>
+      <p className="workspace-topbar-title">request_body_sent_text</p>
       <pre className="workspace-json-block workspace-error-response-json">
         {apiErrorDetails.requestBodyText || apiErrorDetails.requestPayloadText || "(empty)"}
       </pre>

@@ -12,14 +12,14 @@
       "pack_id": "commander_spellbook_variants_v1",
       "pack_version": "commander_spellbook_variants_v1",
       "path": "api/engine/data/combos/commander_spellbook_variants_v1.json",
-      "sha256": "1586b8b39cc886bf53a2f8f44168654b42cc658dd4f72dfa1bf6359c6ea89282"
+      "sha256": "f13506939215c50b8f267532ec2f80412f5f1763043213ae7b3b5456b467b6b9"
     },
     {
       "load_order": 16,
       "pack_id": "two_card_combos_v2",
       "pack_version": "two_card_combos_v2",
       "path": "api/engine/data/combos/two_card_combos_v2.json",
-      "sha256": "a195a5546857e36bf8c250e5a44968269b243eeec5075cbdcf4926aa8347fe71"
+      "sha256": "4076eccd8f90ce869d2faee14b6ec1478563c20605de0f8007decd10485a95bc"
     },
     {
       "created_by": "taxonomy.exporter",
@@ -27,7 +27,7 @@
       "pack_id": "taxonomy_primitives",
       "pack_version": "taxonomy_v1_23",
       "path": "taxonomy/packs/taxonomy_v1_23/primitives.json",
-      "sha256": "aa73eb776797e69f56d7438e6675bfafe73199b48d721c6a93faf0106bde4b92"
+      "sha256": "e1acda6535a4beb0f56bf654738b93766e8d899262394d7fccdbaf3dbc948bce"
     },
     {
       "created_by": "taxonomy.exporter",
@@ -36,6 +36,121 @@
       "pack_version": "taxonomy_v1_23",
       "path": "taxonomy/packs/taxonomy_v1_23/primitive_index_map_v1_14.json",
       "sha256": "40fc15c2193dfa5dacd41b6ff1c48e9e06b8575800fea963d2fcbaac622b81f2"
+    },
+    {
+      "created_by": "taxonomy.exporter",
+      "load_order": 40,
+      "pack_id": "taxonomy_themes",
+      "pack_version": "taxonomy_v1_23",
+      "path": "taxonomy/packs/taxonomy_v1_23/themes_v1_5.json",
+      "sha256": "98c137f3f944e91fa477e912d8226e54beab68a682ec7800de969e6cc89ab4a0"
+    },
+    {
+      "created_by": "taxonomy.exporter",
+      "load_order": 50,
+      "pack_id": "taxonomy_qualifier_facets",
+      "pack_version": "taxonomy_v1_23",
+      "path": "taxonomy/packs/taxonomy_v1_23/qualifier_facets_v1_3.json",
+      "sha256": "8e2acfc9cc39148c9866f82bef532f3ddbd0812e316f4507fdd2231a7a915b1d"
+    },
+    {
+      "created_by": "taxonomy.exporter",
+      "load_order": 60,
+      "pack_id": "taxonomy_structural_roles",
+      "pack_version": "taxonomy_v1_23",
+      "path": "taxonomy/packs/taxonomy_v1_23/structural_role_framework_v1_9.json",
+      "sha256": "684a5e7dfa5a54a75cf0938939241a0022ec7b85d56dd03641eeaec256da98e4"
+    },
+    {
+      "created_by": "taxonomy.exporter",
+      "load_order": 70,
+      "pack_id": "taxonomy_equivalence_classes",
+      "pack_version": "taxonomy_v1_23",
+      "path": "taxonomy/packs/taxonomy_v1_23/equivalence_classes_v1_12.json",
+      "sha256": "869fb5592eb1508e1cc2d6b8c57b5599a95fb99c88856cc5e6d687d3071c875a"
+    },
+    {
+      "created_by": "taxonomy.exporter",
+      "load_order": 80,
+      "pack_id": "taxonomy_temporal_motifs",
+      "pack_version": "taxonomy_v1_23",
+      "path": "taxonomy/packs/taxonomy_v1_23/temporal_motifs_v1_9.json",
+      "sha256": "c76100fe18b53b8c842e4198f5232f622c6e0c134624978225dd6192c40cead4"
+    },
+    {
+      "created_by": "taxonomy.exporter",
+      "load_order": 90,
+      "pack_id": "taxonomy_commander_contracts",
+      "pack_version": "taxonomy_v1_23",
+      "path": "taxonomy/packs/taxonomy_v1_23/commander_contracts_v1_9.json",
+      "sha256": "bb654a12d5902a48bf117cfc216c37d6dcf7aa1e4e4f243c82282ee4099a32ad"
+    },
+    {
+      "created_by": "taxonomy.exporter",
+      "load_order": 100,
+      "pack_id": "taxonomy_need_buckets",
+      "pack_version": "taxonomy_v1_23",
+      "path": "taxonomy/packs/taxonomy_v1_23/need_buckets_v1_13.json",
+      "sha256": "0b209d64b253cb722cf0dd2437e0bb5ecf8b79afcf390cb578e928a68232022b"
+    },
+    {
+      "load_order": 200,
+      "pack_id": "themes_signal_vocabulary_v1",
+      "pack_version": "themes_signal_vocabulary_v1",
+      "path": "api/engine/data/themes/themes_signal_vocabulary_v1.json",
+      "sha256": "0d6fb5b52c2506be6e866fc41b10a2425bea7a8aa9805e21ccf2ce3ca7fbe179"
+    },
+    {
+      "load_order": 210,
+      "pack_id": "themes_confidence_bands_v1",
+      "pack_version": "themes_confidence_bands_v1",
+      "path": "api/engine/data/themes/themes_confidence_bands_v1.json",
+      "sha256": "39fcbb62dc2bda7320d8e3c8c55422dab54364712df81f819ba0b0c855075932"
+    },
+    {
+      "load_order": 220,
+      "pack_id": "power_staple_caps_v1",
+      "pack_version": "power_staple_caps_v1",
+      "path": "api/engine/data/brackets/power_staple_caps_v1.json",
+      "sha256": "d3a321ba86e1c9298ee447a6c169d684b0b1164399d64a314169e2c58c425436"
+    },
+    {
+      "load_order": 230,
+      "pack_id": "power_staples_v1",
+      "pack_version": "power_staples_v1",
+      "path": "api/engine/data/primitives/power_staples_v1.json",
+      "sha256": "b968813324b8b3c96bc6c8c292eddafd3af5b946e7c9549598758138cba51088"
+    },
+    {
+      "load_order": 250,
+      "pack_id": "commander_recommendation_weights_v1",
+      "pack_version": "commander_recommendation_weights_v1",
+      "path": "api/engine/data/recommendations/commander_recommendation_weights_v1.json",
+      "sha256": "f82994e48c20669abcfaccd141ce15b1a550c441770122d78eabc183c7903d4e"
+    },
+    {
+      "calibration_only": true,
+      "load_order": 900,
+      "pack_id": "external_decks_v1",
+      "pack_version": "external_decks_v1",
+      "path": "api/engine/data/calibration/external_decks_v1.json",
+      "sha256": "6d5c6af51ff7b38b5b0e3ba184dd98320cf544d1857be6cad3354debcffb166e"
+    },
+    {
+      "calibration_only": true,
+      "load_order": 901,
+      "pack_id": "pilot_personalities_v1",
+      "pack_version": "pilot_personalities_v1",
+      "path": "api/engine/data/calibration/pilot_personalities_v1.json",
+      "sha256": "1c2b6334b4c8b47378081904028c681d9a75aad888cd7289ccbab52ca33eeb4d"
+    },
+    {
+      "calibration_only": true,
+      "load_order": 902,
+      "pack_id": "playtest_changelog_v1",
+      "pack_version": "playtest_changelog_v1",
+      "path": "api/engine/data/calibration/playtest_changelog_v1.json",
+      "sha256": "16761d091423d55b23fb76edeee3179df637002ae7f59d0e4f56ff2789d845e2"
     }
   ],
   "version": "curated_pack_manifest_v1"
