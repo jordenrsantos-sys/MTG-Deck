@@ -59,3 +59,4 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+api/engine/data/themes/_last_classify_trace.json
