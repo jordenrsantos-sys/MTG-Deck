@@ -508,29 +508,50 @@ def _fetch_precon_decklist(precon_url: str) -> Optional[Tuple[List[str], str]]:
 
 
 def _fetch_strategy_notes(slug: str) -> Optional[Dict[str, Any]]:
-    """Returns commander article-blurb text + URL for strategy notes file."""
+    """Returns commander strategy notes for the strategy_notes file.
+
+    EDHREC's commander page JSON exposes:
+      - container.description: short generic blurb (e.g. "Popular decks and cards for X")
+      - panels.articles[]: list of article references with `value` (title) + `href` (URL)
+        — no body text exposed; would need per-article fetch to get excerpts.
+
+    We capture: description + article titles/URLs as topical hints. Article bodies
+    are not fetched (cost not worth the value for ~250 commanders).
+    """
     data = _fetch_commander_page_data(slug)
     if not data:
         return None
-    description = data.get("description") or ""
-    articles = data.get("articles") or []
-    if not isinstance(articles, list):
-        articles = []
-    article_excerpts: List[str] = []
-    for art in articles[:3]:
-        if isinstance(art, dict):
-            txt = art.get("excerpt") or art.get("description") or art.get("summary") or ""
-            title = art.get("title") or ""
-            if isinstance(txt, str) and txt.strip():
-                article_excerpts.append(f"[{title}] {txt}" if title else txt)
-    strategy_text = description.strip()
-    if article_excerpts:
+    description = ""
+    container = data.get("container")
+    if isinstance(container, dict):
+        description = (container.get("description") or "").strip()
+    if not description:
+        description = (data.get("description") or "").strip()
+
+    article_titles: List[str] = []
+    article_urls: List[str] = []
+    panels = data.get("panels")
+    panel_articles = panels.get("articles") if isinstance(panels, dict) else []
+    if isinstance(panel_articles, list):
+        for art in panel_articles[:8]:
+            if isinstance(art, dict):
+                title = art.get("value") or art.get("title") or ""
+                href = art.get("href") or ""
+                if isinstance(title, str) and title.strip():
+                    article_titles.append(title.strip())
+                if isinstance(href, str) and href.strip():
+                    article_urls.append(href.strip())
+
+    strategy_text = description
+    if article_titles:
         if strategy_text:
             strategy_text += "\n\n"
-        strategy_text += "\n\n".join(article_excerpts)
+        strategy_text += "Recent articles:\n" + "\n".join(f"- {t}" for t in article_titles)
+
     return {
         "strategy_text": strategy_text,
-        "article_count": len(articles),
+        "article_titles": article_titles,
+        "article_urls": article_urls,
         "scraped_at": _now_iso(),
     }
 
@@ -837,34 +858,52 @@ def main(argv: Optional[List[str]] = None) -> int:
             planned.append({"name": canonical, "slug": slug, "rank": i + 1, "deck_count": 0})
         _log(f"Explicit commander slugs mode: {len(planned)} commanders")
     else:
-        _log(f"Fetching top {args.count} commanders from EDHREC year.json...")
-        top_commanders = _fetch_top_commanders(args.count)
-        if len(top_commanders) < args.count and not args.commander_slugs:
-            _log(f"WARNING: only got {len(top_commanders)} commanders (requested {args.count})")
-            if len(top_commanders) < 250 and args.count >= 250:
-                _log("HALT: top-2-years fetch returned <250 commanders")
-                return 3
+        # `--count N` means "process N NET-NEW commanders" (not "fetch top-N raw").
+        # Over-fetch from EDHREC then dedupe + slice; the corpus may already
+        # contain many of the top-ranked commanders from prior manual sweeps.
+        # EDHREC's `commanders/year.json` and equivalent HTML page both cap at
+        # 100 commanders — no JSON pagination is exposed, so this is a hard
+        # ceiling on the orchestrator's reach via this ranking source.
+        EDHREC_RANKING_CAP = 100
+        over_fetch = min(EDHREC_RANKING_CAP, max(args.count * 2, EDHREC_RANKING_CAP))
+        _log(f"Fetching top {over_fetch} commanders from EDHREC year.json (over-fetch for --count={args.count} net-new)...")
+        top_commanders = _fetch_top_commanders(over_fetch)
+        if len(top_commanders) < 50:
+            _log(f"HALT: top-2-years fetch returned only {len(top_commanders)} commanders (<50 floor — API health issue)")
+            return 3
+        if len(top_commanders) < EDHREC_RANKING_CAP:
+            _log(f"  note: EDHREC returned {len(top_commanders)} (under {EDHREC_RANKING_CAP} expected cap)")
+        if args.count > EDHREC_RANKING_CAP:
+            _log(f"  note: requested --count {args.count} but EDHREC ranking endpoint caps at {EDHREC_RANKING_CAP}; this run will process at most {EDHREC_RANKING_CAP} net-new")
         planned = [c for c in top_commanders if c["rank"] >= args.start_rank]
 
-    # Filter: skip already-in-corpus + already-SUCCESS in progress
+    # Filter: skip already-in-corpus + already-SUCCESS in progress, then slice
+    # to args.count net-new (only in top-N mode; explicit-slug mode processes
+    # the exact list provided).
     to_process: List[Dict[str, Any]] = []
+    skipped_corpus = 0
+    skipped_progress = 0
     for c in planned:
         # In explicit-slug mode the name is a guess; we can't reliably match
         # against existing_commanders by name. Skip the corpus-membership
         # filter in explicit mode (let the engine do dedupe at ingest time).
         name_norm = _norm_commander_name(c["name"])
         if not args.commander_slugs.strip() and name_norm in existing_commanders:
-            _log(f"  skip (in corpus): {c['name']}")
+            skipped_corpus += 1
             continue
         prior = progress.get(c["slug"])
         if prior and prior.get("status") == "SUCCESS" and not args.retry_failed:
-            _log(f"  skip (already SUCCESS in progress): {c['slug']}")
+            skipped_progress += 1
             continue
         if prior and prior.get("status") in ("PARTIAL", "FAILED") and not args.retry_failed:
-            _log(f"  skip (PARTIAL/FAILED, --retry-failed not set): {c['slug']}")
+            skipped_progress += 1
             continue
         to_process.append(c)
+        if not args.commander_slugs.strip() and len(to_process) >= args.count:
+            break
 
+    _log(f"  skipped (in corpus): {skipped_corpus}")
+    _log(f"  skipped (progress SUCCESS/PARTIAL/FAILED): {skipped_progress}")
     _log(f"\nPlanned: {len(to_process)} commanders to process")
     for c in to_process[:10]:
         _log(f"  rank {c['rank']:>3}: {c['name']} ({c['slug']})")

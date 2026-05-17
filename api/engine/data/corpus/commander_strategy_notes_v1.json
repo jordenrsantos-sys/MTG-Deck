@@ -1,4 +1,132 @@
 {
-  "by_commander": {},
+  "by_commander": {
+    "Giada, Font of Hope": {
+      "article_titles": [
+        "March Commandness Bracket - South Conference Round Two",
+        "Commander Philosophy — Playing With Brackets at Home",
+        "The Top 10 Most Played Commander Cards in Avatar",
+        "The Top 40 Two-Mana Commanders",
+        "The Best Artifacts and Lands From Avatar: The Last Airbender"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/march-commandness-bracket-south-conference-round-two/",
+        "https://edhrec.com/articles/commander-philosophy-playing-with-brackets-at-home/",
+        "https://edhrec.com/articles/the-top-10-most-played-commander-cards-in-avatar/",
+        "https://edhrec.com/articles/the-top-40-two-mana-commanders/",
+        "https://edhrec.com/articles/the-best-artifacts-and-lands-from-avatar-the-last-airbender/"
+      ],
+      "color_identity": [
+        "W"
+      ],
+      "commander_slug": "giada-font-of-hope",
+      "corpus_deck_count_after": 14,
+      "rank": 14,
+      "scraped_at": "2026-05-17T21:16:26Z",
+      "strategy_text": "Popular decks and cards for Giada, Font of Hope\n\nRecent articles:\n- March Commandness Bracket - South Conference Round Two\n- Commander Philosophy — Playing With Brackets at Home\n- The Top 10 Most Played Commander Cards in Avatar\n- The Top 40 Two-Mana Commanders\n- The Best Artifacts and Lands From Avatar: The Last Airbender"
+    },
+    "Kaalia of the Vast": {
+      "article_titles": [
+        "The Top 20 Commanders With Two-Card Combos",
+        "Cocktail Hour for the Top 10 Commanders, With mtgdemonictutor",
+        "Hidden Gems for Kaalia of the Vast",
+        "The Top 40 Four-Mana Commanders",
+        "Archidekt Deckbuilding Contest - March 2026"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-top-20-commanders-with-two-card-combos/",
+        "https://edhrec.com/articles/cocktail-hour-for-the-top-10-commanders-with-mtgdemonictutor/",
+        "https://edhrec.com/articles/hidden-gems-for-kaalia-of-the-vast/",
+        "https://edhrec.com/articles/the-top-40-four-mana-commanders/",
+        "https://edhrec.com/articles/archidekt-deckbuilding-contest-march-2026/"
+      ],
+      "color_identity": [
+        "B",
+        "R",
+        "W"
+      ],
+      "commander_slug": "kaalia-of-the-vast",
+      "corpus_deck_count_after": 15,
+      "rank": 6,
+      "scraped_at": "2026-05-17T21:04:19Z",
+      "strategy_text": "Popular decks and cards for Kaalia of the Vast\n\nRecent articles:\n- The Top 20 Commanders With Two-Card Combos\n- Cocktail Hour for the Top 10 Commanders, With mtgdemonictutor\n- Hidden Gems for Kaalia of the Vast\n- The Top 40 Four-Mana Commanders\n- Archidekt Deckbuilding Contest - March 2026"
+    },
+    "Lathril, Blade of the Elves": {
+      "article_titles": [
+        "Another Final Fantasy Commander Has Cracked the EDHREC Top 10",
+        "Cocktail Hour for the Top 10 Commanders, With mtgdemonictutor",
+        "The Top 40 Four-Mana Commanders",
+        "March Commandness Bracket - West Conference Round Two",
+        "The Top 10 Commanders for Biorhythm"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/another-final-fantasy-commander-has-cracked-the-edhrec-top-10/",
+        "https://edhrec.com/articles/cocktail-hour-for-the-top-10-commanders-with-mtgdemonictutor/",
+        "https://edhrec.com/articles/the-top-40-four-mana-commanders/",
+        "https://edhrec.com/articles/march-commandness-bracket-west-conference-round-two/",
+        "https://edhrec.com/articles/the-top-10-commanders-for-biorhythm/"
+      ],
+      "color_identity": [
+        "B",
+        "G"
+      ],
+      "commander_slug": "lathril-blade-of-the-elves",
+      "corpus_deck_count_after": 15,
+      "rank": 12,
+      "scraped_at": "2026-05-17T21:10:02Z",
+      "strategy_text": "Popular decks and cards for Lathril, Blade of the Elves\n\nRecent articles:\n- Another Final Fantasy Commander Has Cracked the EDHREC Top 10\n- Cocktail Hour for the Top 10 Commanders, With mtgdemonictutor\n- The Top 40 Four-Mana Commanders\n- March Commandness Bracket - West Conference Round Two\n- The Top 10 Commanders for Biorhythm"
+    },
+    "Teval, the Balanced Scale": {
+      "article_titles": [
+        "Examining Tarkir: Dragonstorm, One Year Later",
+        "The Top 40 Four-Mana Commanders",
+        "March Commandness - North and South Round Four",
+        "March Commandness - North and South Round Three",
+        "March Commandness Bracket - South Conference Round Two"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/examining-tarkir-dragonstorm-one-year-later/",
+        "https://edhrec.com/articles/the-top-40-four-mana-commanders/",
+        "https://edhrec.com/articles/march-commandness-north-and-south-round-four/",
+        "https://edhrec.com/articles/march-commandness-north-and-south-round-three/",
+        "https://edhrec.com/articles/march-commandness-bracket-south-conference-round-two/"
+      ],
+      "color_identity": [
+        "B",
+        "G",
+        "U"
+      ],
+      "commander_slug": "teval-the-balanced-scale",
+      "corpus_deck_count_after": 14,
+      "rank": 11,
+      "scraped_at": "2026-05-17T21:07:04Z",
+      "strategy_text": "Popular decks and cards for Teval, the Balanced Scale\n\nRecent articles:\n- Examining Tarkir: Dragonstorm, One Year Later\n- The Top 40 Four-Mana Commanders\n- March Commandness - North and South Round Four\n- March Commandness - North and South Round Three\n- March Commandness Bracket - South Conference Round Two"
+    },
+    "The Wise Mothman": {
+      "article_titles": [
+        "Cocktail Hour for the Top 10 Commanders, With mtgdemonictutor",
+        "The Top 40 Four-Mana Commanders",
+        "March Commandness - North and South Round Three",
+        "Budget Replacements for Doubling Season in Commander",
+        "Ranking the Swords of X and Y in Commander"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/cocktail-hour-for-the-top-10-commanders-with-mtgdemonictutor/",
+        "https://edhrec.com/articles/the-top-40-four-mana-commanders/",
+        "https://edhrec.com/articles/march-commandness-north-and-south-round-three/",
+        "https://edhrec.com/articles/budget-replacements-for-doubling-season-in-commander/",
+        "https://edhrec.com/articles/ranking-the-swords-of-x-and-y-in-commander/"
+      ],
+      "color_identity": [
+        "B",
+        "G",
+        "U"
+      ],
+      "commander_slug": "the-wise-mothman",
+      "corpus_deck_count_after": 15,
+      "rank": 13,
+      "scraped_at": "2026-05-17T21:13:12Z",
+      "strategy_text": "Popular decks and cards for The Wise Mothman\n\nRecent articles:\n- Cocktail Hour for the Top 10 Commanders, With mtgdemonictutor\n- The Top 40 Four-Mana Commanders\n- March Commandness - North and South Round Three\n- Budget Replacements for Doubling Season in Commander\n- Ranking the Swords of X and Y in Commander"
+    }
+  },
   "version": "commander_strategy_notes_v1.0"
 }
