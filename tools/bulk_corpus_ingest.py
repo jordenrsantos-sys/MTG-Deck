@@ -339,6 +339,30 @@ def _fetch_commander_page_data(slug: str) -> Optional[Dict[str, Any]]:
     return _http_get_json(url)
 
 
+def _fetch_canonical_commander_name(slug: str) -> Optional[str]:
+    """Look up the canonical card name for a slug via EDHREC's commander page.
+
+    The page's `header` field is typically "Card Name (EDH Recommendations)"
+    or similar; the `title` field is sometimes cleaner. We try title first,
+    then strip suffixes from header.
+    """
+    data = _fetch_commander_page_data(slug)
+    if not data:
+        return None
+    title = data.get("title")
+    if isinstance(title, str) and title.strip():
+        # Title sometimes has " - Commander (EDH) ..." suffix; strip after the dash
+        clean = re.split(r"\s+-\s+", title)[0].strip()
+        if clean:
+            return clean
+    header = data.get("header")
+    if isinstance(header, str) and header.strip():
+        clean = re.split(r"\s+\(", header)[0].strip()
+        if clean:
+            return clean
+    return None
+
+
 def _discover_precon_url(slug: str) -> Optional[str]:
     """Returns full precon URL if present, else None.
 
@@ -418,34 +442,43 @@ def _fetch_average_deck(slug: str, bracket_slug: str) -> Optional[Dict[str, Any]
 
 
 def _fetch_bracket_index_top2(slug: str, bracket_slug: str) -> List[str]:
-    """Return top-2 deck urlhashes for the bracket. Empty list if page missing."""
+    """Return top-2 deck urlhashes for the bracket. Empty list if page missing.
+
+    EDHREC's bracket-index JSON puts deck rows at `data.table` — NOT at
+    `cardlists`/`decks`/`results` (those keys exist on combo pages and commander
+    pages but not here). Each table entry has {urlhash, savedate, price, tags,
+    salt, <card-type counts>}.
+    """
     url = f"{EDHREC_JSON}/decks/{slug}/{bracket_slug}.json"
     data = _http_get_json(url)
     if not data:
         return []
-    # Look for the decks array — may be at multiple paths depending on shape
-    decks: List[Dict[str, Any]] = []
-    candidates = [
-        data,
-        data.get("container", {}).get("json_dict", {}) if isinstance(data.get("container"), dict) else None,
-    ]
-    for cand in candidates:
-        if not isinstance(cand, dict):
-            continue
-        for key in ("decks", "cardlists", "results"):
-            v = cand.get(key)
-            if isinstance(v, list) and v:
-                decks = v
-                break
-        if decks:
-            break
-    if not decks and isinstance(data.get("cardlists"), list):
-        decks = data["cardlists"]
+    table = data.get("table")
+    if not isinstance(table, list):
+        return []
     hashes: List[str] = []
-    for d in decks[:2]:
+    for d in table[:2]:
         if isinstance(d, dict) and isinstance(d.get("urlhash"), str):
             hashes.append(d["urlhash"])
     return hashes
+
+
+def _fetch_bracket_index_top2_with_tags(slug: str, bracket_slug: str) -> List[Tuple[str, List[str]]]:
+    """Return top-2 (urlhash, tags) tuples. Index tags are an alternate source
+    for archetype_hint when the deckpreview's edhrec_tags is empty."""
+    url = f"{EDHREC_JSON}/decks/{slug}/{bracket_slug}.json"
+    data = _http_get_json(url)
+    if not data:
+        return []
+    table = data.get("table")
+    if not isinstance(table, list):
+        return []
+    out: List[Tuple[str, List[str]]] = []
+    for d in table[:2]:
+        if isinstance(d, dict) and isinstance(d.get("urlhash"), str):
+            tags = d.get("tags") if isinstance(d.get("tags"), list) else []
+            out.append((d["urlhash"], [str(t) for t in tags if isinstance(t, (str, int))]))
+    return out
 
 
 def _fetch_precon_decklist(precon_url: str) -> Optional[Tuple[List[str], str]]:
@@ -592,9 +625,13 @@ def _process_commander(slug: str, name: str, rank: int) -> Dict[str, Any]:
             precon = None
             warnings.append(f"precon_fetch_failed:{exc.__class__.__name__}")
         time.sleep(EDHREC_REQUEST_DELAY)
-        if precon:
+        if not precon:
+            warnings.append(f"precon_fetch_returned_none:{precon_url}")
+        else:
             cards, precon_slug = precon
-            if len(cards) >= 50:
+            if len(cards) < 50:
+                warnings.append(f"precon_too_short_n={len(cards)}:{precon_url}")
+            else:
                 ingest_entries.append({
                     "commander": name,
                     "decklist": cards,
@@ -637,14 +674,14 @@ def _process_commander(slug: str, name: str, rank: int) -> Dict[str, Any]:
     # 3. 10 ranked (top-2 per bracket)
     for bracket_slug in BRACKET_SLUGS:
         try:
-            hashes = _fetch_bracket_index_top2(slug, bracket_slug)
+            hashes_with_tags = _fetch_bracket_index_top2_with_tags(slug, bracket_slug)
         except Exception as exc:
-            hashes = []
+            hashes_with_tags = []
             warnings.append(f"index_{bracket_slug}_fetch_failed:{exc.__class__.__name__}")
         time.sleep(EDHREC_REQUEST_DELAY)
-        if len(hashes) < 2:
-            warnings.append(f"index_{bracket_slug}_fewer_than_2:got_{len(hashes)}")
-        for i, h in enumerate(hashes[:2]):
+        if len(hashes_with_tags) < 2:
+            warnings.append(f"index_{bracket_slug}_fewer_than_2:got_{len(hashes_with_tags)}")
+        for i, (h, index_tags) in enumerate(hashes_with_tags[:2]):
             if time.monotonic() - started_ts > PER_COMMANDER_DEADLINE_SECONDS:
                 entry["reason"] = "per_commander_deadline_exceeded"
                 entry["completed_at"] = _now_iso()
@@ -656,8 +693,12 @@ def _process_commander(slug: str, name: str, rank: int) -> Dict[str, Any]:
                 warnings.append(f"deck_{bracket_slug}_r{i+1}_fetch_failed:{exc.__class__.__name__}")
             time.sleep(EDHREC_REQUEST_DELAY)
             if not dp or len(dp.get("cards", [])) < 50:
+                warnings.append(f"deck_{bracket_slug}_r{i+1}_too_short")
                 continue
-            archetype_hint = _build_archetype_hint(dp.get("tags") or [])
+            # Prefer deckpreview tags; fall back to index tags
+            dp_tags = dp.get("tags") or []
+            tags_for_hint = dp_tags if dp_tags else index_tags
+            archetype_hint = _build_archetype_hint(tags_for_hint)
             if not archetype_hint:
                 archetype_hint = f"{BRACKET_CLAIMS[bracket_slug]} Ranked Deck"
             ingest_entries.append({
@@ -783,15 +824,17 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Build planned commander list
     if args.commander_slugs.strip():
-        # Explicit slug list mode
+        # Explicit slug list mode — look up canonical name via EDHREC page
         slug_list = [s.strip() for s in args.commander_slugs.split(",") if s.strip()]
         planned: List[Dict[str, Any]] = []
         for i, slug in enumerate(slug_list):
-            # Reverse-derive name from slug as a placeholder; the actual
-            # commander name comes from the deckpreview/precon page during
-            # processing. For now use a slug-derived guess.
-            name_guess = " ".join(p.capitalize() for p in slug.split("-"))
-            planned.append({"name": name_guess, "slug": slug, "rank": i + 1, "deck_count": 0})
+            canonical = _fetch_canonical_commander_name(slug)
+            time.sleep(EDHREC_REQUEST_DELAY)
+            if not canonical:
+                # Fall back to slug-derived guess; warn the user
+                canonical = " ".join(p.capitalize() for p in slug.split("-"))
+                _log(f"  WARN: could not resolve canonical name for {slug}; using guess {canonical!r}")
+            planned.append({"name": canonical, "slug": slug, "rank": i + 1, "deck_count": 0})
         _log(f"Explicit commander slugs mode: {len(planned)} commanders")
     else:
         _log(f"Fetching top {args.count} commanders from EDHREC year.json...")
