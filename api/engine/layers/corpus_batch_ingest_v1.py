@@ -265,12 +265,10 @@ def batch_ingest_external_decks(
         return {"version": VERSION, "status": "FAILED",
                 "reason": "corpus write: " + str(exc), "results": results}
 
-    # Invalidate cached vectors so strength_check sees new entries
-    try:
-        from api.engine.layers import deck_strength_check_v1 as _sc
-        _sc._CORPUS_VECTORS = []
-    except Exception:
-        pass
+    # Note: previously this reset _CORPUS_VECTORS = [] to force a full rebuild,
+    # which scaled O(N) per ingest and caused the archetype_brief flake. The
+    # vectorizer is now incremental — _ensure_vectors picks up new entries by
+    # corpus_id diff on its next call without needing a cache invalidation here.
 
     # --- Review queue + audit log ---
     if review_queue:

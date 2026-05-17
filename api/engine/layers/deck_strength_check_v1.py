@@ -90,41 +90,71 @@ def _load_corpus() -> None:
 
 
 def _ensure_vectors(db_snapshot_id: str) -> List[Dict[str, Any]]:
+    """Return cached vectors for db_snapshot_id, vectorizing only entries that
+    haven't been vectorized yet (incremental).
+
+    Previously this rebuilt the entire cache after any cache-invalidate (e.g.
+    after every batch ingest), which scaled O(N) per ingest and caused the
+    archetype_brief flake observed during the manual sweeps. The incremental
+    version tracks which corpus_ids are already vectorized for the snapshot
+    and only computes deltas.
+
+    Multi-snapshot caching: vectors for old snapshots remain in _CORPUS_VECTORS
+    but are filtered out of the return value. They cost ~negligible memory
+    (snapshot rollover is rare) and avoid recomputation if a query later
+    targets an older snapshot.
+    """
     _load_corpus()
     if not _CORPUS_RAW:
         return []
-    cached = [v for v in _CORPUS_VECTORS if v.get("_snapshot") == db_snapshot_id]
-    if cached:
-        return cached
-    from api.engine.layers.deck_analyze_v1 import compute_deck_analyze_v1
-    new_entries = []
-    for entry in _CORPUS_RAW.get("decks", []):
+    decks = _CORPUS_RAW.get("decks", [])
+
+    # Already-vectorized corpus_ids for this snapshot
+    existing_ids_for_snapshot = {
+        v.get("corpus_id") for v in _CORPUS_VECTORS
+        if v.get("_snapshot") == db_snapshot_id and v.get("corpus_id")
+    }
+
+    # Identify entries needing vectorization (new since last call)
+    todo: List[Dict[str, Any]] = []
+    for entry in decks:
+        if not isinstance(entry, dict):
+            continue
+        cid = entry.get("corpus_id")
+        if cid and cid in existing_ids_for_snapshot:
+            continue
         decklist = entry.get("decklist", [])
         if not isinstance(decklist, list):
             continue
-        text = "Commander\n1 " + entry.get("commander", "") + "\nDeck\n"
-        text += "\n".join("1 " + str(c) for c in decklist)
-        try:
-            an = compute_deck_analyze_v1(
-                db_snapshot_id=db_snapshot_id,
-                commander=entry.get("commander"),
-                raw_decklist_text=text, include_debug=False,
-            )
-        except Exception:
-            continue
-        new_entries.append({
-            "_snapshot": db_snapshot_id,
-            "corpus_id": entry.get("corpus_id"),
-            "commander": entry.get("commander"),
-            "archetype": entry.get("archetype"),
-            "bracket": entry.get("bracket"),
-            "source": entry.get("source"),
-            "primitive_density": an.get("primitive_density", {}) or {},
-            "subtype_density": an.get("subtype_density", {}) or {},
-            "card_count": an.get("card_count", 0),
-        })
-    _CORPUS_VECTORS.extend(new_entries)
-    return new_entries
+        todo.append(entry)
+
+    if todo:
+        from api.engine.layers.deck_analyze_v1 import compute_deck_analyze_v1
+        for entry in todo:
+            decklist = entry.get("decklist", [])
+            text = "Commander\n1 " + entry.get("commander", "") + "\nDeck\n"
+            text += "\n".join("1 " + str(c) for c in decklist)
+            try:
+                an = compute_deck_analyze_v1(
+                    db_snapshot_id=db_snapshot_id,
+                    commander=entry.get("commander"),
+                    raw_decklist_text=text, include_debug=False,
+                )
+            except Exception:
+                continue
+            _CORPUS_VECTORS.append({
+                "_snapshot": db_snapshot_id,
+                "corpus_id": entry.get("corpus_id"),
+                "commander": entry.get("commander"),
+                "archetype": entry.get("archetype"),
+                "bracket": entry.get("bracket"),
+                "source": entry.get("source"),
+                "primitive_density": an.get("primitive_density", {}) or {},
+                "subtype_density": an.get("subtype_density", {}) or {},
+                "card_count": an.get("card_count", 0),
+            })
+
+    return [v for v in _CORPUS_VECTORS if v.get("_snapshot") == db_snapshot_id]
 
 
 def compute_deck_strength_check_v1(*, db_snapshot_id, commander, raw_decklist_text,
@@ -363,10 +393,8 @@ def ingest_user_approved_deck(*, db_snapshot_id, commander, decklist,
             _CORPUS_RAW["decks"] = []
         _CORPUS_RAW["decks"].append(new_entry)
         _atomic_write_json(_CORPUS_PATH, _CORPUS_RAW)
-        # Invalidate the cached vectors so the next strength check picks up
-        # the new entry.
-        global _CORPUS_VECTORS
-        _CORPUS_VECTORS = []
+        # No cache invalidation needed: _ensure_vectors is incremental and will
+        # vectorize this new entry on its next call via corpus_id diff.
         if log_event:
             try:
                 log_event(

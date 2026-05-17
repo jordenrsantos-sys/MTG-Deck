@@ -1,5 +1,31 @@
 {
   "by_commander": {
+    "Fire Lord Azula": {
+      "article_titles": [
+        "Fire Lord Azula Blasts Her Way To 20th Most Popular Commander",
+        "The Top 40 Four-Mana Commanders",
+        "March Commandness - East and West Round Three",
+        "March Commandness Bracket - West Conference Round Two",
+        "Commander Ban List Update - Feb 9, 2026"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/fire-lord-azula-blasts-her-way-to-20th-most-popular-commander/",
+        "https://edhrec.com/articles/the-top-40-four-mana-commanders/",
+        "https://edhrec.com/articles/march-commandness-east-and-west-round-three/",
+        "https://edhrec.com/articles/march-commandness-bracket-west-conference-round-two/",
+        "https://edhrec.com/articles/commander-ban-list-update-feb-9-2026/"
+      ],
+      "color_identity": [
+        "B",
+        "R",
+        "U"
+      ],
+      "commander_slug": "fire-lord-azula",
+      "corpus_deck_count_after": 15,
+      "rank": 18,
+      "scraped_at": "2026-05-17T23:31:29Z",
+      "strategy_text": "Popular decks and cards for Fire Lord Azula\n\nRecent articles:\n- Fire Lord Azula Blasts Her Way To 20th Most Popular Commander\n- The Top 40 Four-Mana Commanders\n- March Commandness - East and West Round Three\n- March Commandness Bracket - West Conference Round Two\n- Commander Ban List Update - Feb 9, 2026"
+    },
     "Giada, Font of Hope": {
       "article_titles": [
         "March Commandness Bracket - South Conference Round Two",
@@ -23,6 +49,34 @@
       "rank": 4,
       "scraped_at": "2026-05-17T21:41:27Z",
       "strategy_text": "Popular decks and cards for Giada, Font of Hope\n\nRecent articles:\n- March Commandness Bracket - South Conference Round Two\n- Commander Philosophy — Playing With Brackets at Home\n- The Top 10 Most Played Commander Cards in Avatar\n- The Top 40 Two-Mana Commanders\n- The Best Artifacts and Lands From Avatar: The Last Airbender"
+    },
+    "Jodah, the Unifier": {
+      "article_titles": [
+        "The Top 10 Most Played 5-Color Cards in Commander",
+        "The Top 10 Most Played Commander Cards in Spider-Man",
+        "Building a Hei Bai, Forest Guardian Commander Deck... Without Shrines?",
+        "The Most Played Three-Color Non-Legends in Commander: Shards",
+        "The Top 10 Most Played Naya Cards in Commander"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-top-10-most-played-5-color-cards-in-commander/",
+        "https://edhrec.com/articles/the-top-10-most-played-commander-cards-in-spider-man/",
+        "https://edhrec.com/articles/hei-bai-forest-guardian-commander-deck/",
+        "https://edhrec.com/articles/the-most-played-three-color-non-legends-in-commander-shards/",
+        "https://edhrec.com/articles/the-top-10-most-played-naya-cards-in-commander/"
+      ],
+      "color_identity": [
+        "B",
+        "G",
+        "R",
+        "U",
+        "W"
+      ],
+      "commander_slug": "jodah-the-unifier",
+      "corpus_deck_count_after": 15,
+      "rank": 17,
+      "scraped_at": "2026-05-17T23:30:36Z",
+      "strategy_text": "Popular decks and cards for Jodah, the Unifier\n\nRecent articles:\n- The Top 10 Most Played 5-Color Cards in Commander\n- The Top 10 Most Played Commander Cards in Spider-Man\n- Building a Hei Bai, Forest Guardian Commander Deck... Without Shrines?\n- The Most Played Three-Color Non-Legends in Commander: Shards\n- The Top 10 Most Played Naya Cards in Commander"
     },
     "Kaalia of the Vast": {
       "article_titles": [
@@ -50,6 +104,34 @@
       "scraped_at": "2026-05-17T21:28:55Z",
       "strategy_text": "Popular decks and cards for Kaalia of the Vast\n\nRecent articles:\n- The Top 20 Commanders With Two-Card Combos\n- Cocktail Hour for the Top 10 Commanders, With mtgdemonictutor\n- Hidden Gems for Kaalia of the Vast\n- The Top 40 Four-Mana Commanders\n- Archidekt Deckbuilding Contest - March 2026"
     },
+    "Kenrith, the Returned King": {
+      "article_titles": [
+        "The Top 20 Commanders With Two-Card Combos",
+        "What Is a “Monger” and Why Is Kenrith their Best Commander?",
+        "The Top 10 Commanders for Biorhythm",
+        "Hidden Gems for Kenrith, the Returned King",
+        "Y'shtola, Night's Blessed Is Now 10th Most Popular Commander"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-top-20-commanders-with-two-card-combos/",
+        "https://edhrec.com/articles/what-is-a-monger-and-why-is-kenrith-their-best-commander/",
+        "https://edhrec.com/articles/the-top-10-commanders-for-biorhythm/",
+        "https://edhrec.com/articles/hidden-gems-for-kenrith-the-returned-king/",
+        "https://edhrec.com/articles/yshtola-nights-blessed-is-now-10th-most-popular-commander/"
+      ],
+      "color_identity": [
+        "B",
+        "G",
+        "R",
+        "U",
+        "W"
+      ],
+      "commander_slug": "kenrith-the-returned-king",
+      "corpus_deck_count_after": 15,
+      "rank": 16,
+      "scraped_at": "2026-05-17T23:29:44Z",
+      "strategy_text": "Popular decks and cards for Kenrith, the Returned King\n\nRecent articles:\n- The Top 20 Commanders With Two-Card Combos\n- What Is a “Monger” and Why Is Kenrith their Best Commander?\n- The Top 10 Commanders for Biorhythm\n- Hidden Gems for Kenrith, the Returned King\n- Y'shtola, Night's Blessed Is Now 10th Most Popular Commander"
+    },
     "Lathril, Blade of the Elves": {
       "article_titles": [
         "Another Final Fantasy Commander Has Cracked the EDHREC Top 10",
@@ -74,6 +156,32 @@
       "rank": 2,
       "scraped_at": "2026-05-17T21:32:52Z",
       "strategy_text": "Popular decks and cards for Lathril, Blade of the Elves\n\nRecent articles:\n- Another Final Fantasy Commander Has Cracked the EDHREC Top 10\n- Cocktail Hour for the Top 10 Commanders, With mtgdemonictutor\n- The Top 40 Four-Mana Commanders\n- March Commandness Bracket - West Conference Round Two\n- The Top 10 Commanders for Biorhythm"
+    },
+    "Nekusar, the Mindrazer": {
+      "article_titles": [
+        "Is Paradigm a Fixed Version of Epic?",
+        "The Top 20 Commanders With Two-Card Combos",
+        "Top 10 Group Hug Commanders for Lavaleaper",
+        "The Top 40 Three-Colored Commanders",
+        "The Top 10 Most Played Grixis Cards in Commander"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/is-paradigm-a-fixed-version-of-epic/",
+        "https://edhrec.com/articles/the-top-20-commanders-with-two-card-combos/",
+        "https://edhrec.com/articles/top-10-group-hug-commanders-for-lavaleaper/",
+        "https://edhrec.com/articles/the-top-40-three-colored-commanders/",
+        "https://edhrec.com/articles/the-top-10-most-played-grixis-cards-in-commander/"
+      ],
+      "color_identity": [
+        "B",
+        "R",
+        "U"
+      ],
+      "commander_slug": "nekusar-the-mindrazer",
+      "corpus_deck_count_after": 15,
+      "rank": 19,
+      "scraped_at": "2026-05-17T23:32:21Z",
+      "strategy_text": "Popular decks and cards for Nekusar, the Mindrazer\n\nRecent articles:\n- Is Paradigm a Fixed Version of Epic?\n- The Top 20 Commanders With Two-Card Combos\n- Top 10 Group Hug Commanders for Lavaleaper\n- The Top 40 Three-Colored Commanders\n- The Top 10 Most Played Grixis Cards in Commander"
     },
     "Teval, the Balanced Scale": {
       "article_titles": [
@@ -151,6 +259,31 @@
       "rank": 5,
       "scraped_at": "2026-05-17T21:45:40Z",
       "strategy_text": "Popular decks and cards for Vivi Ornitier\n\nRecent articles:\n- Another Final Fantasy Commander Has Cracked the EDHREC Top 10\n- Is Atraxa, Praetors' Voice Overrated?\n- The Top 20 Commanders With Two-Card Combos\n- The Top 10 Most Played Prowess Cards in Commander\n- Fun Alternatives for the Top Ten Saltiest Commanders"
+    },
+    "Yuriko, the Tiger's Shadow": {
+      "article_titles": [
+        "Let's Learn the Allied Color Pairs of Magic",
+        "Top 10 Most Played Commander Cards from Strixhaven: School of Mages",
+        "Fun Alternatives for the Top Ten Saltiest Commanders",
+        "The Top 10 Most Played Ninjutsu Cards in Commander",
+        "Building Yuriko, the Tiger's Shadow for cEDH"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/lets-learn-the-allied-color-pairs-of-magic/",
+        "https://edhrec.com/articles/top-10-most-played-commander-cards-from-strixhaven-school-of-mages/",
+        "https://edhrec.com/articles/fun-alternatives-for-the-top-ten-saltiest-commanders/",
+        "https://edhrec.com/articles/the-top-10-most-played-ninjutsu-cards-in-commander/",
+        "https://edhrec.com/articles/building-yuriko-the-tigers-shadow-for-cedh/"
+      ],
+      "color_identity": [
+        "B",
+        "U"
+      ],
+      "commander_slug": "yuriko-the-tigers-shadow",
+      "corpus_deck_count_after": 14,
+      "rank": 15,
+      "scraped_at": "2026-05-17T23:25:11Z",
+      "strategy_text": "Popular decks and cards for Yuriko, the Tiger&#x27;s Shadow\n\nRecent articles:\n- Let's Learn the Allied Color Pairs of Magic\n- Top 10 Most Played Commander Cards from Strixhaven: School of Mages\n- Fun Alternatives for the Top Ten Saltiest Commanders\n- The Top 10 Most Played Ninjutsu Cards in Commander\n- Building Yuriko, the Tiger's Shadow for cEDH"
     }
   },
   "version": "commander_strategy_notes_v1.0"

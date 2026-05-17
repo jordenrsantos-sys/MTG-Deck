@@ -193,55 +193,106 @@ def _norm_commander_name(name: str) -> str:
 # Top-commanders list
 # ============================================================
 
+COLOR_IDENTITY_SLUGS = [
+    "colorless",
+    "mono-white", "mono-blue", "mono-black", "mono-red", "mono-green",
+    "azorius", "dimir", "rakdos", "gruul", "selesnya",
+    "orzhov", "izzet", "golgari", "boros", "simic",
+    "bant", "esper", "grixis", "jund", "naya",
+    "abzan", "jeskai", "sultai", "mardu", "temur",
+    "glint-eye", "dune-brood", "ink-treader", "witch-maw", "yore-tiller",
+    "five-color",
+]
+TOP_COMMANDERS_HARD_CAP = 5000
+
+
+def _parse_ranking_page(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract commander entries from a /commanders/<X>.json response.
+
+    Returns list of {name, slug, rank, deck_count}. `rank` is whatever the page
+    asserts (real overall rank on year.json; within-color rank on color slices).
+    `deck_count` from `num_decks`.
+    """
+    out: List[Dict[str, Any]] = []
+    cardlists = (data.get("container") or {}).get("json_dict", {}).get("cardlists", [])
+    if not cardlists and isinstance(data.get("cardlists"), list):
+        cardlists = data["cardlists"]
+    for entry_group in cardlists:
+        if not isinstance(entry_group, dict):
+            continue
+        for cv in entry_group.get("cardviews", []):
+            if not isinstance(cv, dict):
+                continue
+            name = cv.get("name")
+            slug = cv.get("sanitized") or (_slugify(name) if name else None)
+            if not name or not slug:
+                continue
+            num_decks = cv.get("num_decks")
+            rank = cv.get("rank")
+            out.append({
+                "name": name,
+                "slug": slug,
+                "rank": rank if isinstance(rank, int) else 0,
+                "deck_count": num_decks if isinstance(num_decks, int) else 0,
+            })
+    return out
+
+
 def _fetch_top_commanders(count: int) -> List[Dict[str, Any]]:
-    """Fetch top N commanders from EDHREC. Paginate via `more` field.
+    """Fetch top N commanders from EDHREC.
+
+    EDHREC's `commanders/year.json` caps at 100 entries; query-param pagination
+    (`?offset=`, `?page=`, `?limit=`) is silently ignored and returns the same
+    first page; no `more` URL is exposed in the response. To reach >100 we union
+    with per-color-identity ranking pages (`/commanders/<color-slug>.json`),
+    each of which exposes 50-100 commanders ranked within that color.
+
+    Strategy:
+      1. Fetch year.json — top-100 overall, with real overall ranks
+      2. For each of 32 color slugs, fetch /commanders/<slug>.json (top-100 of
+         that color, ranked within-color)
+      3. Dedupe by slug; preserve year.json's overall ranks for the first 100
+      4. Sort color-additions by deck_count descending (best proxy for overall
+         popularity since within-color ranks aren't comparable across colors)
+      5. Assign synthetic ranks 101+ to color-additions
+      6. Cap at TOP_COMMANDERS_HARD_CAP
 
     Returns list of {name, slug, rank, deck_count}.
     """
-    results: List[Dict[str, Any]] = []
-    url = f"{EDHREC_JSON}/commanders/year.json"
-    rank = 1
-    while url and len(results) < count:
-        data = _http_get_json(url)
-        if not data:
+    count = min(count, TOP_COMMANDERS_HARD_CAP)
+
+    # Step 1: top-100 overall from year.json
+    overall_data = _http_get_json(f"{EDHREC_JSON}/commanders/year.json")
+    overall: List[Dict[str, Any]] = _parse_ranking_page(overall_data) if overall_data else []
+    if len(overall) >= count:
+        return overall[:count]
+
+    seen_slugs = {c["slug"] for c in overall}
+    additions: List[Dict[str, Any]] = []
+
+    # Step 2: union with color slices. Stop early once we have enough.
+    for color_slug in COLOR_IDENTITY_SLUGS:
+        if len(overall) + len(additions) >= count + 200:
+            # Over-fetch a small buffer for the sort, then slice to count
             break
-        cardlists = (data.get("container") or {}).get("json_dict", {}).get("cardlists", [])
-        if not cardlists and isinstance(data.get("cardlists"), list):
-            cardlists = data["cardlists"]
-        for entry_group in cardlists:
-            cardviews = entry_group.get("cardviews", []) if isinstance(entry_group, dict) else []
-            for cv in cardviews:
-                if not isinstance(cv, dict):
-                    continue
-                name = cv.get("name")
-                slug = cv.get("sanitized") or _slugify(name) if name else None
-                if not name or not slug:
-                    continue
-                deck_count = 0
-                cardkingdom = cv.get("cardkingdom") or {}
-                num_decks = cv.get("num_decks")
-                if isinstance(num_decks, int):
-                    deck_count = num_decks
-                results.append({
-                    "name": name,
-                    "slug": slug,
-                    "rank": rank,
-                    "deck_count": deck_count,
-                })
-                rank += 1
-                if len(results) >= count:
-                    break
-            if len(results) >= count:
-                break
-        more = data.get("more")
-        if isinstance(more, str) and more.strip():
-            url = f"{EDHREC_JSON}/{more.lstrip('/')}" if not more.startswith("http") else more
-            if not url.endswith(".json"):
-                url += ".json"
-            time.sleep(EDHREC_REQUEST_DELAY)
-        else:
-            url = ""
-    return results[:count]
+        page_data = _http_get_json(f"{EDHREC_JSON}/commanders/{color_slug}.json")
+        if not page_data:
+            continue
+        for c in _parse_ranking_page(page_data):
+            if c["slug"] in seen_slugs:
+                continue
+            seen_slugs.add(c["slug"])
+            additions.append(c)
+        time.sleep(EDHREC_REQUEST_DELAY)
+
+    # Step 3: sort additions by deck_count desc; assign sequential ranks after overall
+    additions.sort(key=lambda c: c.get("deck_count", 0), reverse=True)
+    next_rank = (overall[-1]["rank"] + 1) if overall else 1
+    for i, c in enumerate(additions):
+        c["rank"] = next_rank + i
+
+    combined = overall + additions
+    return combined[:count]
 
 
 # ============================================================
