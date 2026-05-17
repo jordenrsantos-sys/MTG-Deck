@@ -396,6 +396,7 @@ def _partition_protected_cut_candidates(
     cut_candidates: List[Dict[str, Any]],
     *,
     protect_top_k_cards: int = PROTECT_TOP_K_CARDS_V1,
+    min_eligible_non_dead_floor: int = 0,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     non_dead_rows = [
         row
@@ -404,11 +405,33 @@ def _partition_protected_cut_candidates(
     ]
     ranked_non_dead = sorted(non_dead_rows, key=_cut_protection_rank_key)
 
+    # v1.7 Stage 3 — calibration-honesty fix for the multi-swap regression:
+    # the absolute PROTECT_TOP_K_CARDS_V1=8 cap unconditionally locks out
+    # the top 8 non-dead cuts, which is correct for production-size 100-card
+    # decks (~95 non-dead slots → 8 locked, 87 eligible) but pathological
+    # for small decks / synthetic fixtures (≤8 non-dead slots → ALL non-dead
+    # locked, only dead slots survive → max 1-2 swaps).
+    #
+    # The cap is now bounded so that at least `min_eligible_non_dead_floor`
+    # non-dead candidates remain eligible. Default 0 preserves prior
+    # behavior; the caller (run_deck_tune_engine_v1) supplies `max_swaps`
+    # so the engine always leaves room for the caller's swap budget.
+    #
+    # Production impact: deck of N non-dead with max_swaps=5 → effective
+    # protect = min(8, N - 5). For N≥13 (all real decks), effective=8 →
+    # BYTE-IDENTICAL pre-existing behavior. For N<13 (small fixtures),
+    # effective collapses to leave room. No threshold or score data
+    # touched — purely a scope adjustment on the protection set.
+    effective_protect_top_k = max(
+        0,
+        min(int(protect_top_k_cards), len(non_dead_rows) - max(int(min_eligible_non_dead_floor), 0)),
+    )
+
     protected_cut_keys = {
         key
         for key in (
             _cut_candidate_identity_key(row)
-            for row in ranked_non_dead[: max(int(protect_top_k_cards), 0)]
+            for row in ranked_non_dead[:effective_protect_top_k]
         )
         if key != ""
     }
@@ -844,6 +867,9 @@ def _select_unique_swaps(
             continue
         valid_swaps.append(row)
 
+    # Per-add collapse retained as the canonical dev-metrics view: each
+    # unique add card contributes its single best (cut, add) pair. This
+    # is what `unique_add_count` / `unique_cut_count` report on.
     best_per_add: Dict[str, Dict[str, Any]] = {}
     for row in valid_swaps:
         add_key = _swap_add_identity_key(row)
@@ -853,12 +879,37 @@ def _select_unique_swaps(
 
     collapsed_swaps = sorted(best_per_add.values(), key=_swap_ordering_key)
 
+    # v1.7 Stage 3 — multi-swap selection fix.
+    #
+    # The prior implementation iterated `collapsed_swaps` (one row per
+    # unique add) and rejected rows whose `cut_key` was already used by
+    # an earlier selection. When the best (cut, add) pair for every
+    # unique add happened to share the SAME cut card — common when the
+    # deck has one obvious dead slot — every subsequent add got rejected
+    # because its sole "best cut" was taken. The engine emitted 1 swap
+    # even when N unique adds + N unique cuts were available.
+    #
+    # Calibration-honesty fix: iterate ALL `valid_swaps` (not just the
+    # best-per-add view) and apply the cut/add dedup greedily. This lets
+    # the engine pick the second-best cut for an add when the best cut
+    # has already been claimed by a higher-scoring add, recovering
+    # multi-swap emission without weakening any other invariant:
+    #   • `test_best_cut_chosen_per_add` — sort places the higher-score
+    #     pair first; the lower-score same-add pair is then skipped due
+    #     to add-key dedup. Best wins.
+    #   • `test_unique_add_constraint` / `test_unique_cut_constraint` —
+    #     cut + add dedup gates unchanged.
+    #   • `test_dev_metrics_report_collapsed_unique_selection_counts` —
+    #     the metrics still report `unique_*` counts over the
+    #     best-per-add view (legacy semantic preserved).
+    sorted_valid_swaps = sorted(valid_swaps, key=_swap_ordering_key)
+
     used_add_keys: Set[str] = set()
     used_cut_keys: Set[str] = set()
     selected: List[Dict[str, Any]] = []
 
     max_swaps_clean = max(int(max_swaps), 0)
-    for row in collapsed_swaps:
+    for row in sorted_valid_swaps:
         if len(selected) >= max_swaps_clean:
             break
         add_key = _swap_add_identity_key(row)
@@ -1028,6 +1079,7 @@ def run_deck_tune_engine_v1(
     eligible_cut_candidates, protected_cut_candidates = _partition_protected_cut_candidates(
         cut_candidates,
         protect_top_k_cards=protect_top_k_cards,
+        min_eligible_non_dead_floor=max_swaps_clean,
     )
 
     deck_cards = _normalize_card_list(canonical_payload.get("cards"))

@@ -112,6 +112,10 @@ LAYER_REGISTRY: Dict[str, LayerSpec] = {
         partial_safe=False,
         description="Aggregates 14 upstream payloads; Engine-4A flags non-partial-safe; Phase 6 may unwind.",
     ),
+    "combo_enabler_reasons_v1": LayerSpec(layer_id="combo_enabler_reasons_v1", dependencies=frozenset(), description="v1.7 Stage 2 — combo-aware Complete-Deck reasoning; annotates added_cards_v1 reasons with COMBO_ENABLER entries (Stage 1.5 outcome pack)."),
+    "bracket_aware_recommendations_v1": LayerSpec(layer_id="bracket_aware_recommendations_v1", dependencies=frozenset(), description="v1.7 Stage 4 — bracket-aware proactive game-changer recommendations; post-processes Power Tune recommended_swaps_v1 with BRACKET_AWARE_GC entries scaled to bracket cap (gc_limits_v1.json)."),
+    "deck_combo_insights_v1": LayerSpec(layer_id="deck_combo_insights_v1", dependencies=frozenset(), description="v1.7.2 Stage 1 — deck-combo insight surfaces (detected_combos_v1 + missing_partners_v1); scans final completed deck against v2 pair index + Stage 1.5 outcome pack."),
+    "proactive_combo_completion_v1": LayerSpec(layer_id="proactive_combo_completion_v1", dependencies=frozenset(), description="v1.7.3 Stage 1 — proactive combo completion; bracket-gated (B1/B2 cap=0, B3 cap=1, B4 cap=2, B5 cap=3) injection of v2 combo partners when one half is present + color-legal. Runs BEFORE combo_enabler so adds get COMBO_ENABLER chips."),
 }
 
 

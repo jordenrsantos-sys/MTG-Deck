@@ -267,6 +267,131 @@ describe("RESET", () => {
   });
 });
 
+describe("UPGRADE_PENDING / UPGRADE_SUCCESS / UPGRADE_ERROR / CLEAR_UPGRADE_SUGGESTIONS — v1.1", () => {
+  test("INITIAL_STATE includes Upgrade defaults", () => {
+    expect(INITIAL_STATE.upgradePending).toBe(false);
+    expect(INITIAL_STATE.upgradeSuggestions).toBeNull();
+    expect(INITIAL_STATE.upgradeError).toBeNull();
+    expect(INITIAL_STATE.lastUpgradedAt).toBeNull();
+  });
+
+  test("UPGRADE_PENDING flips upgradePending true, clears upgradeError, preserves prior suggestions", () => {
+    const withPrior: ActiveDeckState = {
+      ...HYDRATED_BASE,
+      upgradeSuggestions: [{ cut_name: "old_cut", add_name: "old_add" }],
+      upgradeError: "earlier",
+    };
+    const next = deckReducer(withPrior, { type: "UPGRADE_PENDING" });
+    expect(next.upgradePending).toBe(true);
+    expect(next.upgradeError).toBeNull();
+    expect(next.upgradeSuggestions).toEqual([{ cut_name: "old_cut", add_name: "old_add" }]);
+  });
+
+  test("UPGRADE_SUCCESS captures suggestions verbatim + sets lastUpgradedAt + clears pending", () => {
+    const suggestions = [
+      { cut_name: "Forest", add_name: "Sol Ring", reasons_v1: ["mana_acceleration"] },
+      { cut_name: "Plains", add_name: "Arcane Signet" },
+    ];
+    const pending = deckReducer(HYDRATED_BASE, { type: "UPGRADE_PENDING" });
+    const next = deckReducer(pending, {
+      type: "UPGRADE_SUCCESS",
+      suggestions,
+      nowIso: "2026-05-10T18:00:00Z",
+    });
+    expect(next.upgradePending).toBe(false);
+    expect(next.upgradeError).toBeNull();
+    expect(next.upgradeSuggestions).toEqual(suggestions);
+    expect(next.lastUpgradedAt).toBe("2026-05-10T18:00:00Z");
+  });
+
+  test("UPGRADE_SUCCESS without nowIso defaults to empty string (reducer is pure — no Date.now)", () => {
+    const next = deckReducer(HYDRATED_BASE, {
+      type: "UPGRADE_SUCCESS",
+      suggestions: [{ cut_name: "X", add_name: "Y" }],
+    });
+    expect(next.lastUpgradedAt).toBe("");
+  });
+
+  test("UPGRADE_ERROR PRESERVES prior upgradeSuggestions (transient error)", () => {
+    const withPrior: ActiveDeckState = {
+      ...HYDRATED_BASE,
+      upgradeSuggestions: [{ cut_name: "Forest", add_name: "Sol Ring" }],
+    };
+    const pending = deckReducer(withPrior, { type: "UPGRADE_PENDING" });
+    const next = deckReducer(pending, { type: "UPGRADE_ERROR", error: "HTTP 500" });
+    expect(next.upgradePending).toBe(false);
+    expect(next.upgradeError).toBe("HTTP 500");
+    expect(next.upgradeSuggestions).toEqual([{ cut_name: "Forest", add_name: "Sol Ring" }]);
+  });
+
+  test("CLEAR_UPGRADE_SUGGESTIONS clears both suggestions + error", () => {
+    const withPrior: ActiveDeckState = {
+      ...HYDRATED_BASE,
+      upgradeSuggestions: [{ cut_name: "X", add_name: "Y" }],
+      upgradeError: "stale",
+    };
+    const next = deckReducer(withPrior, { type: "CLEAR_UPGRADE_SUGGESTIONS" });
+    expect(next.upgradeSuggestions).toBeNull();
+    expect(next.upgradeError).toBeNull();
+  });
+
+  test("CLEAR_UPGRADE_SUGGESTIONS noop when nothing to clear", () => {
+    const next = deckReducer(HYDRATED_BASE, { type: "CLEAR_UPGRADE_SUGGESTIONS" });
+    expect(next).toBe(HYDRATED_BASE);
+  });
+
+  test("USER_EDIT_DECK_TEXT invalidates stale upgradeSuggestions", () => {
+    const withPrior: ActiveDeckState = {
+      ...HYDRATED_BASE,
+      upgradeSuggestions: [{ cut_name: "X", add_name: "Y" }],
+    };
+    const next = deckReducer(withPrior, { type: "USER_EDIT_DECK_TEXT", deckText: "1 New Card" });
+    expect(next.upgradeSuggestions).toBeNull();
+  });
+
+  test("USER_EDIT_COMMANDER invalidates stale upgradeSuggestions", () => {
+    const withPrior: ActiveDeckState = {
+      ...HYDRATED_BASE,
+      upgradeSuggestions: [{ cut_name: "X", add_name: "Y" }],
+    };
+    const next = deckReducer(withPrior, { type: "USER_EDIT_COMMANDER", commander: "Different" });
+    expect(next.upgradeSuggestions).toBeNull();
+  });
+
+  test("LOAD_SAVED_DECK invalidates stale upgradeSuggestions", () => {
+    const withPrior: ActiveDeckState = {
+      ...HYDRATED_BASE,
+      upgradeSuggestions: [{ cut_name: "X", add_name: "Y" }],
+    };
+    const next = deckReducer(withPrior, { type: "LOAD_SAVED_DECK", commander: "Atraxa", decklist: "1 New" });
+    expect(next.upgradeSuggestions).toBeNull();
+  });
+
+  test("RESET clears Upgrade state too", () => {
+    const dirty: ActiveDeckState = {
+      ...HYDRATED_BASE,
+      upgradeSuggestions: [{ cut_name: "X", add_name: "Y" }],
+      upgradePending: true,
+      upgradeError: "e",
+      lastUpgradedAt: "2026-05-10",
+    };
+    const next = deckReducer(dirty, { type: "RESET" });
+    expect(next.upgradePending).toBe(false);
+    expect(next.upgradeSuggestions).toBeNull();
+    expect(next.upgradeError).toBeNull();
+    expect(next.lastUpgradedAt).toBeNull();
+  });
+
+  test("UPGRADE_SUCCESS preserves source label (archidekt stays archidekt)", () => {
+    const hydrated = _afterHydrate("archidekt");
+    const next = deckReducer(hydrated, {
+      type: "UPGRADE_SUCCESS",
+      suggestions: [{ cut_name: "X", add_name: "Y" }],
+    });
+    expect(next.source).toBe("archidekt");
+  });
+});
+
 describe("COMPLETE_PENDING / COMPLETE_SUCCESS / COMPLETE_ERROR — Phase 4.14", () => {
   test("INITIAL_STATE includes new fields with safe defaults", () => {
     expect(INITIAL_STATE.isCompleted).toBe(false);
@@ -402,5 +527,102 @@ describe("Persistence guard — full-lifecycle smoke test", () => {
     expect(s.commander).toBe("Shelob, Child of Ungoliant");
     expect(s.source).toBe("archidekt");
     expect(_shouldPersist(s)).toBe(true);
+  });
+});
+
+describe("v1.6.2 Stage 2 — USER_CLEAR_DECK reducer action (additive extension 11 → 12)", () => {
+  test("from a real-deck state → returns INITIAL_STATE-shaped values but isHydrated:true", () => {
+    // Start with a populated deck (hydrate then build to mimic real flow).
+    let s: ActiveDeckState = INITIAL_STATE;
+    s = deckReducer(s, {
+      type: "HYDRATE_FROM_IMPORT_SLOT",
+      commander: "Shelob, Child of Ungoliant",
+      decklist: "1 Webslinger\n1 Sol Ring",
+      source: "archidekt",
+    });
+    expect(s.commander).toBe("Shelob, Child of Ungoliant");
+    expect(s.source).toBe("archidekt");
+
+    // Clear.
+    const cleared = deckReducer(s, { type: "USER_CLEAR_DECK" });
+
+    // Mirrors INITIAL_STATE: commander = fallback Krenko, deckText = fallback,
+    // source = "fallback", build/complete/upgrade state all reset.
+    expect(cleared.commander).toBe(INITIAL_STATE.commander);
+    expect(cleared.deckText).toBe(INITIAL_STATE.deckText);
+    expect(cleared.source).toBe("fallback");
+    expect(cleared.buildResponse).toBeNull();
+    expect(cleared.buildPending).toBe(false);
+    expect(cleared.buildError).toBeNull();
+    expect(cleared.isCompleted).toBe(false);
+    expect(cleared.completePending).toBe(false);
+    expect(cleared.completeError).toBeNull();
+    expect(cleared.upgradeSuggestions).toBeNull();
+    expect(cleared.upgradeError).toBeNull();
+    expect(cleared.upgradePending).toBe(false);
+
+    // CRITICAL: isHydrated MUST stay true so the WorkspaceView hydration
+    // useEffect doesn't immediately re-fire from the staged-import slot
+    // and overwrite the user's explicit clear.
+    expect(cleared.isHydrated).toBe(true);
+  });
+
+  test("from INITIAL_STATE (unhydrated) → same shape but isHydrated:true", () => {
+    const cleared = deckReducer(INITIAL_STATE, { type: "USER_CLEAR_DECK" });
+    expect(cleared.commander).toBe(INITIAL_STATE.commander);
+    expect(cleared.deckText).toBe(INITIAL_STATE.deckText);
+    expect(cleared.source).toBe("fallback");
+    expect(cleared.isHydrated).toBe(true);
+  });
+
+  test("INITIAL_STATE itself unchanged (BYTE-IDENTICAL per HARD safety)", () => {
+    // Defense-in-depth: confirm INITIAL_STATE wasn't mutated by the reducer
+    // (the handler returns `{ ...INITIAL_STATE, isHydrated: true }`, not
+    // a mutation in place).
+    expect(INITIAL_STATE.isHydrated).toBe(false);
+    expect(INITIAL_STATE.source).toBe("fallback");
+    expect(INITIAL_STATE.commander).toBe("Krenko, Mob Boss");
+  });
+
+  test("after USER_CLEAR_DECK → source resets to 'fallback' (persistence-blocked semantic preserved)", () => {
+    let s: ActiveDeckState = INITIAL_STATE;
+    s = deckReducer(s, {
+      type: "HYDRATE_FROM_IMPORT_SLOT",
+      commander: "X",
+      decklist: "1 Y",
+      source: "archidekt",
+    });
+    s = deckReducer(s, { type: "USER_CLEAR_DECK" });
+    // Source must reset to "fallback" so the persistence gate (which
+    // checks source !== "fallback") blocks the prior deck from being
+    // persisted. _shouldPersist is local to a different describe block;
+    // we assert the underlying source state directly here.
+    expect(s.source).toBe("fallback");
+  });
+
+  test("USER_CLEAR_DECK is a no-op when state is already at INITIAL_STATE shape (idempotent semantic)", () => {
+    const cleared1 = deckReducer(INITIAL_STATE, { type: "USER_CLEAR_DECK" });
+    const cleared2 = deckReducer(cleared1, { type: "USER_CLEAR_DECK" });
+    // Both reducer passes produce the same SHAPE (modulo deckTextRevision
+    // counter, which v1.6.2 USER_CLEAR_DECK doesn't increment — it returns
+    // INITIAL_STATE wholesale).
+    expect(cleared2.commander).toBe(cleared1.commander);
+    expect(cleared2.deckText).toBe(cleared1.deckText);
+    expect(cleared2.source).toBe(cleared1.source);
+    expect(cleared2.isHydrated).toBe(cleared1.isHydrated);
+  });
+
+  test("after USER_CLEAR_DECK → USER_EDIT_DECK_TEXT: source upgraded to 'manual'", () => {
+    let s: ActiveDeckState = INITIAL_STATE;
+    s = deckReducer(s, {
+      type: "HYDRATE_FROM_IMPORT_SLOT",
+      commander: "X",
+      decklist: "1 Y",
+      source: "archidekt",
+    });
+    s = deckReducer(s, { type: "USER_CLEAR_DECK" });
+    s = deckReducer(s, { type: "USER_EDIT_DECK_TEXT", deckText: "1 Mountain" });
+    expect(s.source).toBe("manual");
+    expect(s.deckText).toBe("1 Mountain");
   });
 });

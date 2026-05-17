@@ -10,6 +10,14 @@ import Button from "../ui/primitives/Button";
 import { Card, CardHeader, CardBody } from "../ui/primitives/Card";
 import { deleteDeck, listSavedDecks, loadDeck, type SavedDeckIndexEntry } from "../lib/decks/savedDecks";
 import { runLegacyMigrationIfNeeded } from "../lib/decks/legacyMigration";
+// v1.7.1 micro-hotfix: reuse the existing Phase 4.3 plain-text parser
+// to derive the commander from the saved decklist's `Commander\n1 X`
+// header BEFORE staging into the IMPORT_STAGED_KEY slot. Without this,
+// the staged payload had `commander: ""` and WorkspaceView's hydration
+// useEffect fell back to INITIAL_DECK_STATE.commander (the Krenko
+// fallback) — desyncing the workspace's commander pill from the loaded
+// decklist.
+import { parsePlainText } from "../parsers/plainText";
 
 const IMPORT_STAGED_KEY = "mtgdb:workspace:import:staged_v1";
 
@@ -39,11 +47,25 @@ export default function SavedDecksView({ onBack }: SavedDecksViewProps) {
   function handleLoad(id: string) {
     const deck = loadDeck(id);
     if (!deck) return;
+    // v1.7.1 micro-hotfix: derive the commander from the saved
+    // decklist's `Commander\n1 X` header via the existing
+    // parsePlainText parser. Pre-fix, this was hardcoded to "",
+    // causing WorkspaceView's hydration useEffect to fall back to
+    // INITIAL_DECK_STATE.commander (Krenko). Now the staged payload
+    // carries the correct commander so hydration syncs the workspace
+    // commander pill to the loaded deck. Partner commanders (rare):
+    // parsePlainText returns only the first commander; second-name
+    // propagation is deferred (workspace's `commander` field is scalar).
+    const parsedDeck = parsePlainText(deck.decklist);
+    const derivedCommander =
+      parsedDeck.status === "OK" && parsedDeck.deck && parsedDeck.deck.commander
+        ? parsedDeck.deck.commander.name
+        : "";
     // Bridge into the workspace via the existing Phase 4.3/4.6 staged-import
     // localStorage slot so DeckInputPanel populates without rewriting.
     try {
       const payload = {
-        commander: "",
+        commander: derivedCommander,
         commander_oracle_id: deck.commander_oracle_id ?? null,
         decklist: deck.decklist,
         unknowns: [],

@@ -463,5 +463,195 @@ Deck
         mocked_run_complete.assert_not_called()
 
 
+class DeckCompleteOkPathAddedCardsV1BackfillTests(unittest.TestCase):
+    """v1.5 Stage 3 — OK baseline_status path: added_cards_v1 length must
+    match deck growth even when the engine's accumulator under-counts.
+
+    The defensive backfill in `_backfill_added_cards_from_diff` ensures
+    that any code path which grows working_cards beyond deck_cards
+    synthesizes missing added_cards_v1 entries (via multiset diff) so
+    the length-equals-growth invariant always holds.
+
+    Tests exercise the engine at the layer below the FastAPI wrapper:
+    they call `run_deck_complete_engine_v1` directly with constructed
+    canonical_deck_input + baseline_build_result payloads, asserting
+    the response shape matches the invariant.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        if _IMPORT_ERROR is not None:
+            self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")
+        from api.engine.deck_complete_engine_v1 import run_deck_complete_engine_v1
+
+        self._run_engine = run_deck_complete_engine_v1
+
+    def _ok_baseline(self) -> dict:
+        return {
+            "status": "OK",
+            "deck_size_total": 0,
+            "result": {
+                "structural_snapshot_v1": {
+                    "dead_slot_ids_v1": [],
+                    "missing_primitives_v1": [],
+                },
+            },
+        }
+
+    def test_ok_baseline_path_growth_equals_added_cards_length(self) -> None:
+        # Input: 3-card deck under target. Engine adds basic lands to reach 100.
+        canonical = {
+            "commander": "Krenko, Mob Boss",
+            "commander_list_v1": ["Krenko, Mob Boss"],
+            "cards": ["Sol Ring", "Arcane Signet", "Mountain"],
+        }
+        response = self._run_engine(
+            canonical_deck_input=canonical,
+            baseline_build_result=self._ok_baseline(),
+            db_snapshot_id="test",
+            bracket_id="B2",
+            profile_id="focused",
+            mulligan_model_id="NORMAL",
+            target_deck_size=100,
+            max_adds=200,
+            allow_basic_lands=True,
+            land_target_mode="AUTO",
+            collect_dev_metrics=False,
+        )
+
+        added = response.get("added_cards_v1") or []
+        completed_text = response.get("completed_decklist_text_v1") or ""
+        completed_card_lines = [
+            ln for ln in completed_text.split("\n")
+            if ln.strip() and ln.strip() not in ("Commander", "Deck")
+        ]
+        # input cards = 3 (Sol Ring + Arcane Signet + Mountain) + commander = 4
+        # completed = 100; growth = 100 - 4 = 96.
+        growth_delta = len(completed_card_lines) - (len(canonical["cards"]) + 1)
+        # Length-equals-growth invariant: added_cards_v1.length == growth_delta.
+        self.assertEqual(len(added), growth_delta)
+        self.assertGreater(len(added), 0, "Engine added 0 cards but deck grew")
+
+    def test_ok_baseline_path_determinism_same_inputs_same_outputs(self) -> None:
+        # Determinism: invoking the engine twice with the same inputs returns
+        # byte-identical added_cards_v1 + completed_decklist_text_v1.
+        canonical = {
+            "commander": "Krenko, Mob Boss",
+            "commander_list_v1": ["Krenko, Mob Boss"],
+            "cards": ["Sol Ring", "Arcane Signet", "Mountain"],
+        }
+        kwargs = dict(
+            canonical_deck_input=canonical,
+            baseline_build_result=self._ok_baseline(),
+            db_snapshot_id="test",
+            bracket_id="B2",
+            profile_id="focused",
+            mulligan_model_id="NORMAL",
+            target_deck_size=100,
+            max_adds=200,
+            allow_basic_lands=True,
+            land_target_mode="AUTO",
+            collect_dev_metrics=False,
+        )
+        run1 = self._run_engine(**kwargs)
+        run2 = self._run_engine(**kwargs)
+        self.assertEqual(run1.get("added_cards_v1"), run2.get("added_cards_v1"))
+        self.assertEqual(
+            run1.get("completed_decklist_text_v1"),
+            run2.get("completed_decklist_text_v1"),
+        )
+
+    def test_ok_baseline_path_reason_codes_from_v12_vocabulary(self) -> None:
+        # All added_cards_v1 entries carry non-empty reasons_v1 lists; each
+        # reason is from the v1.2 vocabulary (existing engine codes OR the
+        # v1.5 backfill placeholder `auto_completion_target_size`).
+        canonical = {
+            "commander": "Krenko, Mob Boss",
+            "commander_list_v1": ["Krenko, Mob Boss"],
+            "cards": ["Sol Ring", "Arcane Signet", "Mountain"],
+        }
+        response = self._run_engine(
+            canonical_deck_input=canonical,
+            baseline_build_result=self._ok_baseline(),
+            db_snapshot_id="test",
+            bracket_id="B2",
+            profile_id="focused",
+            mulligan_model_id="NORMAL",
+            target_deck_size=100,
+            max_adds=200,
+            allow_basic_lands=True,
+            land_target_mode="AUTO",
+            collect_dev_metrics=False,
+        )
+        # Known engine reason codes (rounds + land_fill paths) + the v1.5
+        # backfill placeholder. Test asserts each entry has non-empty
+        # reasons_v1 and that at least one expected vocabulary code appears.
+        known_codes = {
+            "ADD_BASIC_LAND_FILL_AUTO",
+            "COMPLETE_TO_TARGET_SIZE",
+            "ADD_REQUIRED_COVERAGE",
+            "ADD_REDUNDANCY_SUPPORT",
+            "ADD_INTERACTION_OR_PROTECTION",
+            "auto_completion_target_size",
+            # v1.2-listed vocabulary aliases (spec body):
+            "basic_land_fill",
+            "land_target_completion",
+            "primitive_coverage_fill",
+        }
+        added = response.get("added_cards_v1") or []
+        self.assertGreater(len(added), 0)
+        for entry in added:
+            reasons = entry.get("reasons_v1") or []
+            self.assertGreater(len(reasons), 0, f"entry {entry.get('name')!r} has empty reasons_v1")
+            # At least one reason code in the known v1.2 vocabulary.
+            overlap = set(reasons) & known_codes
+            self.assertGreater(
+                len(overlap),
+                0,
+                f"entry {entry.get('name')!r} reasons_v1 {reasons} have no known v1.2 code",
+            )
+
+    def test_backfill_helper_synthesizes_missing_entries(self) -> None:
+        # Unit-test the helper directly: passing under-counted added_cards
+        # alongside grown working_cards produces synthesized entries with
+        # the placeholder reason. Byte-identical pass-through when accumulator
+        # is already correct.
+        from api.engine.deck_complete_engine_v1 import _backfill_added_cards_from_diff
+
+        # Case 1: accumulator already correct → no backfill.
+        deck_cards = ["A", "B"]
+        working_cards = ["A", "B", "C", "D"]
+        existing = [
+            {"name": "C", "reasons_v1": ["ENGINE_REASON_1"], "primitives_added_v1": []},
+            {"name": "D", "reasons_v1": ["ENGINE_REASON_2"], "primitives_added_v1": []},
+        ]
+        out = _backfill_added_cards_from_diff(existing, deck_cards, working_cards)
+        self.assertEqual(out, existing)
+
+        # Case 2: accumulator under-counts → backfill synthesizes the missing.
+        out2 = _backfill_added_cards_from_diff([], deck_cards, working_cards)
+        self.assertEqual(len(out2), 2)
+        names = sorted(e["name"] for e in out2)
+        self.assertEqual(names, ["C", "D"])
+        for entry in out2:
+            self.assertEqual(entry["reasons_v1"], ["auto_completion_target_size"])
+            self.assertEqual(entry["primitives_added_v1"], [])
+
+        # Case 3: no growth → no synthesis.
+        out3 = _backfill_added_cards_from_diff([], deck_cards, deck_cards)
+        self.assertEqual(out3, [])
+
+        # Case 4: partial accumulator → fill the gap deterministically.
+        out4 = _backfill_added_cards_from_diff(
+            [{"name": "C", "reasons_v1": ["ENGINE_REASON_1"], "primitives_added_v1": []}],
+            deck_cards,
+            working_cards,
+        )
+        self.assertEqual(len(out4), 2)
+        # D was missing → synthesized with placeholder reason.
+        d_entry = next(e for e in out4 if e["name"] == "D")
+        self.assertEqual(d_entry["reasons_v1"], ["auto_completion_target_size"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -242,6 +242,7 @@ SECTION 3 — DATA PACKS REQUIRED
 [x] commander_spellbook_variants_v1.json  (COMPLETE - implementation_plan_v1_16 reference)
 [x] two_card_combos_v2.json  (COMPLETE - implementation_plan_v1_16 reference)
 [x] two_card_combos_v1.json  (COMPLETE - implementation_plan_v1_16 reference, legacy fallback)
+[x] commander_spellbook_combo_outcomes_v1.json  (COMPLETE - v1.7 Stage 1.5 — outcome label pack sourced from Commander Spellbook variants dump, consumed by combo_enabler_reasons_v1 layer)
 [ ] calibration_snapshot_v1.json
 
 ---------------------------------------------------------------------

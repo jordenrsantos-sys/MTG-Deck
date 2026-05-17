@@ -7,12 +7,35 @@ import { readStagedImport as _readStagedImport, clearStagedImport as _clearStage
 // Phase 4 BUNDLE Integration (4.13): wire orphaned panels.
 import SufficiencyDashboard from "../components/stats/SufficiencyDashboard";
 import SwapSuggestionsList from "../components/stats/SwapSuggestionsList";
+import AddedCardsPanel from "../components/stats/AddedCardsPanel";
+// v1.7.2 Stage 3 — surface engine's deck-combo insight payload
+// (detected_combos_v1 + missing_partners_v1) from /deck/complete_v1.
+// The panel null-renders on combo-free decks AND on legacy responses
+// without the new engine fields (props default to empty arrays).
+import DeckCombosPanel from "../components/stats/DeckCombosPanel";
+import DeckThemesPanel from "../components/stats/DeckThemesPanel";
+// v1.7.5 — bracket-combo violation warning. Renders red banner when the
+// engine response carries TWO_CARD_COMBOS_DISALLOWED_B* violations or
+// status === "BRACKET_VIOLATION". Self-hides when no bracket-combo
+// violations exist (legacy responses + B3+ unaffected).
+import BracketViolationsBanner from "../components/stats/BracketViolationsBanner";
+import UpgradeSuggestionsList from "../components/stats/UpgradeSuggestionsList";
 import CommanderRecommendationPanel from "../components/recommendation/CommanderRecommendationPanel";
 import SeedBuilderPanel from "../components/seed/SeedBuilderPanel";
 // Phase 4.14 Stage 3: GroupedDeckList + GroupableCard imports removed
 // (the render call is gone; the source files stay BYTE-IDENTICAL per HARD #14).
 import type { SwapSuggestion } from "../lib/applySwap";
+// v1.3 Stage 1: diff-based AddedCardsPanel fallback.
+import { computeDeckAdditions } from "../lib/deckDiff";
+// v1.6.4 Stage 2: translation helper for Power Tune Swap Preview reason
+// chips (line ~4990). v1.6.2 wired this at UpgradeSuggestionsList; the
+// Tools-panel Power Tune sub-panel has a SEPARATE render seam that
+// previously emitted raw engine codes (ADD_PRIMITIVE_COVERAGE etc.).
+// justificationLabels.ts BYTE-IDENTICAL from v1.6.2.
+import { translateJustification } from "../lib/justificationLabels";
 import Badge from "../ui/primitives/Badge";
+// v1.6 Stage 2: Button primitive for Action buttons (visually distinct from Mode tabs).
+import Button from "../ui/primitives/Button";
 import { saveDeck as _persistDeckViaAdapter } from "../lib/decks/savedDecks";
 import {
   ACTIVE_DECK_STORAGE_KEY,
@@ -34,6 +57,7 @@ import {
   deckReducer,
   INITIAL_STATE as INITIAL_DECK_STATE,
   type DeckSource,
+  type UpgradeSwapSuggestion,
 } from "../lib/workspaceDeckState";
 import CanonicalSlotsPanel from "../components/CanonicalSlotsPanel";
 import CardModal from "../components/CardModal";
@@ -41,7 +65,9 @@ import HoverCardPreview from "../components/cards/HoverCardPreview";
 import DeckEditorPanel, { type DeckEditorCardHint } from "../components/deck/DeckEditorPanel";
 import type { DeckPanelCard, DeckPanelCommander } from "../components/deck/DeckPanel";
 import HeaderChips from "../components/HeaderChips";
-import LeftRail from "../components/layout/LeftRail";
+// v1.6.1 hotfix Stage 2: LeftRail import + render hoisted to AppRouter.tsx
+// so the hamburger persists across all 7 ViewId routes (was previously
+// confined to the WorkspaceView mount).
 import PrimitiveExplorerPanel from "../components/PrimitiveExplorerPanel";
 import StatusBar from "../components/StatusBar";
 import UnknownsPatchesPanel from "../components/UnknownsPatchesPanel";
@@ -1474,6 +1500,26 @@ export default function WorkspaceView() {
 
   const [deckTuneResponse, setDeckTuneResponse] = useState<DeckTuneResponseV1 | null>(null);
   const [completionResult, setCompletionResult] = useState<DeckCompleteResponseV1 | null>(null);
+  // v1.3 Stage 1 + v1.4 Stage 1 micro-fix: snapshot of deckText taken at
+  // the moment the user clicks "1. Complete deck", BEFORE any state
+  // updates or dispatches fire. v1.3 used useState here but the setter
+  // is async — by the time the diff useMemo ran the snapshot could have
+  // already been overwritten by handleApplyCompletedDecklist's
+  // USER_EDIT_DECK_TEXT dispatch (which sets deckText to the completed
+  // text). v1.4 switches to useRef: synchronous read at click entry +
+  // zero render-cycle risk. The ref is read inside derivedAddedRows
+  // useMemo; the memo's `completedDecklistText` dep triggers recompute
+  // when the response arrives.
+  const preCompleteDeckTextRef = useRef<string>("");
+  // v1.3 Stage 2: snapshot of last non-empty upgrade suggestions. The
+  // reducer clears upgradeSuggestions on USER_EDIT_DECK_TEXT (deck
+  // mutation invalidates), but Apply-row click DISPATCHES
+  // USER_EDIT_DECK_TEXT — without this snapshot the panel unmounts
+  // immediately after click and the "Applied ✓" badge + counter
+  // never become visible (the v1.2 Stage 2 close-out false-pass).
+  // The snapshot persists until the user clicks × Clear OR a new
+  // Upgrade run replaces it via the useEffect below.
+  const [upgradeSnapshotRows, setUpgradeSnapshotRows] = useState<ReadonlyArray<UpgradeSwapSuggestion> | null>(null);
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [deckTrimResult, setDeckTrimResult] = useState<DeckTrimToolResult | null>(null);
   const [tuneSourceCards, setTuneSourceCards] = useState<string[]>([]);
@@ -1528,6 +1574,9 @@ export default function WorkspaceView() {
   // synchronously without a stale-closure race.
   const completionResultRef = useRef<DeckCompleteResponseV1 | null>(null);
   const completionErrorRef = useRef<string | null>(null);
+  // v1.1 Stage 2: same pattern for deckTuneResponse so the unified Upgrade
+  // handler reads post-await values without the React state-flush race.
+  const deckTuneResponseRef = useRef<DeckTuneResponseV1 | null>(null);
 
   // Phase 4.14 Stage 1: keep ref + state in sync so the unified Complete
   // handler can observe the results without a stale-closure race.
@@ -1674,6 +1723,48 @@ export default function WorkspaceView() {
   const tuneSwapRows = useMemo(() => asDeckTuneSwapRows(deckTuneResponse?.recommended_swaps_v1), [deckTuneResponse]);
   const completeAddedRows = useMemo(() => asDeckCompleteAddedRows(completionResult?.added_cards_v1), [completionResult]);
   const completedDecklistText = useMemo(() => asString(completionResult?.completed_decklist_text_v1), [completionResult]);
+  // v1.3 Stage 1: diff-based fallback for AddedCardsPanel. When the
+  // engine returns empty added_cards_v1 but the completed_decklist_text_v1
+  // is actually larger than what we sent in, derive the additions
+  // ourselves from the text-diff so the panel still renders something
+  // meaningful. Engine source preferred (richer reasons); diff is the
+  // fallback (placeholder reason — tooltip explains).
+  const derivedAddedRows = useMemo(() => {
+    if (completedDecklistText === "") return [] as ReadonlyArray<DeckCompleteAddedCardV1>;
+    // v1.4: read preCompleteDeckTextRef synchronously — captured at click
+    // handler entry (handleUnifiedCompleteDeck) BEFORE any state updates.
+    // useRef has no closure/timing issues; the memo recomputes whenever
+    // completedDecklistText changes (response arrives).
+    return computeDeckAdditions(preCompleteDeckTextRef.current ?? "", completedDecklistText);
+  }, [completedDecklistText]);
+  const addedRowsForPanel = useMemo<ReadonlyArray<DeckCompleteAddedCardV1>>(
+    () => (completeAddedRows.length > 0 ? completeAddedRows : derivedAddedRows),
+    [completeAddedRows, derivedAddedRows],
+  );
+  // For AddedCardsPanel "Why?" tooltip: which source produced the
+  // currently-shown rows? Engine reasons are domain codes; diff source
+  // uses the placeholder "added_during_completion".
+  const addedRowsSource: "engine" | "diff" | "none" = useMemo(() => {
+    if (completeAddedRows.length > 0) return "engine";
+    if (derivedAddedRows.length > 0) return "diff";
+    return "none";
+  }, [completeAddedRows.length, derivedAddedRows.length]);
+  // v1.3 Stage 2: capture last non-empty upgrade suggestions into a local
+  // snapshot so the panel can keep rendering across Apply-induced
+  // USER_EDIT_DECK_TEXT-triggered reducer wipes. See `upgradeSnapshotRows`
+  // declaration above for the false-pass context.
+  useEffect(() => {
+    if (deckState.upgradeSuggestions !== null && deckState.upgradeSuggestions.length > 0) {
+      setUpgradeSnapshotRows(deckState.upgradeSuggestions);
+    }
+  }, [deckState.upgradeSuggestions]);
+  const upgradeRowsForPanel = useMemo<ReadonlyArray<UpgradeSwapSuggestion>>(
+    () =>
+      deckState.upgradeSuggestions && deckState.upgradeSuggestions.length > 0
+        ? deckState.upgradeSuggestions
+        : upgradeSnapshotRows ?? [],
+    [deckState.upgradeSuggestions, upgradeSnapshotRows],
+  );
   const completionCardsAddedCount = useMemo(() => {
     const explicitCount = firstNumber(completionResult?.cards_added_count);
     if (explicitCount !== null) {
@@ -3177,6 +3268,13 @@ export default function WorkspaceView() {
   async function handleManaTuneTool(): Promise<void> {
     setLastValidatePassed(false);
     setLastSmokeSucceeded(false);
+    // v1.4 Stage 1: pre-Complete snapshot now lives in
+    // preCompleteDeckTextRef, captured at handleUnifiedCompleteDeck
+    // entry (synchronous, BEFORE any state updates). v1.3's setState
+    // here was scheduled after several other render-triggering setters
+    // (setCompletionResult(null), etc.) and could end up reflecting
+    // state mutated by the subsequent handleApplyCompletedDecklist's
+    // USER_EDIT_DECK_TEXT dispatch — yielding a near-empty diff.
     const requestId = completionRequestIdRef.current + 1;
     completionRequestIdRef.current = requestId;
 
@@ -3445,6 +3543,16 @@ export default function WorkspaceView() {
   }
 
   function handleApplyCompletedDecklist(): void {
+    // v1.2 Stage 3: clear stale apply-time error state (incl. the
+    // "Apply Complete blocked: completed deck has N lines" message at the
+    // strict-larger gate below) before re-validating. Without this reset,
+    // a prior failed attempt's red-bar message persists across a fresh
+    // Apply attempt, misleading the user into thinking the new attempt
+    // already failed.
+    setCompletionError(null);
+    setRuntimeError(null);
+    setApiErrorDetails(null);
+
     const inputDeckText = deckText;
     const inputCards = deckCardsInPayloadOrder;
     const currentLineCount = countNonEmptyTextLines(deckText);
@@ -3585,6 +3693,34 @@ export default function WorkspaceView() {
   // completionResult / completionError state.
   async function handleUnifiedCompleteDeck(): Promise<void> {
     if (deckState.completePending) return;
+    // v1.4 Stage 1: capture the pre-Complete deck text IMMEDIATELY at
+    // click-handler entry — BEFORE any state updates, dispatches, or
+    // fetches fire. useRef.current = ... is synchronous; the diff
+    // useMemo reads this when /deck/complete_v1 resolves and
+    // completedDecklistText changes. Without this, v1.3's useState
+    // setter could be overwritten by the subsequent
+    // handleApplyCompletedDecklist USER_EDIT_DECK_TEXT dispatch,
+    // yielding a near-empty diff (only commander entry).
+    //
+    // v1.5 Stage 2: prepend Commander+name+Deck banner so the snapshot
+    // shape matches the engine response's `completed_decklist_text_v1`
+    // (which always emits Commander/Deck sections). Without the
+    // prepend, the diff would see the commander as a "new" addition
+    // in the response (yielding an off-by-one in the entry count and
+    // a misleading commander entry in AddedCardsPanel). The new
+    // banner-strip extensions in lib/deckDiff.ts (Stage 1) ensure the
+    // synthesized "Commander\n1 ...\nDeck\n" prefix gets stripped on
+    // both sides of the diff.
+    const trimmedCommander = commander.trim();
+    preCompleteDeckTextRef.current =
+      trimmedCommander !== ""
+        ? `Commander\n1 ${trimmedCommander}\nDeck\n${deckText}`
+        : deckText;
+    // v1.2 Stage 3: also clear at the unified-entry boundary so the prior
+    // "Apply Complete blocked" message doesn't persist while the new
+    // /deck/complete_v1 request is in flight.
+    setCompletionError(null);
+    setRuntimeError(null);
     dispatchDeckAction({ type: "COMPLETE_PENDING" });
     try {
       await handleManaTuneTool();
@@ -3604,14 +3740,63 @@ export default function WorkspaceView() {
       return;
     }
     if (typeof finalCompletedText === "string" && finalCompletedText.trim() !== "") {
-      // Fire the existing Apply path so Build History entries + hint cache
-      // refresh stay BYTE-IDENTICAL behavior.
-      handleApplyCompletedDecklist();
-      dispatchDeckAction({ type: "COMPLETE_SUCCESS", deckText: finalCompletedText });
+      // v1.6.3 Stage 2 — replace immediate-apply (handleApplyCompletedDecklist
+      // + COMPLETE_SUCCESS, both of which mutated deckText to the full
+      // completed text) with stage-then-review: dispatch STAGE_PROPOSED_ADDS
+      // with the engine's added_cards_v1 array. User reviews per-card
+      // accept/reject in AddedCardsPanel; APPLY_ACCEPTED_ADDS commits
+      // the accepted subset. Deck only mutates on explicit apply per
+      // the v1.6.3 spec. handleApplyCompletedDecklist + COMPLETE_SUCCESS
+      // handlers BYTE-IDENTICAL — just no longer called from this path.
+      const addedFromEngine = completionResultRef.current?.added_cards_v1;
+      const stagedAdds: Array<{ card_name: string; reasons?: ReadonlyArray<string> }> = [];
+      if (Array.isArray(addedFromEngine)) {
+        for (const row of addedFromEngine) {
+          if (!row || typeof row !== "object") continue;
+          const rec = row as { name?: unknown; reasons_v1?: unknown };
+          const name = typeof rec.name === "string" ? rec.name.trim() : "";
+          if (name === "") continue;
+          const reasons = Array.isArray(rec.reasons_v1)
+            ? rec.reasons_v1.filter((r): r is string => typeof r === "string")
+            : [];
+          stagedAdds.push({ card_name: name, reasons });
+        }
+      }
+      dispatchDeckAction({ type: "STAGE_PROPOSED_ADDS", adds: stagedAdds });
     } else {
       // Engine returned no completed text — surface as soft error.
       dispatchDeckAction({ type: "COMPLETE_ERROR", error: "Complete returned no decklist." });
     }
+  }
+
+  // v1.1 Stage 2: unified "Upgrade Deck" handler. Top-level entry point for
+  // /deck/tune_v1; invokes the existing handlePowerTuneTool flow (HARD #13
+  // — existing TOOLS-panel "Run Power Tune" button BYTE-IDENTICAL) and
+  // additionally dispatches reducer UPGRADE_PENDING/SUCCESS/ERROR so the
+  // top-level numbered toolbar surfaces state + the new UpgradeSuggestionsList
+  // panel reads recommended_swaps_v1 from reducer state.
+  async function handleUnifiedUpgradeDeck(): Promise<void> {
+    if (deckState.upgradePending) return;
+    dispatchDeckAction({ type: "UPGRADE_PENDING" });
+    try {
+      await handlePowerTuneTool();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upgrade failed";
+      dispatchDeckAction({ type: "UPGRADE_ERROR", error: message });
+      return;
+    }
+    // handlePowerTuneTool sets deckTuneResponse on success OR setRuntimeError
+    // on failure. Read the result via deckTuneResponseRef.current (mirrored
+    // alongside the React state setter at line 3684 — same synchronous-write
+    // pattern Phase 4.14.1 added for handleManaTuneTool to avoid the
+    // render→useEffect stale-closure race).
+    const tuneRoot = deckTuneResponseRef.current;
+    const swaps = asDeckTuneSwapRows(tuneRoot?.recommended_swaps_v1);
+    dispatchDeckAction({
+      type: "UPGRADE_SUCCESS",
+      suggestions: (Array.isArray(swaps) ? swaps : []) as ReadonlyArray<UpgradeSwapSuggestion>,
+      nowIso: new Date().toISOString(),
+    });
   }
 
   async function handlePowerTuneTool(): Promise<void> {
@@ -3620,6 +3805,9 @@ export default function WorkspaceView() {
     setLastTuneSucceeded(false);
     setRuntimeError(null);
     setApiErrorDetails(null);
+    // v1.1 Stage 2: clear the ref synchronously alongside the React state
+    // setter — symmetric with the success-path write below.
+    deckTuneResponseRef.current = null;
     setDeckTuneResponse(null);
 
     try {
@@ -3681,6 +3869,11 @@ export default function WorkspaceView() {
       }
 
       const root = (asRecord(parsed) ?? {}) as DeckTuneResponseV1;
+      // v1.1 Stage 2: synchronous ref write alongside the React state setter
+      // — same pattern Phase 4.14.1 established for completionResultRef.
+      // User-visible toolbar behavior unchanged (HARD #15 — additive
+      // instrumentation only).
+      deckTuneResponseRef.current = root;
       setDeckTuneResponse(root);
       setLastTuneSucceeded(true);
       setTuneSourceCards(preflight.canonicalCards.length > 0 ? preflight.canonicalCards : deckCardsInPayloadOrder);
@@ -4065,14 +4258,22 @@ export default function WorkspaceView() {
 
   return (
     <div className="workspace-root">
-      <LeftRail />
-
+      {/* v1.6.1 hotfix Stage 2: <LeftRail /> render hoisted to AppRouter
+          as a persistent sibling so the hamburger persists across all
+          7 ViewId routes. Removing it here doesn't change WorkspaceView's
+          layout — LeftRail was a fixed-position overlay (z-modal) outside
+          the normal flow, so the `.workspace-root` flex layout is BYTE-
+          IDENTICAL. */}
       <main className="workspace-main-content">
         <div className="workspace-shell">
           <header className="workspace-header">
-            <p className="workspace-kicker">MTG Engine Harness · Phase 2</p>
-            <h1>Active Deck Workspace</h1>
-            <p className="workspace-subtitle">Local-first deck input → build → analysis loop with deterministic rendering.</p>
+            {/* v1.7.5 UX polish: dropped the "MTG Engine Harness · Phase 2"
+                kicker + the engineer-speak subtitle entirely. Users were
+                seeing them on dev-server runs (which is how the app is
+                served locally). The kicker provided zero user value; the
+                subtitle now reads in plain English. */}
+            <h1>Workspace</h1>
+            <p className="workspace-subtitle">Build, tune, and playtest your Commander decks.</p>
           </header>
 
           {/* Phase 4 BUNDLE Integration (4.13): wire the orphaned panels.
@@ -4087,7 +4288,15 @@ export default function WorkspaceView() {
                 Variants per spec: source==="fallback" → neutral "No deck loaded";
                 !isCompleted → info "{cmdr} · {N} cards · imported from {source}";
                 isCompleted && !buildResponse → info "{cmdr} · {N} cards · ready to build";
-                buildResponse → success "{cmdr} · {N} cards · built · sufficiency {summary}". */}
+                buildResponse → success "{cmdr} · {N} cards · built · sufficiency {summary}".
+
+                v1.6 Stage 3: status pill is now ONE OF SEVERAL pills in a clean
+                metric pill row (Commander / Card count / Bracket / Status).
+                Status pill text composer (v1.4) BYTE-IDENTICAL per HARD #17 —
+                only the surrounding layout + sibling pills are new. Deck name
+                (commander) is the largest typography on the row. The dev-jargon
+                HeaderChips block (snapshot: - / profile: - / ui_mode: DEV / etc.)
+                is gated behind import.meta.env.DEV below. */}
             {(() => {
               const sufficiencyStatus = (() => {
                 const summary = extractSufficiencySummary(buildResponse);
@@ -4102,18 +4311,125 @@ export default function WorkspaceView() {
                 commander: commander,
                 cardCount: parsedDeckRows.length,
                 sufficiencyStatus,
+                // v1.1 Stage 3: surface upgrade suggestion count in the pill
+                // when UPGRADE_SUCCESS populated reducer state.
+                upgradeSuggestionsCount: deckState.upgradeSuggestions?.length ?? 0,
               });
+              const cardCount = parsedDeckRows.length;
+              const trimmedCommander = commander.trim();
+              // v1.6.4 Stage 3: hide fallback Krenko values from the
+              // metric pill row after USER_CLEAR_DECK. INITIAL_STATE
+              // commander="Krenko, Mob Boss" + deckText=5-card fallback,
+              // so the deckState reads non-empty even when source ===
+              // "fallback". Source-gate the visible-deck display so the
+              // empty/cleared state reads "No deck loaded" cleanly.
+              const hasRealDeck = deckState.source !== "fallback";
               return (
-                <div className="mb-token-2" role="status" aria-live="polite" aria-label="Workspace status">
-                  <Badge variant={pill.variant === "success" ? "success" : pill.variant === "info" ? "info" : "neutral"}>
-                    {pill.text}
-                  </Badge>
+                <div
+                  className="mb-token-3"
+                  role="banner"
+                  aria-label="Deck metric pill header"
+                  data-v16-stage="metric-pill-header"
+                >
+                  {/* v1.6: deck name = largest typography. Shows commander
+                      verbatim when set, "No deck loaded" placeholder otherwise.
+                      v1.6.2 Stage 2: × clear-deck button rendered next to the
+                      deck name when state.source !== "fallback" (i.e. a real
+                      deck is loaded). Dispatches USER_CLEAR_DECK which resets
+                      to INITIAL_STATE values but keeps isHydrated:true so the
+                      hydration useEffect doesn't immediately re-fire. */}
+                  <div className="flex items-center gap-token-2 mb-token-2">
+                    {/* v1.6.5 fix: when no deck is loaded, the empty-state
+                        CTA card below owns the "No deck loaded" messaging.
+                        Render a neutral section header here instead of a
+                        duplicate "No deck loaded" string — eliminates the
+                        duplication noted in UI overhaul punch list. */}
+                    <h2
+                      className="text-2xl font-bold text-text-primary truncate"
+                      title={hasRealDeck && trimmedCommander !== "" ? trimmedCommander : "Workspace"}
+                    >
+                      {hasRealDeck && trimmedCommander !== "" ? trimmedCommander : "Workspace"}
+                    </h2>
+                    {deckState.source !== "fallback" ? (
+                      <button
+                        type="button"
+                        onClick={() => { dispatchDeckAction({ type: "USER_CLEAR_DECK" }); setDeckTuneResponse(null); setUpgradeSnapshotRows(null); }}
+                        aria-label="Clear deck"
+                        title="Clear deck"
+                        className="inline-flex items-center justify-center w-6 h-6 rounded-token-sm text-text-secondary hover:text-text-primary hover:bg-bg-elev-2 transition-colors duration-fast focus:outline-none focus-visible:shadow-focus-ring"
+                        data-v162-stage="clear-deck-button"
+                      >
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                        </svg>
+                      </button>
+                    ) : null}
+                  </div>
+                  <div
+                    className="flex flex-wrap items-center gap-token-2"
+                    role="group"
+                    aria-label="Deck metric pills"
+                  >
+                    {hasRealDeck && trimmedCommander !== "" ? (
+                      <Badge variant="info" aria-label={`Commander: ${trimmedCommander}`}>
+                        Commander · {trimmedCommander}
+                      </Badge>
+                    ) : null}
+                    {hasRealDeck ? (
+                      <Badge variant="neutral" aria-label={`${cardCount} cards in deck`}>
+                        {cardCount} card{cardCount === 1 ? "" : "s"}
+                      </Badge>
+                    ) : null}
+                    {/* v1.7.5 UX polish: gate Bracket pill + status pill on
+                        hasRealDeck. With no deck loaded, neither metadata
+                        is meaningful and the empty-state CTA card below
+                        already provides the "No deck loaded" status. */}
+                    {hasRealDeck && bracketId.trim() !== "" ? (
+                      <Badge variant="info" aria-label={`Bracket ${bracketId}`}>
+                        Bracket · {bracketId}
+                      </Badge>
+                    ) : null}
+                    {hasRealDeck ? (
+                      <Badge
+                        variant={pill.variant === "success" ? "success" : pill.variant === "info" ? "info" : "neutral"}
+                        aria-label="Workspace status"
+                      >
+                        {pill.text}
+                      </Badge>
+                    ) : null}
+                  </div>
                 </div>
               );
             })()}
 
-            <div className="flex flex-wrap items-center gap-token-2 mb-token-2">
-              <div className="flex flex-wrap gap-token-2" role="tablist" aria-label="Page mode">
+            {/* v1.6 Stage 2: TWO visually-distinct groups separated by a
+                vertical divider — Mode tabs (left) use toggle-state styling
+                via workspace-mode-tab classes (existing CSS); Action buttons
+                (right) use the Button primitive's "primary" variant so they
+                read as primary CTAs, NOT mode toggles. Previously all five
+                buttons used the same workspace-mode-tab class, making them
+                visually indistinguishable. */}
+            <div
+              className="flex flex-wrap items-center gap-token-2 mb-token-2"
+              data-v16-stage="toolbar-semantic-separation"
+            >
+              <div
+                className="flex flex-wrap gap-token-2"
+                role="tablist"
+                aria-label="Page mode"
+                data-v16-group="mode-tabs"
+              >
                 <button
                   type="button"
                   role="tab"
@@ -4133,67 +4449,248 @@ export default function WorkspaceView() {
                   Seed Builder
                 </button>
               </div>
-              {/* Phase 4.14 Stage 1+2: numbered "1. Complete deck" → unified
-                  Complete + Apply (single click). Tooltip text hardcoded per
-                  spec — describes the action, not engine output, so Decision
-                  10 doesn't restrict. */}
-              <button
-                type="button"
-                disabled={deckState.completePending || commander.trim() === "" || deckText.trim() === ""}
-                className="workspace-mode-tab"
-                onClick={() => {
-                  void handleUnifiedCompleteDeck();
-                }}
-                title="Asks the engine to fill the deck to 99 cards by adding suggested staples. ~3 sec."
-                aria-label="Step 1: Complete deck — fills to 99 cards"
+              {/* v1.6 Stage 2 separator: visible vertical divider between
+                  Mode tabs and Action buttons. Hidden at flex-wrap widths
+                  so vertical-stacked layout doesn't show a stray rule. */}
+              <span
+                className="hidden sm:inline-block h-8 w-px bg-glass-border mx-token-2"
+                aria-hidden="true"
+                data-v16-group="toolbar-divider"
+              />
+              <div
+                className="flex flex-wrap items-center gap-token-2"
+                role="group"
+                aria-label="Deck actions"
+                data-v16-group="action-buttons"
               >
-                {deckState.completePending ? "Completing…" : "1. Complete deck"}
-              </button>
-              {deckState.completeError ? (
-                <span className="text-xs text-amber-300" role="status">
-                  {deckState.completeError}
-                </span>
-              ) : null}
-              {/* Phase 4.14 Stage 2: numbered "2. Build" + tooltip. */}
-              <button
-                type="button"
-                disabled={runningBuild || commander.trim() === "" || deckText.trim() === ""}
-                className="workspace-mode-tab"
-                onClick={async () => {
-                  if (runningBuild) return;
-                  dispatchDeckAction({ type: "BUILD_PENDING" });
-                  const body = buildBuildRequestBody({
-                    snapshotId: snapshotId,
-                    profileId: profileId,
-                    bracketId: bracketId,
-                    commander: commander,
-                    cards: deckCardsInPayloadOrder,
-                  });
-                  const result = await callBuildEndpoint(apiBase, body);
-                  if (result.ok) {
-                    dispatchDeckAction({
-                      type: "BUILD_SUCCESS",
-                      response: result.response as Record<string, unknown>,
+                {/* Phase 4.14 Stage 1+2: numbered "1. Complete deck" → unified
+                    Complete + Apply (single click). Tooltip text hardcoded per
+                    spec — describes the action, not engine output, so Decision
+                    10 doesn't restrict. v1.6 Stage 2: now uses Button primitive
+                    variant=primary so it visually reads as a primary action,
+                    NOT a mode toggle. */}
+                <Button
+                  variant="primary"
+                  size="md"
+                  disabled={deckState.source === "fallback" || deckState.completePending || commander.trim() === "" || deckText.trim() === ""}
+                  onClick={() => {
+                    void handleUnifiedCompleteDeck();
+                  }}
+                  title={deckState.source === "fallback" ? "Load a deck first." : "Asks the engine to fill the deck to 99 cards by adding suggested staples. ~3 sec."}
+                  aria-label="Step 1: Complete deck — fills to 99 cards"
+                >
+                  {deckState.completePending ? "Completing…" : "1. Complete deck"}
+                </Button>
+                {deckState.completeError ? (
+                  <span className="text-xs text-amber-300" role="status">
+                    {deckState.completeError}
+                  </span>
+                ) : null}
+                {/* Phase 4.14 Stage 2: numbered "2. Build" + tooltip. */}
+                <Button
+                  variant="primary"
+                  size="md"
+                  disabled={deckState.source === "fallback" || runningBuild || commander.trim() === "" || deckText.trim() === ""}
+                  onClick={async () => {
+                    if (runningBuild) return;
+                    dispatchDeckAction({ type: "BUILD_PENDING" });
+                    const body = buildBuildRequestBody({
+                      snapshotId: snapshotId,
+                      profileId: profileId,
+                      bracketId: bracketId,
+                      commander: commander,
+                      cards: deckCardsInPayloadOrder,
                     });
-                  } else {
-                    dispatchDeckAction({ type: "BUILD_ERROR", error: result.error });
-                    setToastMessage(result.error);
-                  }
-                }}
-                title="Runs the full sufficiency + recommendation pipeline. ~2 sec."
-                aria-label="Step 2: Build — runs sufficiency + recommendation pipeline"
-              >
-                {runningBuild ? "Building…" : "2. Build"}
-              </button>
-              {buildError ? (
-                <span className="text-xs text-amber-300" role="status">
-                  {buildError}
-                </span>
-              ) : null}
+                    const result = await callBuildEndpoint(apiBase, body);
+                    if (result.ok) {
+                      dispatchDeckAction({
+                        type: "BUILD_SUCCESS",
+                        response: result.response as Record<string, unknown>,
+                      });
+                    } else {
+                      dispatchDeckAction({ type: "BUILD_ERROR", error: result.error });
+                      setToastMessage(result.error);
+                    }
+                  }}
+                  title="Runs the full sufficiency + recommendation pipeline. ~2 sec."
+                  aria-label="Step 2: Build — runs sufficiency + recommendation pipeline"
+                >
+                  {runningBuild ? "Building…" : "2. Build"}
+                </Button>
+                {buildError ? (
+                  <span className="text-xs text-amber-300" role="status">
+                    {buildError}
+                  </span>
+                ) : null}
+                {/* v1.1 Stage 2: numbered "3. Upgrade Deck" — top-level entry
+                    point for /deck/tune_v1; existing TOOLS-panel "Run Power
+                    Tune" button BYTE-IDENTICAL per HARD #13. Tooltip text
+                    hardcoded per Decision 10 (describes the action, not
+                    engine output). */}
+                <Button
+                  variant="primary"
+                  size="md"
+                  disabled={deckState.source === "fallback" || deckState.upgradePending || isAnyToolRunning || commander.trim() === "" || deckText.trim() === ""}
+                  onClick={() => {
+                    void handleUnifiedUpgradeDeck();
+                  }}
+                  title="Asks the engine to suggest swaps that would improve this deck — bracket-aware. Powered by /deck/tune_v1. ~3 sec."
+                  aria-label="Step 3: Upgrade Deck — get swap suggestions"
+                >
+                  {deckState.upgradePending ? "Upgrading…" : "3. Upgrade Deck"}
+                </Button>
+                {deckState.upgradeError ? (
+                  <span className="text-xs text-amber-300" role="status">
+                    {deckState.upgradeError}
+                  </span>
+                ) : null}
+              </div>
             </div>
 
             {pageMode === "WORKSPACE" ? (
               <div className="flex flex-col gap-token-3 mb-token-3">
+                {/* v1.7.5 — bracket-combo violation banner FIRST so the
+                    user sees the warning BEFORE they scroll through the
+                    pending-review queue and accidentally apply additions
+                    to an already-bracket-illegal deck. Self-hides on
+                    legacy responses and B3+ decks (no violations). */}
+                <BracketViolationsBanner
+                  violations={
+                    Array.isArray(completionResult?.violations_v1)
+                      ? (completionResult?.violations_v1 as never)
+                      : []
+                  }
+                  status={
+                    typeof completionResult?.status === "string"
+                      ? (completionResult?.status as string)
+                      : ""
+                  }
+                />
+
+                {/* v1.1 Stage 1: AddedCardsPanel surfaces /deck/complete_v1's
+                    added_cards_v1 prominently — was previously buried.
+                    v1.3 Stage 1: falls back to text-diff `derivedAddedRows`
+                    when the engine returns empty added_cards_v1 (gap in
+                    some baseline-status paths). `addedRowsForPanel` is the
+                    merged source — prefer engine (richer reasons) → diff.
+                    v1.6.3 Stage 2: when deckState.pendingAdds has rows,
+                    AddedCardsPanel renders pending-review mode instead.
+                    v1.7 Stage 5 Deliverable A: when the engine returned
+                    zero added_cards_v1 but the completed_decklist_text_v1
+                    differs from input, switch to partial-completion mode
+                    (introduced in v1.7 Stage 1) so the user gets a bulk
+                    "Apply All" affordance instead of read-only rows. */}
+                {deckState.pendingAdds.length > 0 ? (
+                  <AddedCardsPanel
+                    rows={[]}
+                    pendingAdds={deckState.pendingAdds}
+                    onTogglePendingAdd={(index) =>
+                      dispatchDeckAction({ type: "TOGGLE_PROPOSED_ADD", index })
+                    }
+                    onApplyAccepted={() =>
+                      dispatchDeckAction({ type: "APPLY_ACCEPTED_ADDS" })
+                    }
+                    onAcceptAll={() => {
+                      // Flip each rejected row's accepted=true by dispatching
+                      // a TOGGLE for each row whose flag is currently false.
+                      deckState.pendingAdds.forEach((row, i) => {
+                        if (!row.accepted) {
+                          dispatchDeckAction({ type: "TOGGLE_PROPOSED_ADD", index: i });
+                        }
+                      });
+                    }}
+                    onRejectAll={() => {
+                      deckState.pendingAdds.forEach((row, i) => {
+                        if (row.accepted) {
+                          dispatchDeckAction({ type: "TOGGLE_PROPOSED_ADD", index: i });
+                        }
+                      });
+                    }}
+                    onDismissPending={() =>
+                      dispatchDeckAction({ type: "DISMISS_PROPOSED_ADDS" })
+                    }
+                  />
+                ) : completeAddedRows.length > 0 ? (
+                  <AddedCardsPanel rows={completeAddedRows} source="engine" />
+                ) : completedDecklistText !== "" && derivedAddedRows.length > 0 ? (
+                  // v1.7 Stage 5 Deliverable A — partial-completion mode.
+                  // AddedCardsPanel computes its own diff from deckText +
+                  // completedDecklistText props and surfaces a bulk Apply
+                  // All affordance. The onApplyAllPartial handler reuses
+                  // the v1.6.3 STAGE_PROPOSED_ADDS + APPLY_ACCEPTED_ADDS
+                  // pair so no new reducer action is introduced.
+                  <AddedCardsPanel
+                    rows={[]}
+                    deckText={preCompleteDeckTextRef.current ?? ""}
+                    completedDecklistText={completedDecklistText}
+                    onApplyAllPartial={() => {
+                      const adds = derivedAddedRows
+                        .map((row) => ({
+                          card_name: typeof row.name === "string" ? row.name : "",
+                        }))
+                        .filter((row) => row.card_name !== "");
+                      if (adds.length === 0) return;
+                      dispatchDeckAction({ type: "STAGE_PROPOSED_ADDS", adds });
+                      dispatchDeckAction({ type: "APPLY_ACCEPTED_ADDS" });
+                    }}
+                  />
+                ) : null}
+
+                {/* v1.7.2 Stage 3 — deck-combo insight surfaces from
+                    /deck/complete_v1's detected_combos_v1 +
+                    missing_partners_v1. Panel self-hides (returns null)
+                    when both arrays are empty AND on legacy responses
+                    where the engine fields are absent (props default
+                    to []). No reducer plumbing — reads completionResult
+                    directly, same source as addedRowsForPanel above. */}
+                <DeckCombosPanel
+                  detected_combos_v1={
+                    Array.isArray(completionResult?.detected_combos_v1)
+                      ? (completionResult?.detected_combos_v1 as never)
+                      : []
+                  }
+                  missing_partners_v1={
+                    Array.isArray(completionResult?.missing_partners_v1)
+                      ? (completionResult?.missing_partners_v1 as never)
+                      : []
+                  }
+                />
+
+                {/* Phase 2.1d — DeckThemesPanel surfaces deck_themes_v1
+                    from /deck/complete_v1. Null-render contract preserved
+                    for legacy responses and decks with no classified themes.
+                    Reads completionResult directly — same source as the
+                    combos panel above. */}
+                <DeckThemesPanel
+                  deck_themes_v1={
+                    Array.isArray(completionResult?.deck_themes_v1)
+                      ? (completionResult?.deck_themes_v1 as never)
+                      : []
+                  }
+                />
+
+                {/* v1.1 Stage 2: UpgradeSuggestionsList surfaces /deck/tune_v1's
+                    recommended_swaps_v1 (separate data source from 4.8
+                    SwapSuggestionsList — show both when both populated).
+                    Reads upgradeSuggestions from reducer state; per-row
+                    Apply dispatches USER_EDIT_DECK_TEXT.
+                    v1.3 Stage 2: uses `upgradeRowsForPanel` (current ?? snapshot)
+                    so the panel stays mounted across Apply-induced reducer wipes;
+                    the snapshot also clears via × Clear's onClear callback. */}
+                {upgradeRowsForPanel.length > 0 ? (
+                  <UpgradeSuggestionsList
+                    rows={upgradeRowsForPanel}
+                    decklistText={deckText}
+                    onDecklistChange={(nextText) => {
+                      dispatchDeckAction({ type: "USER_EDIT_DECK_TEXT", deckText: nextText });
+                    }}
+                    onClear={() => {
+                      setUpgradeSnapshotRows(null);
+                      dispatchDeckAction({ type: "CLEAR_UPGRADE_SUGGESTIONS" });
+                    }}
+                  />
+                ) : null}
+
                 {shouldShowSufficiencyDashboard(buildResponse) ? (
                   <div className="phase4-sufficiency-wrap">
                     <SufficiencyDashboard summary={extractSufficiencySummary(buildResponse)} />
@@ -4277,16 +4774,36 @@ export default function WorkspaceView() {
 
           <GlassPanel className="workspace-topbar-panel">
             <div className={`workspace-topbar-grid ${!isAnalyzeMode ? "workspace-topbar-grid-minimal" : ""}`}>
-              <HeaderChips
-                buildResponse={buildResponse}
-                loading={isAnyToolRunning}
-                compact={!isAnalyzeMode}
-                apiBase={normalizedApiBase}
-                uiMode={uiModeLabel}
-                uiCommit={uiCommit}
-                apiPingSummary={apiPingSummary}
-                className="workspace-topbar-block"
-              />
+              {/* v1.7.5 UX polish: HeaderChips (snapshot/profile/bracket/
+                  status/ui_mode/api_ping row) is now gated on an explicit
+                  localStorage opt-in `mtgdb:show_dev_chips=true`, because
+                  the prior `import.meta.env.DEV` gate was always TRUE on
+                  the user's local dev server runs. Confirmed in the
+                  2026-05-16 walk that the chips were leaking to users.
+                  Devs who want them back: open DevTools console and run
+                  `localStorage.setItem('mtgdb:show_dev_chips','true')`
+                  then refresh. Same info also surfaces in the user-facing
+                  metric pill row (Commander / Card count / Bracket /
+                  Status) when a deck is loaded. */}
+              {(() => {
+                try {
+                  return typeof window !== "undefined" &&
+                    window.localStorage?.getItem("mtgdb:show_dev_chips") === "true";
+                } catch {
+                  return false;
+                }
+              })() ? (
+                <HeaderChips
+                  buildResponse={buildResponse}
+                  loading={isAnyToolRunning}
+                  compact={!isAnalyzeMode}
+                  apiBase={normalizedApiBase}
+                  uiMode={uiModeLabel}
+                  uiCommit={uiCommit}
+                  apiPingSummary={apiPingSummary}
+                  className="workspace-topbar-block"
+                />
+              ) : null}
               {isAnalyzeMode ? (
                 <StatusBar
                   buildResponse={buildResponse}
@@ -4299,26 +4816,50 @@ export default function WorkspaceView() {
               ) : null}
             </div>
 
-            <div className="workspace-mode-tabs" role="tablist" aria-label="Workspace mode">
-              {WORKSPACE_MODE_OPTIONS.map((mode: WorkspaceMode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  role="tab"
-                  aria-selected={workspaceMode === mode}
-                  className={`workspace-mode-tab ${workspaceMode === mode ? "workspace-mode-tab-active" : ""}`}
-                  onClick={() => {
-                    setWorkspaceMode(mode);
-                  }}
+            {/* v1.6.2 Stage 4: EDIT/TOOLS pills wrapped with a small
+                "View" label so they read as a mode-selector group, not
+                stranded orphan pills. workspace-mode-tabs / workspace-mode-tab
+                classes preserved BYTE-IDENTICAL.
+                v1.7.5 UX polish: hide the entire view-mode row when no
+                deck is loaded — neither EDIT nor TOOLS makes sense without
+                an active deck, and the empty-state CTA card already covers
+                the "no deck" path. Confirmed in 2026-05-16 walk that this
+                row was visible at empty state. */}
+            {deckState.source !== "fallback" ? (
+              <div
+                className="flex items-center gap-token-2 mt-token-2"
+                data-v162-stage="workspace-mode-row"
+              >
+                <span
+                  className="text-xs uppercase tracking-wider text-text-muted"
+                  aria-hidden="true"
                 >
-                  {mode}
-                </button>
-              ))}
-            </div>
+                  View
+                </span>
+                <div className="workspace-mode-tabs" role="tablist" aria-label="Workspace mode">
+                  {WORKSPACE_MODE_OPTIONS.map((mode: WorkspaceMode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      role="tab"
+                      aria-selected={workspaceMode === mode}
+                      className={`workspace-mode-tab ${workspaceMode === mode ? "workspace-mode-tab-active" : ""}`}
+                      onClick={() => {
+                        setWorkspaceMode(mode);
+                      }}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
-            <p className="workspace-muted">
-              Resolved: {hoverArtReleaseMetrics.resolvedCount}/{hoverArtReleaseMetrics.targetCount} (art ready)
-            </p>
+            {/* v1.6.2 Stage 4: removed bare "Resolved: N/M (art ready)"
+                line — redundant with the cleaner "Hover art works" PASS/FAIL
+                indicator inside the Analyze view (line ~5102). The
+                hoverArtReleaseMetrics memo + its consumers (telemetry export
+                + PASS/FAIL indicator) are load-bearing and stay verbatim. */}
             {isAnalyzeMode && missingImageCount > 0 ? (
               <div className="workspace-chip-row">
                 <span className="workspace-chip workspace-chip-alert">Image missing for {missingImageCount} cards</span>
@@ -4370,7 +4911,45 @@ export default function WorkspaceView() {
             {isEditMode || isAnalyzeMode || isToolsMode ? (
             <section className="workspace-col-center">
               <div className="workspace-center-stack">
-                {isEditMode ? (
+                {/* v1.6 Stage 4: empty-state card replaces the Krenko/synthetic
+                    fallback deck panel when the reducer hasn't loaded a real
+                    deck. Reducer INITIAL_STATE preserved BYTE-IDENTICAL per
+                    HARD #9 (other components defense-in-depth); only the
+                    WorkspaceView render path gates on `source === "fallback"`
+                    + `isHydrated`. CTAs route to #import + switch to Seed
+                    Builder mode. */}
+                {isEditMode && deckState.source === "fallback" ? (
+                  <GlassPanel className="workspace-empty-state-card" data-v16-stage="empty-state-card">
+                    <div className="text-center p-panel-pad">
+                      <h2 className="text-2xl font-bold text-text-primary mb-token-2">
+                        No deck loaded
+                      </h2>
+                      <p className="text-text-secondary mb-token-3">
+                        Import a deck from Archidekt, Arena, MTGO, or plain text — or start a new deck from a seed.
+                      </p>
+                      <div className="flex flex-wrap justify-center gap-token-2">
+                        <Button
+                          variant="primary"
+                          size="md"
+                          onClick={() => {
+                            window.location.hash = "#import";
+                          }}
+                          aria-label="Import a deck"
+                        >
+                          Import a deck
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="md"
+                          onClick={() => setPageMode("SEED_BUILDER")}
+                          aria-label="Start from a seed"
+                        >
+                          Start from a seed
+                        </Button>
+                      </div>
+                    </div>
+                  </GlassPanel>
+                ) : isEditMode ? (
                   <DeckEditorPanel
                     apiBase={apiBase}
                     snapshotId={snapshotId}
@@ -4420,8 +4999,18 @@ export default function WorkspaceView() {
                     disableCompleteActions={isAnyToolRunning}
                     canApplyCompletedDecklist={canApplyCompletedDecklist}
                     completionStatus={asString(completionResult?.status)}
-                    completionAddedCards={completionCardsAddedCount}
-                    completionLandsAdded={completionLandsAddedCount}
+                    /* v1.4 Stage 2: completionAddedCards + completionLandsAdded
+                       props omitted. The legacy "Added cards: N / Added lands:
+                       N" chips inside DeckEditorPanel (lines 1113-1114) render
+                       only when these are passed (gated on
+                       normalizedCompletionAddedCards !== null). v1.1
+                       AddedCardsPanel is the canonical card-level visual now;
+                       the bare numeric chips were misleading because v1.3's
+                       snapshot timing bug yielded "Added cards: 0" even when
+                       22 were actually added. HARD #8 preserved:
+                       DeckEditorPanel BYTE-IDENTICAL — we use the
+                       prop-omission escape hatch (same precedent as Phase 6
+                       partial Stage 0 omitting onCompleteTo100). */
                     completionError={completionError}
                   />
                 ) : null}
@@ -4531,7 +5120,18 @@ export default function WorkspaceView() {
                                     }}
                                   >
                                     <strong>{cutName}</strong> → <strong>{addName}</strong>
-                                    {reasons.length > 0 ? <div className="workspace-muted">why: {reasons.join(", ")}</div> : null}
+                                    {/* v1.6.4 Stage 2: translate raw engine reason codes
+                                        through the v1.6.2 justificationLabels map before
+                                        display. Raw codes preserved on a separate `title`
+                                        attribute for power-user hover. */}
+                                    {reasons.length > 0 ? (
+                                      <div
+                                        className="workspace-muted"
+                                        title={reasons.join(", ")}
+                                      >
+                                        why: {reasons.map((r) => translateJustification(r)).join(", ")}
+                                      </div>
+                                    ) : null}
                                     {scoreDelta !== null ? <div className="workspace-muted">score Δ: {scoreDelta.toFixed(6)}</div> : null}
                                     {coherenceDelta !== null ? <div className="workspace-muted">coherence Δ: {coherenceDelta.toFixed(6)}</div> : null}
                                     {primitivesAdded.length > 0 ? (

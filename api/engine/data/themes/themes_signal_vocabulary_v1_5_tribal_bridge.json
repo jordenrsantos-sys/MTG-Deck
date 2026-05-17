@@ -1,0 +1,44 @@
+[
+  {
+    "id": "TRIBAL_PAYOFFS",
+    "abstraction_level": "aggregate",
+    "composite_of_primitives": ["ATTACK_TRIGGER_PAYOFF", "COMBAT_DAMAGE_PAYOFF", "DEATH_PAYOFF", "DIES_TRIGGER", "ETB_PAYOFF", "CAST_TRIGGER_PAYOFF"],
+    "description": "Bridge signal (v1.5 tribal extension): aggregate of payoff primitives that scale with tribal density. Used by typal theme formulas (TRIBAL_PAYOFFS>=2). Maps the abstract 'tribal payoff' concept from typal_themes_v1_6.json to actual card_tags primitives. NOT subtype-restricted (Phase 2.1.5 work)."
+  },
+  {
+    "id": "TRIBAL_TUTORS",
+    "abstraction_level": "aggregate",
+    "composite_of_primitives": ["TUTOR_CREATURE"],
+    "description": "Bridge signal (v1.5): aggregate of creature tutors. Typal theme formulas reference this; the actual tag pack only distinguishes TUTOR_CREATURE / TUTOR_ANY / TUTOR_LAND. Tribal-specific tutors (Goblin Recruiter, Imperial Recruiter etc.) all map to TUTOR_CREATURE in current vocabulary."
+  },
+  {
+    "id": "TYPE_TOKEN_PRODUCTION",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["TOKEN_PRODUCTION"],
+    "description": "Bridge signal (v1.5): direct alias of TOKEN_PRODUCTION primitive. The typal theme formulas use TYPE_TOKEN_PRODUCTION (subtype-restricted token production); the current tag pack has only the unrestricted TOKEN_PRODUCTION. Approximation valid for dense tribal decks where most token producers ARE the relevant tribe."
+  },
+  {
+    "id": "TYPE_CAST_PAYOFF",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["CAST_TRIGGER_PAYOFF"],
+    "description": "Bridge signal (v1.5): alias of CAST_TRIGGER_PAYOFF for typal theme formulas (optional_boosters reference TYPE_CAST_PAYOFF). Not subtype-restricted in this approximation."
+  },
+  {
+    "id": "TRIBAL_LORD_EFFECT",
+    "abstraction_level": "aggregate",
+    "composite_of_primitives": [],
+    "description": "Bridge signal (v1.5): lord effects (anthem-style buffs gated on subtype, e.g. Goblin Chieftain). Currently 0 because the tag pack doesn't have a LORD_EFFECT primitive. Placeholder — will be populated when Phase 2.1.5 adds subtype-restricted primitive tags. Anti-signals that gate on TRIBAL_LORD_EFFECT will not trigger; required_signals that demand it will fail. Acceptable: the OR branches in typal required_signals still pass on TYPE_DENSITY alone."
+  },
+  {
+    "id": "TYPE_HACK_CHANGELING_HEAVY",
+    "abstraction_level": "aggregate",
+    "composite_of_primitives": [],
+    "description": "Bridge signal (v1.5): density of changeling-type-hack cards (Maskwood Nexus, Crib Swap-style). Anti-signal in typal themes — high count disqualifies typal classification because tribes are forged via changelings rather than the actual subtype. Currently 0 (no CHANGELING primitive in tag pack). Effective behavior: anti_signal never fires on this axis — calibration-honest."
+  },
+  {
+    "id": "TRIBAL_TOKEN_PRODUCTION",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["TOKEN_PRODUCTION"],
+    "description": "Bridge signal (v1.5): alias of TOKEN_PRODUCTION used in typal optional_boosters formulas (e.g. 'TRIBAL_TOKEN_PRODUCTION>=1'). Same approximation as TYPE_TOKEN_PRODUCTION."
+  }
+]

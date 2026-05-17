@@ -1,0 +1,596 @@
+[
+  {
+    "id": "BOARDWIPE_CREATURES",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["TARGETED_REMOVAL_CREATURE"],
+    "description": "Bridge v1.6: approximate alias. card_tags lacks distinct BOARDWIPE_CREATURES primitive; TARGETED_REMOVAL_CREATURE captures most board-wipe effects in the production tag pack. Calibration-coarse — false-positive risk on single-target removal."
+  },
+  {
+    "id": "TARGETED_REMOVAL_NONCREATURE",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["TARGETED_REMOVAL_CREATURE"],
+    "description": "Bridge v1.6: card_tags doesn't separate creature vs noncreature removal in primitive vocabulary. Approximate by reusing TARGETED_REMOVAL_CREATURE; calibration-coarse."
+  },
+  {
+    "id": "CARD_DRAW_REPEATABLE",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["CARD_DRAW_BURST", "DRAW_REPLACEMENT"],
+    "description": "Bridge v1.6: card_tags has CARD_DRAW_BURST + DRAW_REPLACEMENT but no explicit REPEATABLE primitive. Sum captures cards that draw repeatedly."
+  },
+  {
+    "id": "CARD_SELECTION",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["CARD_SELECTION_SCRY_SURVEIL", "TUTOR_ANY", "TUTOR_ANY_TO_HAND"],
+    "description": "Bridge v1.6: combines scry/surveil with selective tutors as a 'choose-what-to-draw' aggregate."
+  },
+  {
+    "id": "CANTRIP_DENSITY",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["CARD_DRAW_BURST", "CARD_SELECTION_SCRY_SURVEIL"],
+    "description": "Bridge v1.6: cantrips are cheap cards that draw or scry. Approximate via burst draw + scry primitives."
+  },
+  {
+    "id": "ARTIFACT_CAST_PAYOFF",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["CAST_TRIGGER_PAYOFF", "ARTIFACT_MATTERS"],
+    "description": "Bridge v1.6: payoff for casting an artifact. Card_tags has separate CAST_TRIGGER_PAYOFF and ARTIFACT_MATTERS; the intersection (cards with both) is the closest signal."
+  },
+  {
+    "id": "ARTIFACT_ETB_PAYOFF",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["ETB_PAYOFF", "ARTIFACT_MATTERS"],
+    "description": "Bridge v1.6: payoff when artifact ETBs. Approximate via ETB_PAYOFF + ARTIFACT_MATTERS overlap."
+  },
+  {
+    "id": "ARTIFACT_SAC_OUTLET",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["SAC_OUTLET_ARTIFACT"],
+    "description": "Bridge v1.6: direct alias of card_tags SAC_OUTLET_ARTIFACT."
+  },
+  {
+    "id": "ENCHANTMENT_CAST_PAYOFF",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["CAST_TRIGGER_PAYOFF", "ENCHANTMENT_MATTERS"],
+    "description": "Bridge v1.6: payoff for casting enchantment. Approximate via cast trigger + enchantment matters."
+  },
+  {
+    "id": "ENCHANTMENT_ETB_PAYOFF",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["ETB_PAYOFF", "ENCHANTMENT_MATTERS"],
+    "description": "Bridge v1.6: payoff when enchantment ETBs."
+  },
+  {
+    "id": "CREATURE_TUTOR_TO_BATTLEFIELD",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["TUTOR_CREATURE"],
+    "description": "Bridge v1.6: card_tags TUTOR_CREATURE covers Birthing-Pod-style tutors. Coarse — also includes tutor-to-hand variants."
+  },
+  {
+    "id": "REANIMATION_TO_BATTLEFIELD",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["GRAVEYARD_REANIMATION", "RETURN_AS_TOKEN", "CAST_FROM_GRAVEYARD"],
+    "description": "Bridge v1.6: all forms of returning a card to the battlefield from graveyard."
+  },
+  {
+    "id": "REANIMATE_ANY_GRAVEYARD",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["GRAVEYARD_REANIMATION", "GRAVEYARD_RECURSION", "GRAVEYARD_RECURSION_TO_HAND"],
+    "description": "Bridge v1.6: reanimate from any graveyard (includes opponent's). Approximate via graveyard recursion family."
+  },
+  {
+    "id": "SELF_MILL",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["MOVE_TO_GRAVEYARD"],
+    "description": "Bridge v1.6: card_tags MOVE_TO_GRAVEYARD includes self-mill. Coarse — also includes opponent-target."
+  },
+  {
+    "id": "MILL_OPPONENT",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["MOVE_TO_GRAVEYARD"],
+    "description": "Bridge v1.6: same MOVE_TO_GRAVEYARD primitive — vocabulary doesn't separate self vs opponent."
+  },
+  {
+    "id": "MILL_WIN_CONVERSION",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: no direct primitive. Placeholder = 0. Specific mill-win cards (Bruvac, Mind Funeral, etc.) need dedicated tagging."
+  },
+  {
+    "id": "ENTOMB_STYLE",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["MOVE_TO_GRAVEYARD"],
+    "description": "Bridge v1.6: Entomb-style mill-self-target. Same primitive as self-mill in current vocab."
+  },
+  {
+    "id": "SAC_OUTLET_COSTED",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["SAC_OUTLET"],
+    "description": "Bridge v1.6: card_tags doesn't distinguish costed vs free sac. Same primitive."
+  },
+  {
+    "id": "SAC_OUTLET_FREE",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["SAC_OUTLET"],
+    "description": "Bridge v1.6: same SAC_OUTLET primitive. Calibration-coarse."
+  },
+  {
+    "id": "TOKEN_PRODUCTION_CREATURE",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["TOKEN_PRODUCTION"],
+    "description": "Bridge v1.6: card_tags doesn't separate creature vs noncreature token production."
+  },
+  {
+    "id": "TOKEN_PRODUCTION_NONCREATURE",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["TOKEN_PRODUCTION"],
+    "description": "Bridge v1.6: same TOKEN_PRODUCTION primitive."
+  },
+  {
+    "id": "TOKEN_PAYOFF_ANTHEM",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: anthem-style buffs that scale tokens. No direct primitive yet — needs dedicated tagging for Coat of Arms / Vanquisher's Banner / etc."
+  },
+  {
+    "id": "REPLACEMENT_TOKEN_DOUBLER",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["REPLACEMENT_TOKEN_DOUBLING"],
+    "description": "Bridge v1.6: direct alias of card_tags REPLACEMENT_TOKEN_DOUBLING."
+  },
+  {
+    "id": "POPULATE",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["POPULATE"],
+    "description": "Bridge v1.6: direct primitive exists in card_tags."
+  },
+  {
+    "id": "COMBAT_DAMAGE_PAYOFF",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["COMBAT_DAMAGE_PAYOFF"],
+    "description": "Bridge v1.6: direct primitive."
+  },
+  {
+    "id": "HAS_EVASION_KEYWORDS",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["EVASION"],
+    "description": "Bridge v1.6: direct alias of EVASION."
+  },
+  {
+    "id": "EXTRA_COMBAT",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["EXTRA_COMBAT"],
+    "description": "Bridge v1.6: direct primitive."
+  },
+  {
+    "id": "NONCREATURE_SPELLS_MATTER",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["CAST_TRIGGER_PAYOFF", "STACK_INTERACTION"],
+    "description": "Bridge v1.6: cards that care about noncreature casts. Approximate via cast triggers + stack interaction."
+  },
+  {
+    "id": "SPELL_CAST_TRIGGER_PAYOFF",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["CAST_TRIGGER_PAYOFF"],
+    "description": "Bridge v1.6: direct alias of CAST_TRIGGER_PAYOFF."
+  },
+  {
+    "id": "SPELL_COPY",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["SPELL_COPY"],
+    "description": "Bridge v1.6: direct primitive."
+  },
+  {
+    "id": "COST_REDUCTION_SPELLS",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: no direct primitive for cost reducers. Placeholder = 0."
+  },
+  {
+    "id": "STORM_COUNT_PAYOFF",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["STORM"],
+    "description": "Bridge v1.6: card_tags STORM primitive captures Storm-count payoff cards."
+  },
+  {
+    "id": "MANA_RITUAL_BURST",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["MANA_RITUAL_BURST"],
+    "description": "Bridge v1.6: direct primitive."
+  },
+  {
+    "id": "DIRECT_DAMAGE_SPELLS",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["NONCOMBAT_DAMAGE_PAYOFF"],
+    "description": "Bridge v1.6: approximate via NONCOMBAT_DAMAGE_PAYOFF. Burn spells like Lightning Bolt aren't directly tagged in card_tags vocabulary; coarse alias."
+  },
+  {
+    "id": "DAMAGE_DOUBLER",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["DAMAGE_MULTIPLIER"],
+    "description": "Bridge v1.6: direct alias of DAMAGE_MULTIPLIER."
+  },
+  {
+    "id": "DAMAGE_MULTIPLIER",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["DAMAGE_MULTIPLIER"],
+    "description": "Bridge v1.6: direct primitive."
+  },
+  {
+    "id": "COMBAT_OVERWHELM_FINISH",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["EXTRA_COMBAT", "COMBAT_DAMAGE_PAYOFF"],
+    "description": "Bridge v1.6: closing the game via combat. Approximate via extra-combat + damage payoff."
+  },
+  {
+    "id": "LIFELOSS_GROUP_SLUG",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["NONCOMBAT_DAMAGE_PAYOFF"],
+    "description": "Bridge v1.6: group-slug life loss. Approximate via noncombat damage."
+  },
+  {
+    "id": "LIFEDRAIN_PAYOFF",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["NONCOMBAT_DAMAGE_PAYOFF"],
+    "description": "Bridge v1.6: same noncombat damage primitive."
+  },
+  {
+    "id": "LIFEGAIN_ENGINE",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: card_tags lacks dedicated lifegain primitive. Placeholder = 0; needs dedicated tagging."
+  },
+  {
+    "id": "DEATH_PAYOFF_DRAIN",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["DEATH_PAYOFF", "NONCOMBAT_DAMAGE_PAYOFF"],
+    "description": "Bridge v1.6: aristocrats-style death drain. Combines DEATH_PAYOFF + NONCOMBAT_DAMAGE."
+  },
+  {
+    "id": "ALT_WIN_CONDITION",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: no direct primitive. Placeholder = 0; specific alt-win cards (Approach of the Second Sun, Laboratory Maniac, etc.) need dedicated tagging."
+  },
+  {
+    "id": "COUNTERS_MATTER_PAYOFF",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["REPLACEMENT_COUNTER_DOUBLING", "COUNTER_DOUBLING"],
+    "description": "Bridge v1.6: counter-care payoffs."
+  },
+  {
+    "id": "COUNTER_ADD_PLUS1",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["COUNTER_DOUBLING"],
+    "description": "Bridge v1.6: approximate. card_tags doesn't have a direct add-+1/+1 primitive."
+  },
+  {
+    "id": "COUNTER_DOUBLE_OR_REPLACE",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["COUNTER_DOUBLING", "REPLACEMENT_COUNTER_DOUBLING"],
+    "description": "Bridge v1.6: counter-doubling effects."
+  },
+  {
+    "id": "PLUS_ONE_COUNTERS_ON_ETB",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["ETB_PAYOFF"],
+    "description": "Bridge v1.6: ETB triggers placing +1/+1 counters. Coarse — uses generic ETB_PAYOFF."
+  },
+  {
+    "id": "PT_MODIFIER_STATIC_AURA_EQUIP",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["EQUIPMENT_SYNERGY", "AURA_SYNERGY"],
+    "description": "Bridge v1.6: P/T modifiers from auras/equipment."
+  },
+  {
+    "id": "PT_MODIFIER_UNTIL_EOT",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: temporary pumps. Placeholder."
+  },
+  {
+    "id": "EQUIP_SYNERGY",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["EQUIPMENT_SYNERGY"],
+    "description": "Bridge v1.6: direct alias of EQUIPMENT_SYNERGY."
+  },
+  {
+    "id": "TUTOR_TYPE_SPECIFIC",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["TUTOR_CREATURE", "TUTOR_LAND"],
+    "description": "Bridge v1.6: type-restricted tutors."
+  },
+  {
+    "id": "HEXPROOF_SHROUD_GRANT",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: granting hexproof/shroud. Placeholder."
+  },
+  {
+    "id": "INDESTRUCTIBLE_GRANT",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: granting indestructible. Placeholder."
+  },
+  {
+    "id": "HASTE_GIVE",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: granting haste. Placeholder."
+  },
+  {
+    "id": "BLINK_REPEATABLE",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["BLINK_EFFECT"],
+    "description": "Bridge v1.6: blink effects. Doesn't distinguish repeatable vs one-shot in tags."
+  },
+  {
+    "id": "BLINK_BURST",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["BLINK_EFFECT"],
+    "description": "Bridge v1.6: same BLINK_EFFECT primitive."
+  },
+  {
+    "id": "LTB_PAYOFF",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["LTB_TRIGGER"],
+    "description": "Bridge v1.6: direct alias of LTB_TRIGGER."
+  },
+  {
+    "id": "EXTRA_LAND_DROPS",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["MANA_RAMP_LAND_SEARCH"],
+    "description": "Bridge v1.6: extra-land-drop effects approximated by land search."
+  },
+  {
+    "id": "LANDS_FROM_GRAVEYARD",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["GRAVEYARD_RECURSION"],
+    "description": "Bridge v1.6: returning lands from graveyard."
+  },
+  {
+    "id": "LAND_SEARCH_TO_BF",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["MANA_RAMP_LAND_SEARCH"],
+    "description": "Bridge v1.6: direct alias."
+  },
+  {
+    "id": "LANDS_MATTER_PAYOFF",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: landfall payoffs. Placeholder."
+  },
+  {
+    "id": "LANDFALL_PAYOFF",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: landfall triggers. Placeholder."
+  },
+  {
+    "id": "LANDS_SAC_OUTLET",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: lands-as-sac-outlets. Placeholder."
+  },
+  {
+    "id": "MANA_RAMP_ARTIFACT_ROCK",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["MANA_ROCK"],
+    "description": "Bridge v1.6: artifact mana rocks. Direct alias of MANA_ROCK."
+  },
+  {
+    "id": "TREASURE",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: treasure tokens. Placeholder — no dedicated TREASURE primitive in card_tags."
+  },
+  {
+    "id": "TREASURE_PAYOFF",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: payoffs for treasure tokens. Placeholder."
+  },
+  {
+    "id": "TREASURE_PRODUCTION",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: treasure token producers. Placeholder."
+  },
+  {
+    "id": "MANA_MULTIPLIER",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: doubles mana production. Placeholder."
+  },
+  {
+    "id": "CASCADE_STYLE_CAST",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: cascade-style cast-without-paying. Placeholder."
+  },
+  {
+    "id": "TOP_OF_LIBRARY_PLAY",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["TUTOR_TO_TOP"],
+    "description": "Bridge v1.6: play from top of library."
+  },
+  {
+    "id": "CYCLING",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: cycling ability. Placeholder — card_tags lacks dedicated CYCLING primitive."
+  },
+  {
+    "id": "DUNGEON_VENTURE",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: venture-into-dungeon. Placeholder."
+  },
+  {
+    "id": "MONARCH_GAIN",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: monarch designation. Placeholder."
+  },
+  {
+    "id": "LOYALTY_COUNTERS",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: planeswalker loyalty effects. Placeholder."
+  },
+  {
+    "id": "POISON_COUNTERS",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: poison/infect counters. Placeholder."
+  },
+  {
+    "id": "PAYOFF_WHEN_DISCARD",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["MADNESS", "DISCARD_OUTLET"],
+    "description": "Bridge v1.6: discard payoff. Madness + discard outlet covers main cases."
+  },
+  {
+    "id": "WHEEL_EFFECT",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["WHEEL_EFFECT"],
+    "description": "Bridge v1.6: direct primitive (already in card_tags)."
+  },
+  {
+    "id": "STATIC_RULE_LIMIT_DRAWS",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["DRAW_DENIAL"],
+    "description": "Bridge v1.6: caps opponent draws. Approximate via DRAW_DENIAL."
+  },
+  {
+    "id": "STATIC_RULE_LIMIT_SEARCH",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: caps search effects. Placeholder."
+  },
+  {
+    "id": "STATIC_RULE_LIMIT_ATTACKERS",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: caps attackers. Placeholder."
+  },
+  {
+    "id": "STATIC_RULE_SHUT_OFF_ACTIVATED",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["ACTIVATED_ABILITY_HATE"],
+    "description": "Bridge v1.6: direct alias of ACTIVATED_ABILITY_HATE."
+  },
+  {
+    "id": "STATIC_RULE_SHUT_OFF_ETB",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: shuts off ETB triggers. Placeholder."
+  },
+  {
+    "id": "STATIC_RULE_SHUT_OFF_GRAVEYARD",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: shuts off graveyard interactions. Placeholder."
+  },
+  {
+    "id": "STATIC_RULE_SHUT_OFF_TRIGGERED",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: shuts off triggered abilities. Placeholder."
+  },
+  {
+    "id": "STATIC_TAX_SPELLS",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["TAX_EFFECT"],
+    "description": "Bridge v1.6: direct alias of TAX_EFFECT."
+  },
+  {
+    "id": "STATIC_TAX_ATTACK",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: taxes attacks. Placeholder."
+  },
+  {
+    "id": "PILLOWFORT_TAX_TARGETING",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["PILLOWFORT_TAX"],
+    "description": "Bridge v1.6: direct alias of PILLOWFORT_TAX."
+  },
+  {
+    "id": "THEFT_CONTROL_CHANGE",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: permanent control change. Placeholder."
+  },
+  {
+    "id": "CAST_OPPONENT_CARDS",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: casting from opponent's hand/library. Placeholder."
+  },
+  {
+    "id": "SACRIFICE_FORCED",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: forced opponent sacrifice. Placeholder."
+  },
+  {
+    "id": "CURSE_AURA_DENSITY",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["AURA_SYNERGY"],
+    "description": "Bridge v1.6: curses are auras. Approximate."
+  },
+  {
+    "id": "ARTIFACTS",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["ARTIFACT_MATTERS"],
+    "description": "Bridge v1.6: alias of ARTIFACT_MATTERS — coarse, fires on any artifact-care card."
+  },
+  {
+    "id": "GRAVEYARD_HATE",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: graveyard hate effects (Rest in Peace, Bojuka Bog). Placeholder."
+  },
+  {
+    "id": "HAND_SIZE_MODIFIER",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["NO_MAX_HAND_SIZE"],
+    "description": "Bridge v1.6: hand size mods (Reliquary Tower etc.)."
+  },
+  {
+    "id": "PERMANENT_COPY_CLONE",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["TOKEN_COPY"],
+    "description": "Bridge v1.6: permanent-copy effects."
+  },
+  {
+    "id": "CREATURE_COPY_CLONE",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["TOKEN_COPY"],
+    "description": "Bridge v1.6: creature-copy effects."
+  },
+  {
+    "id": "LEGEND_RULE_BYPASS",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: legend rule bypass effects. Placeholder."
+  },
+  {
+    "id": "RESOURCE_DENIAL_LANDS",
+    "abstraction_level": "placeholder",
+    "composite_of_primitives": [],
+    "description": "Bridge v1.6: land destruction. Placeholder."
+  },
+  {
+    "id": "UNTAP_STEP_MANIPULATION",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["UNTAP_EFFECT", "EXTRA_UPKEEP"],
+    "description": "Bridge v1.6: untap step modification."
+  },
+  {
+    "id": "SILENCE_EFFECT",
+    "abstraction_level": "alias",
+    "composite_of_primitives": ["CAST_RESTRICTION"],
+    "description": "Bridge v1.6: Silence-style cast restrictions."
+  }
+]

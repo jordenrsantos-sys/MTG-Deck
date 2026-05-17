@@ -154,13 +154,20 @@ export default function GoldfishView({ onBack }: GoldfishViewProps) {
   const [hasAutoStarted, setHasAutoStarted] = useState(false);
 
   // Auto-start once on mount when a deck is available; users can RESET + START_GAME again from controls.
+  // v1.6 Stage 4: gate auto-start on real-deck sources (playtest_staged OR
+  // workspace_active). Synthetic-deck sources are NO LONGER auto-started —
+  // empty-state UI surfaces an opt-in "Use sample deck" CTA below the
+  // import/workspace navigation buttons. Preserves the 3-source precedence
+  // chain (HARD #11) — only the RENDER changes; the deckSource computation
+  // is BYTE-IDENTICAL.
   useEffect(() => {
     if (hasAutoStarted) return;
     if (state.phase !== "pre_game") return;
     if (startingDeck.length === 0) return;
+    if (deckSource === "synthetic") return;
     dispatch({ type: "START_GAME", deck: startingDeck, commander, seedToken });
     setHasAutoStarted(true);
-  }, [hasAutoStarted, state.phase, startingDeck, commander, seedToken, dispatch]);
+  }, [hasAutoStarted, state.phase, startingDeck, commander, seedToken, dispatch, deckSource]);
 
   return (
     <main className="min-h-screen bg-bg-base text-text-primary p-token-3" aria-label="Goldfish playtester">
@@ -183,26 +190,68 @@ export default function GoldfishView({ onBack }: GoldfishViewProps) {
       </header>
 
       {state.phase === "pre_game" ? (
-        <Card>
-          <CardHeader>Ready when you are</CardHeader>
-          <CardBody>
-            <p className="text-sm text-text-muted mb-token-2">
-              {deckSource === "playtest_staged"
-                ? "Using staged playtest deck; press Start to begin."
-                : deckSource === "workspace_active"
-                  ? `Using imported deck${
+        deckSource === "synthetic" ? (
+          // v1.6 Stage 4: empty-state for the no-deck-staged case. Replaces
+          // the silent synthetic-deck auto-load with explicit user choice.
+          // Three CTAs: Open importer / Open workspace / Use sample deck
+          // (opt-in synthetic kept as escape hatch, NOT default).
+          <Card data-v16-stage="goldfish-empty-state">
+            <CardHeader>No deck staged</CardHeader>
+            <CardBody>
+              <p className="text-sm text-text-muted mb-token-3">
+                Import a deck or save one from the workspace first. You can
+                also use a sample deck for a quick demo.
+              </p>
+              <div className="flex flex-wrap gap-token-2">
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    window.location.hash = "#import";
+                  }}
+                  aria-label="Open importer"
+                >
+                  Open importer
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (onBack) onBack();
+                    else window.location.hash = "#workspace";
+                  }}
+                  aria-label="Open workspace"
+                >
+                  Open workspace
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => dispatch({ type: "START_GAME", deck: startingDeck, commander, seedToken })}
+                  aria-label="Use sample deck"
+                >
+                  Use sample deck
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>Ready when you are</CardHeader>
+            <CardBody>
+              <p className="text-sm text-text-muted mb-token-2">
+                {deckSource === "playtest_staged"
+                  ? "Using staged playtest deck; press Start to begin."
+                  : `Using imported deck${
                       workspaceActiveDeck?.commander ? ` (${workspaceActiveDeck.commander})` : ""
-                    }; press Start to begin.`
-                  : "Using sample deck (no active deck staged) — synthetic 99-card deck for demo purposes."}
-            </p>
-            <Button
-              variant="primary"
-              onClick={() => dispatch({ type: "START_GAME", deck: startingDeck, commander, seedToken })}
-            >
-              Start Game
-            </Button>
-          </CardBody>
-        </Card>
+                    }; press Start to begin.`}
+              </p>
+              <Button
+                variant="primary"
+                onClick={() => dispatch({ type: "START_GAME", deck: startingDeck, commander, seedToken })}
+              >
+                Start Game
+              </Button>
+            </CardBody>
+          </Card>
+        )
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-token-3">
           <section className="flex flex-col gap-token-3 lg:col-span-2">

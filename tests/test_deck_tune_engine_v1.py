@@ -652,7 +652,7 @@ class DeckTuneEngineV1Tests(unittest.TestCase):
             payload_override = run_deck_tune_engine_v1(
                 canonical_deck_input=self._canonical_input(
                     cards=["High Keep Card", "Mid Value Card", "Low Value Card"],
-                    engine_patches_v0=[{"patch_type": "tune_config_v1", "protect_top_k": 1}],
+                    engine_patches_v0=[{"patch_type": "tune_config_v1", "protect_top_k": 0}],
                 ),
                 baseline_build_result=self._baseline_build_result(),
                 db_snapshot_id=GUARDRAILS_FIXTURE_SNAPSHOT_ID,
@@ -662,9 +662,21 @@ class DeckTuneEngineV1Tests(unittest.TestCase):
                 max_swaps=2,
             )
 
+        # v1.7 Stage 3 — calibration update: prior behavior assumed
+        # absolute PROTECT_TOP_K_CARDS_V1=8 locked all 3 non-dead cuts
+        # on the default run, leaving `captured_cut_batches[0] == []`.
+        # The Stage 3 floor-aware cap leaves `max_swaps` slots always
+        # eligible: with 3 non-dead and max_swaps=2, effective protect
+        # drops to 1 → High Keep protected, {Mid, Low} eligible.
+        # The override patch (protect_top_k=0) further drops to 0 →
+        # all 3 eligible — the test now demonstrates the override is
+        # plumbed correctly by expanding the eligible set.
         self.assertGreaterEqual(len(captured_cut_batches), 2)
-        self.assertEqual(captured_cut_batches[0], [])
-        self.assertEqual(set(captured_cut_batches[1]), {"Mid Value Card", "Low Value Card"})
+        self.assertEqual(set(captured_cut_batches[0]), {"Mid Value Card", "Low Value Card"})
+        self.assertEqual(
+            set(captured_cut_batches[1]),
+            {"High Keep Card", "Mid Value Card", "Low Value Card"},
+        )
 
         swaps_default = (
             payload_default.get("recommended_swaps_v1") if isinstance(payload_default.get("recommended_swaps_v1"), list) else []
@@ -674,9 +686,10 @@ class DeckTuneEngineV1Tests(unittest.TestCase):
             if isinstance(payload_override.get("recommended_swaps_v1"), list)
             else []
         )
-        self.assertEqual(swaps_default, [])
+        self.assertEqual(len(swaps_default), 1)
+        self.assertIn(swaps_default[0].get("cut_name"), {"Mid Value Card", "Low Value Card"})
         self.assertEqual(len(swaps_override), 1)
-        self.assertIn(swaps_override[0].get("cut_name"), {"Mid Value Card", "Low Value Card"})
+        self.assertEqual(swaps_override[0].get("cut_name"), "High Keep Card")
 
     def test_min_bar_removes_bad_swap(self) -> None:
         with patch(
@@ -749,7 +762,17 @@ class DeckTuneEngineV1Tests(unittest.TestCase):
         swaps = payload.get("recommended_swaps_v1") if isinstance(payload.get("recommended_swaps_v1"), list) else []
         self.assertEqual(swaps, [])
         metrics = payload.get("dev_metrics_v1") if isinstance(payload.get("dev_metrics_v1"), dict) else {}
-        self.assertEqual(int(metrics.get("protected_cut_count") or 0), 8)
+        # v1.7 Stage 3 — calibration update: legacy protect_top_k=8 was
+        # absolute and capped at 8 regardless of deck size. The Stage 3
+        # floor-aware cap leaves max_swaps slots eligible — with 9
+        # non-dead candidates and max_swaps=3, effective protect drops
+        # to 9 - 3 = 6. The intent of this test (no swap emitted when
+        # only bad-or-protected cuts exist) is preserved: the 3
+        # eligible cuts all have empty `slot_primitives`, so the
+        # add candidate (Island, empty primitives) produces zero
+        # primitive coverage delta → min-bar filter kills every
+        # evaluation → status=WARN, swaps=[].
+        self.assertEqual(int(metrics.get("protected_cut_count") or 0), 6)
         self.assertGreaterEqual(int(metrics.get("swaps_filtered_minbar_count") or 0), 1)
         self.assertEqual(int(metrics.get("selected_count") or 0), 0)
 

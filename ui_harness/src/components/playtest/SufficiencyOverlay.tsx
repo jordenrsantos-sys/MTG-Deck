@@ -70,18 +70,14 @@ export function findCheckpointForTurn(
 export default function SufficiencyOverlay({ layer, currentTurn }: SufficiencyOverlayProps) {
   // Per soft-safety #1: graceful fallback when probability_checkpoint_layer_v1
   // is absent or wrong-shape. NEVER fabricate per-turn data (HARD safety #10).
+  // v1.7.5 UX polish: hide the overlay entirely when probability_checkpoint_layer_v1
+  // isn't available. The legacy "engine response did not include
+  // probability_checkpoint_layer_v1" message was engineer-speak visible to users
+  // (flagged in the 2026-05-16 live walk). Returning null is calibration-honest:
+  // we don't fabricate per-turn data (HARD safety #10) and we don't expose the
+  // internal field name to non-developer users.
   if (!layer || !layer.checkpoints) {
-    return (
-      <Card>
-        <CardHeader>Sufficiency overlay</CardHeader>
-        <CardBody>
-          <div className="text-sm text-text-muted" role="status" aria-live="polite">
-            Per-turn sufficiency data not available — engine response did not
-            include <code>probability_checkpoint_layer_v1</code>.
-          </div>
-        </CardBody>
-      </Card>
-    );
+    return null;
   }
 
   const entry = findCheckpointForTurn(layer, currentTurn);

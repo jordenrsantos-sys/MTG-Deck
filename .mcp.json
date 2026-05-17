@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "mtg-engine": {
+      "command": "python",
+      "args": [
+        "E:\\MTG Root\\mtg-engine\\repo\\mcp_server\\mtg_engine_mcp.py"
+      ],
+      "env": {
+        "MTG_ENGINE_URL": "http://localhost:8000"
+      }
+    }
+  }
+}

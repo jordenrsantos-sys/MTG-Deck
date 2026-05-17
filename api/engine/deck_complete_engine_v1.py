@@ -9,6 +9,40 @@ from api.engine.color_identity_constraints_v1 import (
     get_commander_color_identity_union_v1,
 )
 from api.engine.constants import BASIC_NAMES, GENERIC_MINIMUMS, SNOW_BASIC_NAMES
+from api.engine.layers.combo_enabler_reasons_v1 import attach_combo_enabler_reasons_v1
+# v1.7.2 Stage 1 — deck-combo insight surfaces (detected_combos_v1 +
+# missing_partners_v1). Independent of combo_enabler_reasons_v1; runs
+# AFTER it so both surfaces see the final added-cards list.
+from api.engine.layers.deck_combo_insights_v1 import compute_deck_combo_insights_v1
+# v1.7.3 Stage 2 — proactive combo completion. Runs AFTER primitive-
+# coverage backfill but BEFORE combo_enabler so the proactive adds
+# get COMBO_ENABLER chips naturally + deck_combo_insights then
+# reclassifies the pair as detected_combos (no longer missing).
+from api.engine.layers.proactive_combo_completion_v1 import (
+    PROACTIVE_COMBO_REASON_CODE,
+    propose_proactive_combo_partners_v1,
+)
+# v1.7.5 — bracket-combo compliance check. Consumes detected_combos_v1
+# (already populated by deck_combo_insights_v1) and emits violations_v1
+# entries when bracket_id ∈ {B1, B2} and any 2-card combo is present in
+# the final deck. Closes the gap where /deck/complete_v1 previously
+# returned status:OK with zero violations even for bracket-illegal decks.
+from api.engine.layers.complete_bracket_violations_v1 import (
+    compute_complete_bracket_violations_v1,
+)
+# Phase 2.1a — deck theme classifier. Reads the brain's themes_v1_5 +
+# typal_themes_v1_6 + signal vocabulary + confidence bands (all BYTE-IDENTICAL),
+# evaluates them against the post-completion deck's primitive index, returns
+# top-N classified themes for the UI to surface as a DeckThemesPanel.
+from api.engine.layers.deck_theme_classifier_v1 import (
+    classify_deck_themes_v1,
+    compute_primitive_index_from_card_names,
+    compute_subtype_counts_from_card_names,
+)
+# Phase 2.1b — THEME_SYNERGY reasons on added cards. Decorates the
+# added_cards_v1 array's reasons_v1 with THEME_SYNERGY:<theme_id> entries
+# attributing each card to the theme(s) it strengthens.
+from api.engine.layers.theme_synergy_reasons_v1 import attach_theme_synergy_reasons_v1
 from api.engine.utils import normalize_primitives_source
 
 VERSION = "deck_complete_engine_v1"
@@ -456,6 +490,89 @@ def _build_land_fill_sequence(
     return out
 
 
+def _backfill_added_cards_from_diff(
+    added_cards: List[Dict[str, Any]],
+    deck_cards: List[str],
+    working_cards: List[str],
+) -> List[Dict[str, Any]]:
+    """v1.5 Stage 3 — belt-and-suspenders backfill of added_cards_v1.
+
+    If the engine grew `working_cards` beyond `deck_cards` but the
+    accumulator `added_cards` is shorter than the growth delta, this
+    helper backfills the missing entries via a multiset diff against
+    the original input cards. Used as defense-in-depth so any current
+    or future code path that grows the deck without explicit
+    `added_cards.append(...)` updates can't cause downstream consumers
+    (AddedCardsPanel, /deck/complete_v1 contract test) to render empty
+    or break the length-equals-growth invariant.
+
+    Preserves byte-identical behavior when `len(added_cards) ==
+    (len(working_cards) - len(deck_cards))` (the common, already-correct
+    path through the rounds + land_fill accumulator). Only synthesizes
+    new entries when the accumulator under-counts; never overrides or
+    deletes existing entries.
+
+    Reason code for synthesized entries: `auto_completion_target_size`
+    (v1.2 vocabulary). The exact code path that grew the deck without
+    explicit accumulator tracking isn't recoverable from the final
+    state, so the placeholder communicates "engine added this to reach
+    target_deck_size during completion."
+    """
+    if not isinstance(added_cards, list):
+        return []
+    if not isinstance(deck_cards, list) or not isinstance(working_cards, list):
+        return list(added_cards)
+
+    growth_delta = len(working_cards) - len(deck_cards)
+    if growth_delta <= 0 or len(added_cards) >= growth_delta:
+        return list(added_cards)
+
+    before_counts: Dict[str, int] = {}
+    for name in deck_cards:
+        key = _nonempty_str(name)
+        if key == "":
+            continue
+        before_counts[key] = before_counts.get(key, 0) + 1
+
+    after_counts: Dict[str, int] = {}
+    for name in working_cards:
+        key = _nonempty_str(name)
+        if key == "":
+            continue
+        after_counts[key] = after_counts.get(key, 0) + 1
+
+    represented: Dict[str, int] = {}
+    for entry in added_cards:
+        if not isinstance(entry, dict):
+            continue
+        name_value = entry.get("name")
+        key = _nonempty_str(name_value) if isinstance(name_value, str) else ""
+        if key == "":
+            continue
+        represented[key] = represented.get(key, 0) + 1
+
+    backfilled: List[Dict[str, Any]] = list(added_cards)
+    # Deterministic ordering: iterate after_counts keys in sorted order so
+    # synthesized entries are reproducible across runs (HARD: determinism).
+    for name in sorted(after_counts.keys()):
+        after_n = after_counts[name]
+        before_n = before_counts.get(name, 0)
+        added_n = after_n - before_n
+        if added_n <= 0:
+            continue
+        already_logged = represented.get(name, 0)
+        missing = added_n - already_logged
+        for _ in range(missing):
+            backfilled.append(
+                {
+                    "name": name,
+                    "reasons_v1": ["auto_completion_target_size"],
+                    "primitives_added_v1": [],
+                }
+            )
+    return backfilled
+
+
 def _build_completed_decklist_text(commander_names: List[str], deck_cards: List[str]) -> str:
     lines: List[str] = ["Commander"]
     for commander_name in commander_names:
@@ -505,7 +622,17 @@ def run_deck_complete_engine_v1(
     )
 
     baseline_status = _nonempty_str(baseline_payload.get("status"))
-    if baseline_status not in {"OK", "WARN"}:
+    # v1.2 Stage 1: accept OK_WITH_UNKNOWNS as a valid baseline status. Live-
+    # retest 2026-05-10 confirmed /build returns this status for imported
+    # decks (Archidekt Shelob 1010839) with some unresolved card names —
+    # treating it as "BASELINE_BUILD_UNAVAILABLE" caused /deck/complete_v1
+    # to return empty added_cards_v1 + empty completed_decklist_text_v1
+    # even when the underlying baseline was structurally valid. The engine's
+    # completion logic doesn't depend on every card resolving cleanly; the
+    # canonical_deck_input + structural_snapshot it consumes are independent
+    # of the unknown-card surface. Acceptable baseline statuses now mirror
+    # /build's success-with-warnings vocabulary.
+    if baseline_status not in {"OK", "WARN", "OK_WITH_UNKNOWNS"}:
         return {
             "version": VERSION,
             "status": "SKIP",
@@ -708,13 +835,110 @@ def run_deck_complete_engine_v1(
         else:
             stop_reason_v1 = "FILL_FAILED"
 
+    # v1.5 Stage 3: belt-and-suspenders backfill — if the engine grew
+    # working_cards beyond deck_cards but the added_cards accumulator
+    # is shorter than the growth delta, synthesize entries via multiset
+    # diff with the v1.2 vocabulary reason "auto_completion_target_size".
+    # No-op when the accumulator is already correct (the common, byte-
+    # identical path through rounds + land_fill).
+    added_cards_final = _backfill_added_cards_from_diff(added_cards, deck_cards, working_cards)
+
+    # v1.7.3 Stage 2 — proactive combo completion. Bracket-gated
+    # (B1/B2 → 0; B3 → 1; B4 → 2; B5 → 3). For each proposal, append
+    # a row to added_cards_final AND extend working_cards so the
+    # downstream combo_enabler_reasons_v1 + compute_deck_combo_insights_v1
+    # see the partner as present. Side-effect-free against any frozen
+    # data (no bracket policy / combo pack / GC pool / primitive
+    # coverage scoring writes).
+    proactive_proposals = propose_proactive_combo_partners_v1(
+        db_snapshot_id=db_snapshot_id,
+        commander_names=commander_names,
+        deck_cards=deck_cards,
+        current_added_cards_v1=added_cards_final,
+        bracket_id=bracket_id_clean,
+        commander_color_identity=commander_color_identity,
+    )
+    for proposal in proactive_proposals:
+        partner_name = proposal.get("partner_card_name")
+        if not isinstance(partner_name, str) or partner_name == "":
+            continue
+        added_cards_final.append({
+            "name": partner_name,
+            "reasons_v1": [PROACTIVE_COMBO_REASON_CODE],
+            "primitives_added_v1": [],
+        })
+        working_cards.append(partner_name)
+
+    added_cards_final = attach_combo_enabler_reasons_v1(
+        db_snapshot_id=db_snapshot_id,
+        commander_names=commander_names,
+        deck_cards=working_cards,
+        added_cards_v1=added_cards_final,
+    )
+
+    # v1.7.2 Stage 1 — compute the deck's combo insight surfaces against
+    # the FINAL completed deck (commander + working_cards, where
+    # working_cards already includes the engine's adds). Cheap pure-Python
+    # index lookups; no network, no DB writes.
+    combo_insights = compute_deck_combo_insights_v1(
+        db_snapshot_id=db_snapshot_id,
+        commander_names=commander_names,
+        deck_cards_after_completion=working_cards,
+    )
+
+    # v1.7.5 — bracket-combo compliance. Consumes detected_combos_v1 above.
+    # When bracket is B1/B2 and any 2-card combo is detected, emit
+    # violations_v1 entries and downgrade response.status to
+    # BRACKET_VIOLATION so the UI surfaces the issue clearly.
+    _bracket_violations_payload = compute_complete_bracket_violations_v1(
+        bracket_id=bracket_id_clean,
+        detected_combos_v1=combo_insights.get("detected_combos_v1") or [],
+    )
+    _violations_v1 = _bracket_violations_payload.get("violations_v1") or []
+    _deck_status_override = _bracket_violations_payload.get("deck_status_override")
+    _final_status = _deck_status_override if _deck_status_override else status
+
+    # Phase 2.1a — theme classifier. Builds primitive_index_by_slot inline
+    # from working_cards via db_cards (the Complete engine doesn't share
+    # the build pipeline's pre-computed primitive index). Identifies the
+    # deck's dominant themes (TRIBAL_GOBLINS, THEME_CONTROL, etc.) using
+    # the brain's 41+78 theme classification system in BYTE-IDENTICAL data
+    # files. Output `deck_themes_v1` lets the UI surface a DeckThemesPanel
+    # AND lets v1.7.5+ stages annotate added_cards with THEME_SYNERGY
+    # reasons attributing each card to the dominant theme it strengthens.
+    _all_deck_cards: List[str] = list(commander_names) + list(working_cards)
+    _primitive_index_for_themes = compute_primitive_index_from_card_names(
+        db_snapshot_id, _all_deck_cards
+    )
+    _subtype_counts_for_themes = compute_subtype_counts_from_card_names(
+        db_snapshot_id, _all_deck_cards
+    )
+    _deck_themes_v1 = classify_deck_themes_v1(
+        primitive_index_by_slot=_primitive_index_for_themes,
+        deck_subtype_counts=_subtype_counts_for_themes,
+    )
+
+    # Phase 2.1b — annotate added cards with THEME_SYNERGY:<theme_id> reasons.
+    # Mutates added_cards_final in place; chain-safe with prior reason layers
+    # (proactive_combo_completion, combo_enabler). When deck_themes_v1 is empty
+    # (no classified themes), this is a no-op.
+    added_cards_final = attach_theme_synergy_reasons_v1(
+        added_cards_v1=added_cards_final,
+        deck_themes_v1=_deck_themes_v1,
+        db_snapshot_id=db_snapshot_id,
+    )
+
     return _attach_dev_metrics({
         "version": VERSION,
-        "status": status,
+        "status": _final_status,
         "codes": sorted(set(codes)),
         "baseline_summary_v1": baseline_summary_v1,
-        "added_cards_v1": added_cards,
+        "added_cards_v1": added_cards_final,
         "completed_decklist_text_v1": _build_completed_decklist_text(commander_names, working_cards),
+        "detected_combos_v1": combo_insights.get("detected_combos_v1") or [],
+        "missing_partners_v1": combo_insights.get("missing_partners_v1") or [],
+        "violations_v1": _violations_v1,
+        "deck_themes_v1": _deck_themes_v1,
     },
         collect_dev_metrics=bool(collect_dev_metrics),
         stop_reason_v1=stop_reason_v1,

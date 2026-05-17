@@ -50,7 +50,7 @@ export default function GoldfishHand({ hand, dispatch }: GoldfishHandProps) {
                     onClick={() => dispatch({ type: "MOVE_TO_GRAVEYARD", from: "hand", instanceId: card.instanceId })}
                     aria-label={`Discard ${card.name}`}
                   >
-                    Disc
+                    Discard
                   </Button>
                   <Button
                     size="sm"
@@ -58,7 +58,7 @@ export default function GoldfishHand({ hand, dispatch }: GoldfishHandProps) {
                     onClick={() => dispatch({ type: "MOVE_TO_EXILE", from: "hand", instanceId: card.instanceId })}
                     aria-label={`Exile ${card.name}`}
                   >
-                    Exi
+                    Exile
                   </Button>
                 </span>
               </li>

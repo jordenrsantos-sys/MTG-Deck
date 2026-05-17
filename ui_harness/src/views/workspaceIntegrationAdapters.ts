@@ -362,22 +362,32 @@ export function buildWorkspacePillText(input: {
   commander: string;
   cardCount: number;
   sufficiencyStatus?: string | null;
+  /** v1.1 — count of recommended_swaps_v1 from the latest UPGRADE_SUCCESS.
+   *  When > 0, suffixed to the pill text ("· N upgrade suggestions ready"). */
+  upgradeSuggestionsCount?: number;
 }): WorkspacePillText {
   if (input.source === "fallback") {
     return { text: "No deck loaded", variant: "neutral" };
   }
   const cmdr = _truncatePillName(input.commander, PILL_COMMANDER_MAX_LEN) || "(unnamed)";
   const cards = `${input.cardCount} card${input.cardCount === 1 ? "" : "s"}`;
+  const upgradeSuffix =
+    typeof input.upgradeSuggestionsCount === "number" && input.upgradeSuggestionsCount > 0
+      ? ` · ${input.upgradeSuggestionsCount} upgrade suggestion${input.upgradeSuggestionsCount === 1 ? "" : "s"} ready`
+      : "";
   if (input.hasBuildResponse) {
     const sufficiency = input.sufficiencyStatus && input.sufficiencyStatus.trim() !== ""
       ? input.sufficiencyStatus.trim()
       : "—";
-    return { text: `${cmdr} · ${cards} · built · sufficiency ${sufficiency}`, variant: "success" };
+    return {
+      text: `${cmdr} · ${cards} · built · sufficiency ${sufficiency}${upgradeSuffix}`,
+      variant: "success",
+    };
   }
   if (input.isCompleted) {
-    return { text: `${cmdr} · ${cards} · ready to build`, variant: "info" };
+    return { text: `${cmdr} · ${cards} · ready to build${upgradeSuffix}`, variant: "info" };
   }
-  return { text: `${cmdr} · ${cards} · imported from ${input.source}`, variant: "info" };
+  return { text: `${cmdr} · ${cards} · imported from ${input.source}${upgradeSuffix}`, variant: "info" };
 }
 
 export function buildGoldfishBannerText(input: {

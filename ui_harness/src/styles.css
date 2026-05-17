@@ -2264,10 +2264,11 @@ textarea {
     transform var(--transition-fast);
 }
 
-.workspace-left-rail:hover .workspace-left-rail-link,
-.workspace-left-rail:focus-within .workspace-left-rail-link {
-  justify-content: flex-start;
-}
+/* v1.6.1 hotfix: removed `.workspace-left-rail:hover .workspace-left-rail-link,
+   .workspace-left-rail:focus-within .workspace-left-rail-link { justify-content:
+   flex-start; }` — stale parent ancestor. `.workspace-left-rail` was the
+   pre-v1.6 permanent rail wrapper; v1.6's Drawer-based LeftRail doesn't use
+   that ancestor class, so the rule had no effect. Deleted for clarity. */
 
 .workspace-left-rail-link:hover {
   color: var(--text-primary);
@@ -2304,24 +2305,23 @@ textarea {
   letter-spacing: 0.06em;
 }
 
-.workspace-left-rail-text {
-  max-width: 0;
-  opacity: 0;
-  transform: translateX(-6px);
-  white-space: nowrap;
-  overflow: hidden;
-  transition:
-    max-width var(--transition-med),
-    opacity var(--transition-fast),
-    transform var(--transition-fast);
-}
+/* v1.6.1 hotfix: removed the `.workspace-left-rail-text { max-width: 0;
+   opacity: 0; transform: translateX(-6px); ... }` default-collapse rule + the
+   companion `.workspace-left-rail:hover .workspace-left-rail-text { ...visible
+   }` expand-on-hover rule.
 
-.workspace-left-rail:hover .workspace-left-rail-text,
-.workspace-left-rail:focus-within .workspace-left-rail-text {
-  max-width: 150px;
-  opacity: 1;
-  transform: none;
-}
+   These were a pre-v1.6 hover-to-expand pattern for the permanent left rail
+   (labels collapsed to icons by default; expanded on rail hover via the
+   `.workspace-left-rail` parent ancestor). v1.6 converted the LeftRail to
+   a Drawer overlay which has NO `.workspace-left-rail` parent element, so
+   the expand-on-hover rule could never trigger — labels stayed invisibly
+   collapsed at all times. Orchestrator live-walk caught this regression
+   the +55 vitest could not see. Removing the default-collapse rule
+   restores label visibility under the v1.6 Drawer-based LeftRail layout.
+
+   The mobile-breakpoint override at ~line 4274 that re-shows the labels
+   is now redundant (the default is no longer "collapsed"), but harmless
+   — left in place to keep this hotfix CSS-only and the diff minimal. */
 
 .workspace-header {
   margin-bottom: var(--space-2);
@@ -2439,11 +2439,19 @@ textarea {
   gap: var(--space-2);
 }
 
+/* v1.6.2 Stage 4: header tightens — title + controls sit inline at the
+   start of the row instead of being pushed to opposite edges. Previously
+   `justify-content: space-between` on the header + `justify-content:
+   flex-end` on the controls row pushed Max-swaps + Run button to the
+   far right of the section, separated from the "Power Tune" h3 by a
+   large gap. Now both default to flex-start; gap-token controls the
+   spacing. */
 .workspace-tool-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
+  justify-content: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
 }
 
 .workspace-tool-panel-header h3 {
@@ -2452,8 +2460,8 @@ textarea {
 
 .workspace-tool-controls-row {
   display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: flex-start;
   gap: var(--space-2);
   flex-wrap: wrap;
 }

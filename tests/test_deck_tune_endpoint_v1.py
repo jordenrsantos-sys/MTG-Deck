@@ -67,7 +67,7 @@ class DeckTuneEndpointV1Tests(unittest.TestCase):
         with (
             patch.dict(os.environ, {"MTG_ENGINE_DEV_METRICS": "0"}, clear=False),
             patch("api.main.run_build_pipeline") as mocked_run_build,
-            patch("api.main.run_deck_tune_engine_v1") as mocked_run_tune,
+            patch("api.main.run_deck_tune_with_bracket_aware_recommendations_v1") as mocked_run_tune,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             response = client.post("/deck/tune_v1", json=payload)
@@ -132,7 +132,7 @@ Deck
         with (
             patch.dict(os.environ, {"MTG_ENGINE_DEV_METRICS": "0"}, clear=False),
             patch("api.main.run_build_pipeline", return_value=mocked_build_payload) as mocked_run_build,
-            patch("api.main.run_deck_tune_engine_v1", return_value=mocked_tune_payload) as mocked_run_tune,
+            patch("api.main.run_deck_tune_with_bracket_aware_recommendations_v1", return_value=mocked_tune_payload) as mocked_run_tune,
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             response = client.post("/deck/tune_v1", json=payload)
@@ -219,7 +219,7 @@ Deck
         with (
             patch.dict(os.environ, {"MTG_ENGINE_DEV_METRICS": "1"}, clear=False),
             patch("api.main.run_build_pipeline", return_value=mocked_build_payload),
-            patch("api.main.run_deck_tune_engine_v1", return_value=mocked_tune_payload),
+            patch("api.main.run_deck_tune_with_bracket_aware_recommendations_v1", return_value=mocked_tune_payload),
             TestClient(app, raise_server_exceptions=False) as client,
         ):
             response = client.post("/deck/tune_v1", json=payload)

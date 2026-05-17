@@ -1,0 +1,151 @@
+{
+  "fn": "compute_primitive_index_from_card_names",
+  "db_snapshot_id": "20260217_190902_tagpass_20260222",
+  "input_count": 97,
+  "resolved_oracle_count": 95,
+  "unresolved_samples": [
+    "heliod, the radiant dawn",
+    "jin-gitaxias"
+  ],
+  "taxonomy_version": "taxonomy_v1_23",
+  "tags_row_count": 94,
+  "non_empty_primitive_rows": 88,
+  "primitive_total": 136,
+  "first_primitive_samples": [
+    "slot_0_y'shtola, night's blessed -> ['CAST_TRIGGER_PAYOFF']",
+    "slot_1_Y'shtola, Night's Blessed -> ['CAST_TRIGGER_PAYOFF']",
+    "slot_2_adarkar wastes -> ['MANA_ROCK']",
+    "slot_3_agility bobblehead -> ['EVASION', 'MANA_ROCK']",
+    "slot_4_an offer you can't refuse -> ['ARTIFACT_MATTERS', 'STACK_INTERACTION']",
+    "slot_5_arcane denial -> ['COUNTERSPELL', 'STACK_INTERACTION']",
+    "slot_6_arcane sanctum -> ['MANA_ROCK']",
+    "slot_7_arcane signet -> ['MANA_ROCK']",
+    "slot_8_archaeomancer's map -> ['ARTIFACT_MATTERS']",
+    "slot_9_archway of innovation -> ['ARTIFACT_MATTERS', 'IMPROVISE', 'MANA_ROCK']",
+    "slot_10_bender's waterskin -> ['ARTIFACT_MATTERS', 'MANA_ROCK', 'UNTAP_EFFECT']",
+    "slot_11_caves of koilos -> ['MANA_ROCK']"
+  ],
+  "failure_at": null,
+  "exception": null,
+  "classify_trace": {
+    "primitive_counts_total": 136,
+    "primitive_distinct": 22,
+    "primitive_top10": {
+      "MANA_ROCK": 50,
+      "ARTIFACT_MATTERS": 31,
+      "UNTAP_EFFECT": 6,
+      "PERMISSION_OVERRIDE": 6,
+      "CAST_TRIGGER_PAYOFF": 5,
+      "EVASION": 5,
+      "STACK_INTERACTION": 5,
+      "TOKEN_PRODUCTION": 4,
+      "AS_ENTERS_CHOICE": 3,
+      "AURA_SYNERGY": 3
+    },
+    "signal_counts_total": 238,
+    "signal_distinct": 31,
+    "signal_top10": {
+      "MANA_RAMP_ARTIFACT_ROCK": 50,
+      "ARTIFACT_CAST_PAYOFF": 36,
+      "ARTIFACT_ETB_PAYOFF": 31,
+      "ARTIFACTS": 31,
+      "NONCREATURE_SPELLS_MATTER": 10,
+      "ENCHANTMENT_CAST_PAYOFF": 6,
+      "PT_MODIFIER_STATIC_AURA_EQUIP": 6,
+      "UNTAP_STEP_MANIPULATION": 6,
+      "SPELLSLINGER_ENGINE": 5,
+      "TRIBAL_PAYOFFS": 5
+    },
+    "deck_subtype_counts_top10": {
+      "Bobblehead": 7,
+      "Human": 4,
+      "Equipment": 4,
+      "Cat": 3,
+      "Aura": 3,
+      "Artificer": 3,
+      "Island": 3,
+      "Plains": 3,
+      "Swamp": 3,
+      "Warlock": 2
+    },
+    "main_evaluated": 41,
+    "main_passed": 3,
+    "typal_evaluated": 10,
+    "typal_passed": 0,
+    "active_count": 3,
+    "typal_attempts_sample": [
+      {
+        "subtype": "Human",
+        "density": 4,
+        "typal_id": "TYPAL_HUMANS",
+        "required_signals": "TYPE_DENSITY>=18 OR (TYPE_DENSITY>=14 AND TRIBAL_PAYOFFS>=2)",
+        "thresholds": "classify if score>=24",
+        "result": "rejected",
+        "score": null
+      },
+      {
+        "subtype": "Cat",
+        "density": 3,
+        "typal_id": "TYPAL_CATS",
+        "required_signals": "TYPE_DENSITY>=18 OR (TYPE_DENSITY>=14 AND TRIBAL_PAYOFFS>=2)",
+        "thresholds": "classify if score>=24",
+        "result": "rejected",
+        "score": null
+      },
+      {
+        "subtype": "Artificer",
+        "density": 3,
+        "typal_id": "TYPAL_ARTIFICERS",
+        "required_signals": "TYPE_DENSITY>=18 OR (TYPE_DENSITY>=14 AND TRIBAL_PAYOFFS>=2)",
+        "thresholds": "classify if score>=24",
+        "result": "rejected",
+        "score": null
+      },
+      {
+        "subtype": "Construct",
+        "density": 2,
+        "typal_id": "TYPAL_CONSTRUCTS",
+        "required_signals": "TYPE_DENSITY>=18 OR (TYPE_DENSITY>=14 AND TRIBAL_PAYOFFS>=2)",
+        "thresholds": "classify if score>=24",
+        "result": "rejected",
+        "score": null
+      },
+      {
+        "subtype": "Wizard",
+        "density": 2,
+        "typal_id": "TYPAL_WIZARDS",
+        "required_signals": "TYPE_DENSITY>=18 OR (TYPE_DENSITY>=14 AND TRIBAL_PAYOFFS>=2)",
+        "thresholds": "classify if score>=24",
+        "result": "rejected",
+        "score": null
+      },
+      {
+        "subtype": "Beast",
+        "density": 1,
+        "typal_id": "TYPAL_BEASTS",
+        "required_signals": "TYPE_DENSITY>=18 OR (TYPE_DENSITY>=14 AND TRIBAL_PAYOFFS>=2)",
+        "thresholds": "classify if score>=24",
+        "result": "rejected",
+        "score": null
+      },
+      {
+        "subtype": "Thopter",
+        "density": 1,
+        "typal_id": "TYPAL_THOPTERS",
+        "required_signals": "TYPE_DENSITY>=18 OR (TYPE_DENSITY>=14 AND TRIBAL_PAYOFFS>=2)",
+        "thresholds": "classify if score>=24",
+        "result": "rejected",
+        "score": null
+      },
+      {
+        "subtype": "Golem",
+        "density": 1,
+        "typal_id": "TYPAL_GOLEMS",
+        "required_signals": "TYPE_DENSITY>=18 OR (TYPE_DENSITY>=14 AND TRIBAL_PAYOFFS>=2)",
+        "thresholds": "classify if score>=24",
+        "result": "rejected",
+        "score": null
+      }
+    ]
+  }
+}

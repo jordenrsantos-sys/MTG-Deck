@@ -238,6 +238,23 @@ type ImportResultSummaryProps = {
   result: ImportResult;
 };
 
+// v1.6.5 — humanize internal status codes for the import summary so users
+// don't see "DEFERRED" / "INGEST_FAILED_*" / reason-code-shaped jargon.
+function _humanizeStatus(status: string): string {
+  if (status === "OK") return "Imported";
+  if (status === "DEFERRED") return "Needs review";
+  if (status === "FAILED" || status?.startsWith("ERROR")) return "Failed";
+  return status;
+}
+
+function _humanizeReasonCode(code: string): string {
+  // Pattern: UPPER_SNAKE → "Upper snake"
+  return code
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function ImportResultSummary(props: ImportResultSummaryProps) {
   const { result } = props;
   const variant =
@@ -250,13 +267,13 @@ function ImportResultSummary(props: ImportResultSummaryProps) {
   const unknownCount = result.unknowns.length;
   return (
     <div className="flex items-center gap-token-2">
-      <Badge variant={variant}>{result.status}</Badge>
-      <span className="text-xs text-text-muted">source: {result.source}</span>
+      <Badge variant={variant}>{_humanizeStatus(result.status)}</Badge>
+      <span className="text-xs text-text-muted">via {result.source}</span>
       {result.status === "OK" ? (
         <>
           <span className="text-xs text-text-secondary">{cardCount} cards</span>
           {unknownCount > 0 ? (
-            <Badge variant="warn">{unknownCount} unknown</Badge>
+            <Badge variant="warn">{unknownCount} unresolved</Badge>
           ) : null}
         </>
       ) : null}
@@ -264,7 +281,7 @@ function ImportResultSummary(props: ImportResultSummaryProps) {
         <span className="text-xs text-text-muted">{result.deferred_reason}</span>
       ) : null}
       {result.reason_code ? (
-        <span className="text-xs text-text-muted">{result.reason_code}</span>
+        <span className="text-xs text-text-muted">{_humanizeReasonCode(result.reason_code)}</span>
       ) : null}
     </div>
   );

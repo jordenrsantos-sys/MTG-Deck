@@ -45,6 +45,14 @@ from api.engine.deck_complete_engine_v1 import (
 )
 from api.engine.deck_completion_v0 import generate_deck_completion_v0
 from api.engine.deck_tune_engine_v1 import VERSION as DECK_TUNE_ENGINE_V1_VERSION, run_deck_tune_engine_v1
+# v1.7 Stage 5 Deliverable B — production wire-in for bracket-aware
+# proactive game-changer recommendations. The wrapper has the same
+# signature as run_deck_tune_engine_v1 and post-processes the result
+# by appending BRACKET_AWARE_GC entries to recommended_swaps_v1 when
+# the bracket cap permits.
+from api.engine.layers.bracket_aware_recommendations_v1 import (
+    run_deck_tune_with_bracket_aware_recommendations_v1,
+)
 from api.engine.pipeline_build import run_build_pipeline
 from api.engine.layer_registry import (
     filter_response_to_resolved as _filter_response_to_resolved,
@@ -271,6 +279,21 @@ class DeckCompleteV1Response(BaseModel):
     snapshot_preflight_v1: Optional[Dict[str, Any]] = None
     added_cards_v1: List[DeckCompleteAddedCardV1]
     completed_decklist_text_v1: str
+    # v1.7.2 Stage 1 — deck-combo insight surfaces (additive, opaque
+    # dict shape per entry). Engine layer:
+    # api/engine/layers/deck_combo_insights_v1.py. Default empty so
+    # legacy clients see the same response keys but with zero-length
+    # arrays — strict `extra="forbid"` preserved.
+    detected_combos_v1: List[Dict[str, Any]] = Field(default_factory=list)
+    missing_partners_v1: List[Dict[str, Any]] = Field(default_factory=list)
+    # Phase 2.1a — deck theme classification surface (additive, opaque dict
+    # shape per entry). Engine layer:
+    # api/engine/layers/deck_theme_classifier_v1.py. Each entry has
+    # {theme_id, theme_type, subtype, score, confidence_band,
+    # classify_threshold, passed_classify_threshold, anti_signal_hit,
+    # contributing_primitives}. Default empty for legacy clients +
+    # decks with no classified themes.
+    deck_themes_v1: List[Dict[str, Any]] = Field(default_factory=list)
     request_hash_v1: str
     unknowns: List[DecklistUnknownV1]
     violations_v1: List[DeckValidateViolationV1]
@@ -278,6 +301,311 @@ class DeckCompleteV1Response(BaseModel):
     resolve_version: str
     ingest_version: str
     complete_engine_version: str
+
+
+class CardSearchV1Filters(BaseModel):
+    """Filter set for /card/search_v1. See ENGINE_API_GUIDE.md for full semantics."""
+    model_config = ConfigDict(extra="forbid")
+
+    primitives_any: List[str] = Field(default_factory=list)
+    primitives_all: List[str] = Field(default_factory=list)
+    primitives_none: List[str] = Field(default_factory=list)
+    subtypes_any: List[str] = Field(default_factory=list)
+    type_any: List[str] = Field(default_factory=list)
+    color_identity_subset_of: Optional[List[str]] = None
+    color_identity_includes_all: Optional[List[str]] = None
+    cmc_min: Optional[float] = None
+    cmc_max: Optional[float] = None
+    name_contains: Optional[str] = None
+    bracket_tier_max: Optional[str] = None
+    budget_max_usd: Optional[float] = None
+    format_legal_in: Optional[str] = None
+
+
+class CardSearchV1Request(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    db_snapshot_id: str = Field(..., description="Required snapshot ID")
+    taxonomy_version: Optional[str] = None
+    filters: CardSearchV1Filters = Field(default_factory=CardSearchV1Filters)
+    limit: int = 100
+    offset: int = 0
+    sort_by: str = "name"
+    include: List[str] = Field(default_factory=lambda: ["primitives", "type_line", "cmc", "color_identity"])
+
+
+class CardSearchV1Response(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    db_snapshot_id: str
+    taxonomy_version: Optional[str] = None
+    matched_count: int
+    returned_count: int
+    offset: int
+    limit: int
+    sort_by: str
+    results: List[Dict[str, Any]] = Field(default_factory=list)
+    warnings: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class AgentContextBundleV1Request(BaseModel):
+    """Pillar A.5 — composite agent-kickoff endpoint."""
+    model_config = ConfigDict(extra="forbid")
+
+    db_snapshot_id: str = Field(..., description="Required snapshot ID")
+    commander: Optional[str] = None
+    raw_decklist_text: str = Field(..., description="Raw decklist text")
+    intent: Optional[str] = None
+    include: List[str] = Field(
+        default_factory=lambda: ["analyze", "candidate_pool", "strength_check", "reference_decks"]
+    )
+
+
+class AgentContextBundleV1Response(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    db_snapshot_id: str
+    commander: Optional[str] = None
+    intent: Optional[str] = None
+    analyze: Optional[Dict[str, Any]] = None
+    candidate_pool: Optional[Dict[str, Any]] = None
+    strength_check: Optional[Dict[str, Any]] = None
+    reference_decks: Optional[Dict[str, Any]] = None
+    warnings: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class ArchetypeBriefV1Response(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    commander: str
+    commander_oracle_id: Optional[str] = None
+    color_identity: List[str] = Field(default_factory=list)
+    corpus_deck_count: int
+    common_archetypes: List[Dict[str, Any]] = Field(default_factory=list)
+    bracket_distribution: Dict[str, float] = Field(default_factory=dict)
+    staple_cards: List[Dict[str, Any]] = Field(default_factory=list)
+    warnings: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class ThemeTopCardsV1Response(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    theme_id: str
+    subtype: Optional[str] = None
+    primitives_used_for_match: List[str] = Field(default_factory=list)
+    matched_count: int = 0
+    returned_count: int = 0
+    results: List[Dict[str, Any]] = Field(default_factory=list)
+    warnings: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class CorpusSimilarDecksV1Request(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    db_snapshot_id: str = Field(..., description="Required snapshot ID")
+    commander: Optional[str] = None
+    raw_decklist_text: str = Field(..., description="Raw decklist text")
+    k: int = 5
+    include_decklists: bool = False
+
+
+class CorpusSimilarDecksV1Response(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    k_returned: int
+    decks: List[Dict[str, Any]] = Field(default_factory=list)
+    warnings: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class CorpusBatchIngestEntry(BaseModel):
+    """One external deck for batch corpus ingest."""
+    model_config = ConfigDict(extra="forbid")
+
+    commander: str
+    decklist: List[str]
+    claimed_bracket: str = Field(..., description="B1..B5, user-set from source")
+    source_url: Optional[str] = None
+    source_label: Optional[str] = None
+    archetype_hint: Optional[str] = None
+
+
+class CorpusBatchIngestV1Request(BaseModel):
+    """Phase 5a EDHREC-style batch ingest — feeds external decks into the
+    strength oracle corpus with bracket cross-check + review queue."""
+    model_config = ConfigDict(extra="forbid")
+
+    db_snapshot_id: str = Field(..., description="Required snapshot ID")
+    entries: List[CorpusBatchIngestEntry]
+    skip_bracket_verification: bool = False
+
+
+class CorpusBatchIngestV1Response(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    status: str
+    total_submitted: int = 0
+    accepted: int = 0
+    auto_bumped: int = 0
+    needs_review: int = 0
+    rejected: int = 0
+    results: List[Dict[str, Any]] = Field(default_factory=list)
+    reason: Optional[str] = None
+
+
+class PlaytestBenchmarkV1Request(BaseModel):
+    """Phase 5b.3 benchmark runner — runs N-game anti-bias-mirrored playtest
+    between two corpus deck IDs, writes result to calibration_log_v1.jsonl."""
+    model_config = ConfigDict(extra="forbid")
+
+    db_snapshot_id: str = Field(..., description="Required snapshot ID")
+    deck_a_corpus_id: str = Field(..., description="Corpus ID of first deck")
+    deck_b_corpus_id: str = Field(..., description="Corpus ID of second deck")
+    benchmark_name: str = Field(default="manual", description="Name to log (e.g. 'mirror_match', 'B4_cedh_vs_B1_precon')")
+    n_game_pairs: int = 2
+    max_turns_per_game: int = 25
+    expected_winrate_min: Optional[float] = None
+    expected_winrate_max: Optional[float] = None
+
+
+class PlaytestBenchmarkV1Response(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    benchmark_name: str
+    deck_a_label: str
+    deck_b_label: str
+    n_games: int
+    deck_a_winrate: float
+    expected_winrate_min: Optional[float] = None
+    expected_winrate_max: Optional[float] = None
+    passes_assertion: Optional[bool] = None
+    overall_calibration_status: str
+    per_game_log: List[Dict[str, Any]] = Field(default_factory=list)
+    warnings: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class DeckSaveToLibraryV1Request(BaseModel):
+    """Pillar C.2 — save a deck to the Obsidian DECK_LIBRARY."""
+    model_config = ConfigDict(extra="forbid")
+
+    db_snapshot_id: str = Field(..., description="Required snapshot ID")
+    commander: str = Field(..., description="Commander card name")
+    raw_decklist_text: str = Field(..., description="Raw decklist text")
+    deck_name: Optional[str] = None
+    archetype: Optional[str] = None
+    bracket: Optional[str] = None
+    user_id: Optional[str] = None
+    ingest_to_corpus: bool = False
+
+
+class DeckSaveToLibraryV1Response(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    page_path: Optional[str] = None
+    deck_name: Optional[str] = None
+    archetype: Optional[str] = None
+    bracket: Optional[str] = None
+    corpus_id: Optional[str] = None
+    reason: Optional[str] = None
+    warnings: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class DeckStrengthCheckV1Request(BaseModel):
+    """Pillar A.4 — strength oracle Measurement A (corpus similarity)."""
+    model_config = ConfigDict(extra="forbid")
+
+    db_snapshot_id: str = Field(..., description="Required snapshot ID")
+    commander: Optional[str] = None
+    raw_decklist_text: str = Field(..., description="Raw decklist text")
+    include_measurement_b: bool = False
+    k_nearest: int = 5
+
+
+class DeckStrengthCheckV1Response(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    db_snapshot_id: str
+    commander: Optional[str] = None
+    candidate_card_count: int
+    measurement_a: Dict[str, Any]
+    measurement_b: Optional[Dict[str, Any]] = None
+    combined_strength_band: str
+    interpretation: str
+    warnings: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class DeckCandidatePoolV1Request(BaseModel):
+    """Pillar A.3 — clustered wide candidate pool. NEVER returns top-N."""
+    model_config = ConfigDict(extra="forbid")
+
+    db_snapshot_id: str = Field(..., description="Required snapshot ID")
+    commander: Optional[str] = None
+    raw_decklist_text: str = Field(..., description="Raw decklist text")
+    intent: Optional[str] = None
+    extra_filters: Optional[Dict[str, Any]] = None
+    min_pool_size: int = 100
+    max_pool_size: int = 250
+
+
+class DeckCandidatePoolV1Response(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    db_snapshot_id: str
+    commander: Optional[str] = None
+    intent: Optional[str] = None
+    color_identity: List[str] = Field(default_factory=list)
+    deck_themes_summary: List[str] = Field(default_factory=list)
+    pool_size: int
+    clusters: List[Dict[str, Any]] = Field(default_factory=list)
+    warnings: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class DeckAnalyzeV1Request(BaseModel):
+    """Pillar A.1 — AI-facing diagnostic snapshot.
+
+    No bracket_id required: analyze estimates the natural bracket itself.
+    Designed for AI agents to call as the kickoff context for a build/improve
+    session. <500ms warm response target per DESIGN_DECISIONS.md rule 1.2.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    db_snapshot_id: str = Field(..., description="Required snapshot ID")
+    commander: Optional[str] = None
+    raw_decklist_text: str = Field(..., description="Raw decklist text (TappedOut/MTGO format)")
+    format: str = "commander"
+    include_debug: bool = False
+
+
+class DeckAnalyzeV1Response(BaseModel):
+    """See ENGINE_API_GUIDE.md /deck/analyze_v1 for field semantics."""
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    db_snapshot_id: str
+    commander_oracle_id: Optional[str] = None
+    commander: Optional[str] = None
+    card_count: int
+    color_identity: List[str] = Field(default_factory=list)
+    mana_curve: Dict[str, int] = Field(default_factory=dict)
+    subtype_density: Dict[str, int] = Field(default_factory=dict)
+    primitive_density: Dict[str, int] = Field(default_factory=dict)
+    deck_themes_v1: List[Dict[str, Any]] = Field(default_factory=list)
+    detected_combos_v1: List[Dict[str, Any]] = Field(default_factory=list)
+    missing_partners_v1: List[Dict[str, Any]] = Field(default_factory=list)
+    bracket_estimate: Optional[str] = None
+    bracket_envelope: Dict[str, Any] = Field(default_factory=dict)
+    gap_signal: List[Dict[str, Any]] = Field(default_factory=list)
+    warnings: List[Dict[str, str]] = Field(default_factory=list)
+    # Debug payload — present only when request.include_debug=True
+    debug: Optional[Dict[str, Any]] = None
 
 
 class StrategyHypothesisRequest(BaseModel):
@@ -1458,7 +1786,7 @@ def deck_tune_v1(req: DeckTuneRequest):
     baseline_build_payload = run_build_pipeline(req=build_req, conn=None, repo_root_path=REPO_ROOT)
     baseline_build_ms = _round6(max((perf_counter() - baseline_build_started_at) * 1000.0, 0.0))
 
-    tune_payload = run_deck_tune_engine_v1(
+    tune_payload = run_deck_tune_with_bracket_aware_recommendations_v1(
         canonical_deck_input=canonical_deck_input_dict,
         baseline_build_result=baseline_build_payload,
         db_snapshot_id=build_req.db_snapshot_id,
@@ -1786,7 +2114,19 @@ async def deck_complete_v1(req: DeckCompleteV1Request, request: Request):
         else None
     )
 
-    if baseline_build_status_v1 not in {"OK", "WARN"}:
+    # v1.2 Stage 1: accept OK_WITH_UNKNOWNS as a valid baseline status.
+    # Mirrors the engine-layer fix at deck_complete_engine_v1.py:508. This
+    # api/main.py guard runs BEFORE the engine layer is invoked — without
+    # the matching expansion here, the engine fix has no effect. The two
+    # guards must move in lockstep; per autonomous_repair_log this 1-line
+    # mirror is the smallest possible additive edit consistent with the
+    # spec's intent (populate added_cards_v1 on the imported-deck-with-
+    # unresolved-cards path that live-retest 2026-05-10 exercised).
+    # Response shape preserved BYTE-IDENTICAL — only the gate's accept set
+    # widens. The completion-success path was already populating
+    # added_cards_v1 correctly; this lift unblocks it for the OK_WITH_UNKNOWNS
+    # baseline status that imports routinely return.
+    if baseline_build_status_v1 not in {"OK", "WARN", "OK_WITH_UNKNOWNS"}:
         return DeckCompleteV1Response(
             status="ERROR",
             codes_v1=["BASELINE_BUILD_UNAVAILABLE"],
@@ -1879,6 +2219,35 @@ async def deck_complete_v1(req: DeckCompleteV1Request, request: Request):
                 )
             )
 
+    # v1.7.5 — adapt engine's bracket-combo violations into the strict
+    # DeckValidateViolationV1 shape. The engine layer emits rich combo
+    # metadata (card_a_name, card_b_name, combo_outcome_label, variant_id);
+    # we pack card_a_name → card_name and let the message field carry the
+    # full human-readable description. complete_status is already downgraded
+    # to BRACKET_VIOLATION by the engine when these are present.
+    engine_combo_violations = complete_payload.get("violations_v1")
+    if isinstance(engine_combo_violations, list):
+        for entry in engine_combo_violations:
+            if not isinstance(entry, dict):
+                continue
+            code = _coerce_nonempty_str(entry.get("code"))
+            if code == "":
+                continue
+            card_a = _coerce_nonempty_str(entry.get("card_a_name"))
+            card_b = _coerce_nonempty_str(entry.get("card_b_name"))
+            message = _coerce_nonempty_str(entry.get("message"))
+            if message == "":
+                message = f"Bracket violation: {code}"
+            violations_v1.append(
+                DeckValidateViolationV1(
+                    code=code,
+                    card_name=card_a,
+                    count=1,
+                    line_nos=[],
+                    message=message,
+                )
+            )
+
     response = DeckCompleteV1Response(
         status=complete_status,
         codes_v1=complete_codes,
@@ -1896,6 +2265,23 @@ async def deck_complete_v1(req: DeckCompleteV1Request, request: Request):
                 commander=build_req.commander if isinstance(build_req.commander, str) else "",
                 cards=[name for name in canonical_deck_input_dict.get("cards", []) if isinstance(name, str)],
             )
+        ),
+        # v1.7.2 Stage 1 — forward engine's deck-combo insight surfaces.
+        detected_combos_v1=(
+            complete_payload.get("detected_combos_v1")
+            if isinstance(complete_payload.get("detected_combos_v1"), list)
+            else []
+        ),
+        missing_partners_v1=(
+            complete_payload.get("missing_partners_v1")
+            if isinstance(complete_payload.get("missing_partners_v1"), list)
+            else []
+        ),
+        # Phase 2.1a — forward engine's deck theme classification.
+        deck_themes_v1=(
+            complete_payload.get("deck_themes_v1")
+            if isinstance(complete_payload.get("deck_themes_v1"), list)
+            else []
         ),
         request_hash_v1=request_hash_v1,
         unknowns=unknowns,
@@ -1948,6 +2334,357 @@ async def deck_complete_v1(req: DeckCompleteV1Request, request: Request):
         return JSONResponse(content=payload)
 
     return response
+
+
+@app.post("/agent/context_bundle_v1", response_model=AgentContextBundleV1Response)
+async def agent_context_bundle_v1(req: AgentContextBundleV1Request):
+    """Pillar A.5 — one-round-trip composite for AI agent kickoff.
+
+    Composes /deck/analyze_v1 + /deck/candidate_pool_v1 +
+    /deck/strength_check_v1 + /corpus/similar_decks_v1 (configurable via
+    `include`). Speed target: <1000ms warm.
+    """
+    from api.engine.layers.agent_endpoints_v1 import compute_agent_context_bundle_v1
+
+    result = compute_agent_context_bundle_v1(
+        db_snapshot_id=req.db_snapshot_id,
+        commander=req.commander,
+        raw_decklist_text=req.raw_decklist_text,
+        intent=req.intent,
+        include=req.include,
+    )
+    return AgentContextBundleV1Response(**result)
+
+
+@app.get("/commander/archetype_brief_v1", response_model=ArchetypeBriefV1Response)
+async def commander_archetype_brief_v1(commander: str, db_snapshot_id: str):
+    """Pillar A.5 — common archetypes + theme distribution + staples for a commander.
+
+    Derived from corpus. Speed: <300ms warm.
+    """
+    from api.engine.layers.agent_endpoints_v1 import compute_archetype_brief_v1
+
+    result = compute_archetype_brief_v1(
+        db_snapshot_id=db_snapshot_id,
+        commander=commander,
+    )
+    return ArchetypeBriefV1Response(**result)
+
+
+@app.get("/theme/top_cards_v1", response_model=ThemeTopCardsV1Response)
+async def theme_top_cards_v1(
+    theme_id: str,
+    db_snapshot_id: str,
+    color_identity: Optional[str] = None,
+    limit: int = 50,
+):
+    """Pillar A.5 — highest-signal cards for a theme.
+
+    `color_identity` is a comma-separated string like "R,W". Speed: <300ms warm.
+    """
+    from api.engine.layers.agent_endpoints_v1 import compute_theme_top_cards_v1
+
+    ci_list: Optional[List[str]] = None
+    if isinstance(color_identity, str) and color_identity.strip():
+        ci_list = [c.strip().upper() for c in color_identity.split(",") if c.strip()]
+
+    result = compute_theme_top_cards_v1(
+        db_snapshot_id=db_snapshot_id,
+        theme_id=theme_id,
+        color_identity=ci_list,
+        limit=limit,
+    )
+    return ThemeTopCardsV1Response(**result)
+
+
+@app.post("/corpus/batch_ingest_v1", response_model=CorpusBatchIngestV1Response)
+async def corpus_batch_ingest_v1(req: CorpusBatchIngestV1Request):
+    """Phase 5a — batch-ingest external decks (EDHREC, cEDH-DB, etc.) into the
+    strength oracle corpus.
+
+    Each entry gets bracket cross-checked against engine analysis. Mismatches
+    are written to `corpus_review_queue_v1.jsonl` for user review but are NOT
+    rejected — they're flagged with `verification_status: "needs_review"` and
+    still appended to the corpus so they're available with a warning.
+
+    Hard rejections: missing commander, decklist < 50 cards, invalid bracket
+    string.
+
+    Audit-logged per DESIGN_DECISIONS rule 1.3 §4.
+    """
+    from api.engine.layers.corpus_batch_ingest_v1 import batch_ingest_external_decks
+    entries = [e.model_dump(mode="python") for e in req.entries]
+    result = batch_ingest_external_decks(
+        db_snapshot_id=req.db_snapshot_id,
+        entries=entries,
+        skip_bracket_verification=req.skip_bracket_verification,
+    )
+    return CorpusBatchIngestV1Response(**result)
+
+
+@app.post("/playtest/benchmark_v1", response_model=PlaytestBenchmarkV1Response)
+async def playtest_benchmark_v1(req: PlaytestBenchmarkV1Request):
+    """Phase 5b.3 benchmark runner.
+
+    Runs N-pair anti-bias-mirrored games between two corpus decks, writes
+    the result to calibration_log_v1.jsonl, returns aggregate winrate +
+    per-game log + assertion check. Use with `benchmark_name="mirror_match"`
+    + `expected_winrate_min=0.45 expected_winrate_max=0.55` to test anti-bias.
+    """
+    from api.engine.layers.deck_strength_check_v1 import _load_corpus
+    from api.engine.playtest.mpa_calibration import run_match_anti_bias, MatchResult
+    from api.engine.playtest.mpa_card_hydration import new_commander_game_hydrated
+    from api.engine.playtest.mpa_runner import run_game, RUNNER_VERSION
+    from api.engine.playtest.mpa_policy import POLICY_VERSION
+    from api.engine.playtest.mpa_calibration_log import log_calibration_run, overall_calibration_status
+
+    warnings: List[Dict[str, str]] = []
+
+    # Resolve corpus decks. Access via module attribute, NOT direct import:
+    # `_load_corpus()` rebinds the module-level `_CORPUS_RAW` to a fresh
+    # dict, so `from ... import _CORPUS_RAW` would capture the empty pre-
+    # load value. See corpus_batch_ingest_v1.py / agent_endpoints_v1.py
+    # for the same pattern.
+    _load_corpus()
+    from api.engine.layers import deck_strength_check_v1 as _sc
+    deck_a_entry = None
+    deck_b_entry = None
+    for entry in _sc._CORPUS_RAW.get("decks", []) or []:
+        cid = entry.get("corpus_id")
+        if cid == req.deck_a_corpus_id:
+            deck_a_entry = entry
+        if cid == req.deck_b_corpus_id:
+            deck_b_entry = entry
+    if not deck_a_entry or not deck_b_entry:
+        warnings.append({
+            "code": "CORPUS_ID_NOT_FOUND",
+            "message": f"deck_a={bool(deck_a_entry)}, deck_b={bool(deck_b_entry)}",
+        })
+        return PlaytestBenchmarkV1Response(
+            benchmark_name=req.benchmark_name,
+            deck_a_label=req.deck_a_corpus_id, deck_b_label=req.deck_b_corpus_id,
+            n_games=0, deck_a_winrate=0.0,
+            overall_calibration_status=overall_calibration_status(),
+            warnings=warnings,
+        )
+
+    # Run anti-bias mirrored games
+    match = MatchResult()
+    for pair_idx in range(max(1, int(req.n_game_pairs))):
+        for swap in (False, True):
+            if swap:
+                state = new_commander_game_hydrated(
+                    db_snapshot_id=req.db_snapshot_id,
+                    commander_a_name=deck_b_entry.get("commander"),
+                    deck_a_names=deck_b_entry.get("decklist", []),
+                    commander_b_name=deck_a_entry.get("commander"),
+                    deck_b_names=deck_a_entry.get("decklist", []),
+                    seed=400 + pair_idx * 2 + 1,
+                )
+                deck_a_seat = 1
+            else:
+                state = new_commander_game_hydrated(
+                    db_snapshot_id=req.db_snapshot_id,
+                    commander_a_name=deck_a_entry.get("commander"),
+                    deck_a_names=deck_a_entry.get("decklist", []),
+                    commander_b_name=deck_b_entry.get("commander"),
+                    deck_b_names=deck_b_entry.get("decklist", []),
+                    seed=400 + pair_idx * 2,
+                )
+                deck_a_seat = 0
+            game = run_game(state, max_turns=req.max_turns_per_game)
+            match.games_played += 1
+            if game.winner_seat is None:
+                match.draws += 1
+                outcome = "draw"
+            elif game.winner_seat == deck_a_seat:
+                match.deck_a_wins += 1
+                outcome = "A_wins"
+            else:
+                match.deck_b_wins += 1
+                outcome = "B_wins"
+            match.games_log.append({
+                "pair": pair_idx, "swap": swap, "outcome": outcome,
+                "turns": game.final_turn, "loss_reason": game.loss_reason,
+            })
+
+    # Write to calibration log
+    log_entry = log_calibration_run(
+        benchmark_name=req.benchmark_name,
+        deck_a_label=req.deck_a_corpus_id,
+        deck_b_label=req.deck_b_corpus_id,
+        n_games=match.games_played,
+        deck_a_winrate=match.deck_a_winrate,
+        expected_winrate_min=req.expected_winrate_min,
+        expected_winrate_max=req.expected_winrate_max,
+        mpa_version=POLICY_VERSION,
+        runner_version=RUNNER_VERSION,
+        extra={"draws": match.draws, "deck_b_wins": match.deck_b_wins},
+    )
+
+    return PlaytestBenchmarkV1Response(
+        benchmark_name=req.benchmark_name,
+        deck_a_label=req.deck_a_corpus_id,
+        deck_b_label=req.deck_b_corpus_id,
+        n_games=match.games_played,
+        deck_a_winrate=round(match.deck_a_winrate, 4),
+        expected_winrate_min=req.expected_winrate_min,
+        expected_winrate_max=req.expected_winrate_max,
+        passes_assertion=log_entry.get("passes_assertion"),
+        overall_calibration_status=overall_calibration_status(),
+        per_game_log=match.games_log,
+        warnings=warnings,
+    )
+
+
+@app.post("/deck/save_to_library_v1", response_model=DeckSaveToLibraryV1Response)
+async def deck_save_to_library_v1(req: DeckSaveToLibraryV1Request):
+    """Pillar C.2 — save deck as Obsidian DECK_LIBRARY page.
+
+    Writes a markdown page under `Mtg deck building brain/20_DECK_LIBRARY/`
+    with themes, gaps, bracket, strength check, and full decklist. Optionally
+    ingests the deck into the strength-oracle corpus (self-learning) when
+    `ingest_to_corpus=true`.
+
+    Library path can be overridden via env var `MTG_DECK_LIBRARY_PATH`.
+    """
+    from api.engine.layers.deck_library_v1 import save_deck_to_library_v1
+
+    result = save_deck_to_library_v1(
+        db_snapshot_id=req.db_snapshot_id,
+        commander=req.commander,
+        raw_decklist_text=req.raw_decklist_text,
+        deck_name=req.deck_name,
+        archetype=req.archetype,
+        bracket=req.bracket,
+        user_id=req.user_id,
+        ingest_to_corpus=req.ingest_to_corpus,
+    )
+    return DeckSaveToLibraryV1Response(**result)
+
+
+@app.post("/corpus/similar_decks_v1", response_model=CorpusSimilarDecksV1Response)
+async def corpus_similar_decks_v1(req: CorpusSimilarDecksV1Request):
+    """Pillar A.5 — k corpus decks most similar to the given deck.
+
+    Optionally embeds the full decklist for each. Speed: <500ms warm.
+    """
+    from api.engine.layers.agent_endpoints_v1 import compute_corpus_similar_decks_v1
+
+    result = compute_corpus_similar_decks_v1(
+        db_snapshot_id=req.db_snapshot_id,
+        commander=req.commander,
+        raw_decklist_text=req.raw_decklist_text,
+        k=req.k,
+        include_decklists=req.include_decklists,
+    )
+    return CorpusSimilarDecksV1Response(**result)
+
+
+@app.post("/deck/strength_check_v1", response_model=DeckStrengthCheckV1Response)
+async def deck_strength_check_v1(req: DeckStrengthCheckV1Request):
+    """Pillar A.4 — strength oracle (Measurement A: corpus similarity).
+
+    Returns cosine-similarity-ranked nearest corpus neighbors + axis-deviation
+    flags + archetype consensus + interpretation. Measurement B (playtest
+    win rate) wires in after Phase 5b.
+
+    Speed target: <500ms warm. First call vectorizes the corpus
+    (one-time cost per snapshot); subsequent calls hit the cached vectors.
+    """
+    from api.engine.layers.deck_strength_check_v1 import compute_deck_strength_check_v1
+
+    result = compute_deck_strength_check_v1(
+        db_snapshot_id=req.db_snapshot_id,
+        commander=req.commander,
+        raw_decklist_text=req.raw_decklist_text,
+        include_measurement_b=req.include_measurement_b,
+        k_nearest=req.k_nearest,
+    )
+    return DeckStrengthCheckV1Response(**result)
+
+
+@app.post("/deck/candidate_pool_v1", response_model=DeckCandidatePoolV1Response)
+async def deck_candidate_pool_v1(req: DeckCandidatePoolV1Request):
+    """Pillar A.3 — clustered wide candidate pool.
+
+    Returns ≥100 candidate cards clustered by which axis they shore up
+    (ramp/draw/removal/protection + per-theme deepening). Each cluster
+    has rationale + annotated candidates. NEVER returns top-N — AI ranks
+    within each cluster.
+
+    Speed target: <500ms warm (composes analyze + 5-8 card_search calls).
+    """
+    from api.engine.layers.deck_candidate_pool_v1 import compute_candidate_pool_v1
+
+    result = compute_candidate_pool_v1(
+        db_snapshot_id=req.db_snapshot_id,
+        commander=req.commander,
+        raw_decklist_text=req.raw_decklist_text,
+        intent=req.intent,
+        extra_filters=req.extra_filters,
+        min_pool_size=req.min_pool_size,
+        max_pool_size=req.max_pool_size,
+    )
+    return DeckCandidatePoolV1Response(**result)
+
+
+@app.post("/card/search_v1", response_model=CardSearchV1Response)
+async def card_search_v1(req: CardSearchV1Request):
+    """Pillar A.2 — rich-filter card lookup over the snapshot.
+
+    Returns wide annotated pools. Sort options are structural (name, cmc,
+    color_identity_size) — never a quality score, per the creativity envelope
+    rule in DESIGN_DECISIONS.md.
+
+    Speed target: <500ms warm. Uses the primitive_to_cards inverted index
+    table for primitive filters; SQL handles cmc/type/subtype/name filters
+    inline; color_identity does post-fetch JSON parse.
+    """
+    from api.engine.layers.card_search_v1 import search_cards_v1
+
+    result = search_cards_v1(
+        db_snapshot_id=req.db_snapshot_id,
+        taxonomy_version=req.taxonomy_version,
+        filters=req.filters.model_dump(mode="python"),
+        limit=req.limit,
+        offset=req.offset,
+        sort_by=req.sort_by,
+        include=req.include,
+    )
+    return CardSearchV1Response(**result)
+
+
+@app.post("/deck/analyze_v1", response_model=DeckAnalyzeV1Response)
+async def deck_analyze_v1(req: DeckAnalyzeV1Request):
+    """Pillar A.1 — AI-facing analyze endpoint.
+
+    Returns a structured diagnostic snapshot of the deck. Designed for
+    AI agents to call once at the start of a build/improve session.
+    No bracket_id input — the endpoint estimates the natural bracket.
+
+    Architectural rules served (see DESIGN_DECISIONS.md):
+      - 1.1 Creativity envelope: returns structural facts only, no
+        candidate cards or rankings.
+      - 1.2 Speed budget: <500ms warm response target.
+      - 1.3 Strength oracle: gap_signal returns [] until Pillar A.4
+        corpus ships (calibration-honest, no fabricated axis norms).
+    """
+    from api.engine.layers.deck_analyze_v1 import compute_deck_analyze_v1
+
+    result = compute_deck_analyze_v1(
+        db_snapshot_id=req.db_snapshot_id,
+        commander=req.commander,
+        raw_decklist_text=req.raw_decklist_text,
+        include_debug=req.include_debug,
+    )
+
+    # Pop the optional debug payload into the strict response field
+    debug = result.pop("_debug", None) if isinstance(result, dict) else None
+    if debug is not None:
+        result["debug"] = debug
+
+    return DeckAnalyzeV1Response(**result)
 
 
 @app.post("/strategy_hypothesis_v0")
