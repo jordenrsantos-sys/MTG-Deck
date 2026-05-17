@@ -42,6 +42,7 @@ class UpdateComboPacksFromSpellbookTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertFalse((output_dir / "commander_spellbook_variants_v1.json").exists())
         self.assertFalse((output_dir / "two_card_combos_v2.json").exists())
+        self.assertFalse((output_dir / "combo_brackets_v1.json").exists())
 
     def test_main_writes_and_is_deterministic_across_repeated_runs(self) -> None:
         page_one = {
@@ -81,7 +82,8 @@ class UpdateComboPacksFromSpellbookTests(unittest.TestCase):
         with TemporaryDirectory() as tmp_dir:
             output_dir = Path(tmp_dir)
 
-            with patch.object(updater, "_fetch_json", side_effect=_fetch_json_side_effect):
+            with patch.object(updater, "_fetch_json", side_effect=_fetch_json_side_effect), \
+                 patch.object(updater, "_now_iso_utc", return_value="2026-05-17T00:00:00Z"):
                 first_exit = updater.main(
                     [
                         "--api-base",
@@ -95,13 +97,16 @@ class UpdateComboPacksFromSpellbookTests(unittest.TestCase):
 
             variants_path = output_dir / "commander_spellbook_variants_v1.json"
             two_card_path = output_dir / "two_card_combos_v2.json"
+            combo_brackets_path = output_dir / "combo_brackets_v1.json"
 
             self.assertEqual(first_exit, 0)
             self.assertTrue(variants_path.is_file())
             self.assertTrue(two_card_path.is_file())
+            self.assertTrue(combo_brackets_path.is_file())
 
             first_variants_text = variants_path.read_text(encoding="utf-8")
             first_two_card_text = two_card_path.read_text(encoding="utf-8")
+            first_combo_brackets_text = combo_brackets_path.read_text(encoding="utf-8")
 
             variants_payload = json.loads(first_variants_text)
             two_card_payload = json.loads(first_two_card_text)
@@ -133,7 +138,8 @@ class UpdateComboPacksFromSpellbookTests(unittest.TestCase):
                 ],
             )
 
-            with patch.object(updater, "_fetch_json", side_effect=_fetch_json_side_effect):
+            with patch.object(updater, "_fetch_json", side_effect=_fetch_json_side_effect), \
+                 patch.object(updater, "_now_iso_utc", return_value="2026-05-17T00:00:00Z"):
                 second_exit = updater.main(
                     [
                         "--api-base",
@@ -148,6 +154,7 @@ class UpdateComboPacksFromSpellbookTests(unittest.TestCase):
             self.assertEqual(second_exit, 0)
             self.assertEqual(first_variants_text, variants_path.read_text(encoding="utf-8"))
             self.assertEqual(first_two_card_text, two_card_path.read_text(encoding="utf-8"))
+            self.assertEqual(first_combo_brackets_text, combo_brackets_path.read_text(encoding="utf-8"))
 
     def test_main_handles_nested_card_uses_shape_from_live_api(self) -> None:
         # Regression for the 2026-05-05 ingest blocker: the live Commander Spellbook API
@@ -258,6 +265,93 @@ class UpdateComboPacksFromSpellbookTests(unittest.TestCase):
         # instead of silently producing zero rows.
         with self.assertRaisesRegex(RuntimeError, "response shape may have changed"):
             updater._extract_rows_and_next({"unknown_key": [1, 2]})
+
+    def test_combo_brackets_payload_maps_letters_and_filters_non_commander_legal(self) -> None:
+        rows = [
+            # R (Ruthless) -> early / ["B4","B5"]; commander-legal -> KEEP
+            {
+                "id": "742-1295",
+                "bracketTag": "R",
+                "identity": "UB",
+                "popularity": 140515,
+                "manaNeeded": "{B}{U}{U}",
+                "manaValueNeeded": 3,
+                "description": "Win immediately.",
+                "easyPrerequisites": "",
+                "notablePrerequisites": "",
+                "nonCardPrerequisiteCount": 0,
+                "uses": [
+                    {"card": {"name": "Demonic Consultation"}},
+                    {"card": {"name": "Thassa's Oracle"}},
+                ],
+                "produces": [{"feature": {"name": "Win the game"}}],
+                "requires": [],
+                "legalities": {"commander": True, "vintage": True, "modern": False},
+            },
+            # E (Exhibition) -> universal; commander-legal -> KEEP
+            {
+                "id": "X-Y",
+                "bracketTag": "E",
+                "identity": "WUB",
+                "popularity": 0,
+                "manaValueNeeded": 5,
+                "nonCardPrerequisiteCount": 1,  # has_extra_prerequisite True
+                "uses": [
+                    {"card": {"name": "Card One"}},
+                    {"card": {"name": "Card Two"}},
+                ],
+                "produces": [],
+                "requires": [{"template": {"name": "Any sac outlet"}}],
+                "legalities": {"commander": True},
+            },
+            # B (Banned) -> banned bucket; NOT commander-legal -> DROP
+            {
+                "id": "BANNED-1",
+                "bracketTag": "B",
+                "identity": "R",
+                "uses": [{"card": {"name": "A"}}, {"card": {"name": "B"}}],
+                "legalities": {"commander": False},
+            },
+        ]
+
+        payload = updater._build_combo_brackets_payload(rows, scraped_at="2026-05-17T00:00:00Z")
+
+        self.assertEqual(payload["version"], "combo_brackets_v1.0")
+        self.assertEqual(payload["scraped_at"], "2026-05-17T00:00:00Z")
+        self.assertEqual(payload["total_variants"], 2)
+        self.assertEqual(set(payload["by_variant_id"].keys()), {"742-1295", "X-Y"})
+
+        thoracle = payload["by_variant_id"]["742-1295"]
+        self.assertEqual(thoracle["category"], "early")
+        self.assertEqual(thoracle["brackets_allowed"], ["B4", "B5"])
+        self.assertEqual(thoracle["bracket_tag_raw"], "R")
+        self.assertEqual(thoracle["card_names"], ["Demonic Consultation", "Thassa's Oracle"])
+        self.assertEqual(thoracle["color_identity"], ["B", "U"])
+        self.assertEqual(thoracle["combo_size"], 2)
+        self.assertFalse(thoracle["has_extra_prerequisite"])
+        self.assertEqual(thoracle["results"], ["Win the game"])
+        self.assertEqual(thoracle["source_url"], "https://commanderspellbook.com/combo/742-1295")
+
+        universal = payload["by_variant_id"]["X-Y"]
+        self.assertEqual(universal["category"], "universal")
+        self.assertEqual(universal["brackets_allowed"], ["B1", "B2", "B3", "B4", "B5"])
+        self.assertTrue(universal["has_extra_prerequisite"])
+        self.assertEqual(universal["requires_text"], ["Any sac outlet"])
+
+    def test_combo_brackets_payload_raises_on_unknown_bracket_tag(self) -> None:
+        # Halt criterion: if Spellbook adds a new tier (e.g. "Z"), we must
+        # raise rather than silently misclassify.
+        rows = [
+            {
+                "id": "NEW-TAG",
+                "bracketTag": "Z",
+                "identity": "W",
+                "uses": [{"card": {"name": "A"}}, {"card": {"name": "B"}}],
+                "legalities": {"commander": True},
+            },
+        ]
+        with self.assertRaisesRegex(RuntimeError, "Unknown bracketTag"):
+            updater._build_combo_brackets_payload(rows, scraped_at="2026-05-17T00:00:00Z")
 
 
 if __name__ == "__main__":

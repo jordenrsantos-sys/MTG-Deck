@@ -243,6 +243,7 @@ SECTION 3 — DATA PACKS REQUIRED
 [x] two_card_combos_v2.json  (COMPLETE - implementation_plan_v1_16 reference)
 [x] two_card_combos_v1.json  (COMPLETE - implementation_plan_v1_16 reference, legacy fallback)
 [x] commander_spellbook_combo_outcomes_v1.json  (COMPLETE - v1.7 Stage 1.5 — outcome label pack sourced from Commander Spellbook variants dump, consumed by combo_enabler_reasons_v1 layer)
+[x] combo_brackets_v1.json  (COMPLETE - Phase 5a.2 — per-combo bracket classification sourced from Commander Spellbook bracketTag field, consumed by corpus_batch_ingest_v1 _compute_min_legal_bracket via _load_combo_brackets cached helper)
 [ ] calibration_snapshot_v1.json
 
 ---------------------------------------------------------------------

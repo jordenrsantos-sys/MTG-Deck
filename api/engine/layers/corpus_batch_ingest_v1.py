@@ -19,10 +19,71 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
-VERSION = "corpus_batch_ingest_v1.4_atomic_writes_and_module_attr"
+VERSION = "corpus_batch_ingest_v1.5_spellbook_brackets"
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]  # api/engine/layers/THIS -> repo/
 _REVIEW_QUEUE_PATH = _REPO_ROOT / "api" / "engine" / "data" / "corpus" / "corpus_review_queue_v1.jsonl"
+_COMBO_BRACKETS_PATH = _REPO_ROOT / "api" / "engine" / "data" / "combos" / "combo_brackets_v1.json"
+
+# Module-level cache for combo bracket data. Loaded on first call to
+# _load_combo_brackets() and reused. Replaces the v1.4 hardcoded 30-pair list
+# with Spellbook's per-combo bracketTag classification (4000+ entries; ~3700
+# after filtering to combo_size==2 AND has_extra_prerequisite==False).
+_COMBO_BRACKETS_CACHE: Optional[Dict[frozenset, Dict[str, Any]]] = None
+
+
+def _load_combo_brackets() -> Dict[frozenset, Dict[str, Any]]:
+    """Return frozenset({card_a_lower, card_b_lower}) -> bracket info, cached.
+
+    Reads `combo_brackets_v1.json` (built by tools/update_combo_packs_from_spellbook.py
+    from Spellbook's per-variant bracketTag). Filters down to pure 2-card combos
+    with no extra non-card prerequisite — the only subset usable for deck-content
+    inference. Empty brackets_allowed (e.g. banned-in-commander) are skipped.
+    """
+    global _COMBO_BRACKETS_CACHE
+    if _COMBO_BRACKETS_CACHE is not None:
+        return _COMBO_BRACKETS_CACHE
+    pairs: Dict[frozenset, Dict[str, Any]] = {}
+    try:
+        with open(_COMBO_BRACKETS_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        _COMBO_BRACKETS_CACHE = pairs
+        return _COMBO_BRACKETS_CACHE
+    for variant_id, info in (data.get("by_variant_id") or {}).items():
+        if not isinstance(info, dict):
+            continue
+        if info.get("combo_size") != 2:
+            continue
+        if info.get("has_extra_prerequisite"):
+            continue
+        names = info.get("card_names") or []
+        if len(names) != 2:
+            continue
+        brackets_allowed = info.get("brackets_allowed") or []
+        if not brackets_allowed:
+            continue
+        a_lower = str(names[0]).strip().lower()
+        b_lower = str(names[1]).strip().lower()
+        if not a_lower or not b_lower or a_lower == b_lower:
+            continue
+        key = frozenset({a_lower, b_lower})
+        pairs[key] = {
+            "card_names": list(names),
+            "brackets_allowed": list(brackets_allowed),
+            "category": info.get("category") or "",
+            "bracket_tag_raw": info.get("bracket_tag_raw") or "",
+            "variant_id": variant_id,
+        }
+    _COMBO_BRACKETS_CACHE = pairs
+    return _COMBO_BRACKETS_CACHE
+
+
+def _floor_from_brackets_allowed(brackets_allowed: List[str]) -> Optional[str]:
+    """Lowest bracket in the allowed list (= floor)."""
+    if not brackets_allowed:
+        return None
+    return min(brackets_allowed, key=lambda b: _BRACKET_ORDER.index(b) if b in _BRACKET_ORDER else 99)
 
 
 # ============================================================
@@ -315,65 +376,71 @@ def _compute_min_legal_bracket(
         sigs["game_changers_error"] = exc.__class__.__name__ + ": " + str(exc)
     sigs["game_changers"] = gc_found
 
-    # 2. 2-card combo pairs (hand-curated for now; replace with EDHREC scrape in Phase 5a.2)
-    TWO_CARD_COMBO_PAIRS = [
-        # EARLY (B4/B5 only)
-        ("kiki-jiki, mirror breaker", "conspicuous snoop", "early"),
-        ("kiki-jiki, mirror breaker", "pestermite", "early"),
-        ("kiki-jiki, mirror breaker", "deceiver exarch", "early"),
-        ("kiki-jiki, mirror breaker", "zealous conscripts", "early"),
-        ("kiki-jiki, mirror breaker", "combat celebrant", "early"),
-        ("kiki-jiki, mirror breaker", "felidar guardian", "early"),
-        ("splinter twin", "pestermite", "early"),
-        ("splinter twin", "deceiver exarch", "early"),
-        ("thassa's oracle", "demonic consultation", "early"),
-        ("thassa's oracle", "tainted pact", "early"),
-        ("laboratory maniac", "demonic consultation", "early"),
-        ("laboratory maniac", "tainted pact", "early"),
-        ("jace, wielder of mysteries", "demonic consultation", "early"),
-        ("jace, wielder of mysteries", "tainted pact", "early"),
-        ("isochron scepter", "dramatic reversal", "early"),
-        ("food chain", "eternal scourge", "early"),
-        ("food chain", "misthollow griffin", "early"),
-        ("food chain", "squee, the immortal", "early"),
-        ("dockside extortionist", "temur sabertooth", "early"),
-        ("underworld breach", "lion's eye diamond", "early"),
-        ("underworld breach", "brain freeze", "early"),
-        ("aetherflux reservoir", "bolas's citadel", "early"),
-        ("aetherflux reservoir", "sensei's divining top", "early"),
-        ("worldgorger dragon", "animate dead", "early"),
-        ("worldgorger dragon", "necromancy", "early"),
-        ("worldgorger dragon", "dance of the dead", "early"),
-        ("protean hulk", "flash", "early"),
-        ("necrotic ooze", "phyrexian devourer", "early"),
-        ("necrotic ooze", "walking ballista", "early"),
-        # LATE (B3/B4/B5)
-        ("helm of obedience", "rest in peace", "late"),
-        ("helm of obedience", "leyline of the void", "late"),
-        ("mikaeus, the unhallowed", "triskelion", "late"),
-        ("mikaeus, the unhallowed", "walking ballista", "late"),
-        ("exquisite blood", "sanguine bond", "late"),
-        ("exquisite blood", "vito, thorn of the dusk rose", "late"),
-        ("felidar guardian", "saheeli rai", "late"),
-    ]
-    early_hits = []
-    late_hits = []
-    for a, b, kind in TWO_CARD_COMBO_PAIRS:
-        if a in deck_lower and b in deck_lower:
-            if kind == "early":
-                early_hits.append((a, b))
-            else:
-                late_hits.append((a, b))
-    sigs["early_combo_pairs"] = early_hits
-    sigs["late_combo_pairs"] = late_hits
+    # 2. 2-card combo pairs — loaded from Spellbook-derived combo_brackets_v1.json.
+    # Replaces the v1.4 hardcoded 30-pair curated list with ~3700 Spellbook entries
+    # (filtered to combo_size==2 AND has_extra_prerequisite==False). Per-pair floor
+    # is min(brackets_allowed); deck floor is max across all detected pair floors.
+    combo_data = _load_combo_brackets()
+    combo_hits: List[Dict[str, Any]] = []
+    for pair_key, pair_info in combo_data.items():
+        if pair_key.issubset(deck_lower):
+            combo_hits.append(pair_info)
 
-    combo_floor = None
-    if early_hits:
-        combo_floor = "B4"
-        reasons.append(str(len(early_hits)) + " early-game 2-card combo pair(s) → floor B4: " + str(early_hits[:2]))
-    elif late_hits:
-        combo_floor = "B3"
-        reasons.append(str(len(late_hits)) + " late-game 2-card combo pair(s) -> floor B3: " + str(late_hits[:2]))
+    # Deck floor across detected pairs (highest individual floor wins)
+    combo_floor: Optional[str] = None
+    for hit in combo_hits:
+        pair_floor = _floor_from_brackets_allowed(hit["brackets_allowed"])
+        if pair_floor is None:
+            continue
+        if combo_floor is None or _BRACKET_ORDER.index(pair_floor) > _BRACKET_ORDER.index(combo_floor):
+            combo_floor = pair_floor
+
+    # Group hits by Spellbook category for diagnostics + bump_reason text
+    hits_by_category: Dict[str, List[Dict[str, Any]]] = {}
+    for hit in combo_hits:
+        hits_by_category.setdefault(hit["category"], []).append(hit)
+
+    # Preserve old signature keys (list of (a,b) name-tuples) for back-compat
+    # with downstream consumers that read result_entry["signatures"] shape from
+    # v1.4. Add per-category keys for the new 4-tier Spellbook taxonomy.
+    def _name_tuple(hit: Dict[str, Any]) -> Tuple[str, str]:
+        names = [str(n).lower() for n in hit.get("card_names") or []]
+        names.sort()
+        return tuple(names) if len(names) == 2 else ("", "")
+
+    sigs["early_combo_pairs"] = [_name_tuple(h) for h in hits_by_category.get("early", [])]
+    sigs["late_combo_pairs"] = [_name_tuple(h) for h in hits_by_category.get("late", [])]
+    sigs["core_plus_combo_pairs"] = [_name_tuple(h) for h in hits_by_category.get("core_plus", [])]
+    sigs["universal_combo_pairs"] = [_name_tuple(h) for h in hits_by_category.get("universal", [])]
+    # Rich per-hit detail (variant_id + bracket_tag_raw) for diagnostics tooling
+    sigs["combo_hits_detail"] = [
+        {
+            "card_names": list(h.get("card_names") or []),
+            "category": h.get("category", ""),
+            "bracket_tag_raw": h.get("bracket_tag_raw", ""),
+            "brackets_allowed": list(h.get("brackets_allowed") or []),
+            "variant_id": h.get("variant_id", ""),
+        }
+        for h in combo_hits
+    ]
+
+    if combo_floor is not None:
+        # Build a focused reason mentioning the category that drove the floor
+        floor_idx = _BRACKET_ORDER.index(combo_floor)
+        floor_drivers = [
+            h for h in combo_hits
+            if _floor_from_brackets_allowed(h["brackets_allowed"]) == combo_floor
+        ]
+        if floor_drivers:
+            sample = floor_drivers[0]
+            sample_names = sample.get("card_names") or ["?", "?"]
+            reasons.append(
+                str(len(floor_drivers)) + " " + (sample.get("category") or "?")
+                + "-category 2-card combo(s) → floor " + combo_floor + ": "
+                + str(sample_names[0]) + " + " + str(sample_names[1])
+                + " [Spellbook tag " + (sample.get("bracket_tag_raw") or "?") + "]"
+                + (" (+" + str(len(floor_drivers) - 1) + " more)" if len(floor_drivers) > 1 else "")
+            )
 
     # Fast-mana and tutor-density soft signals removed 2026-05-17 per user
     # direction: those cards are mostly on the Game Changers list anyway, so

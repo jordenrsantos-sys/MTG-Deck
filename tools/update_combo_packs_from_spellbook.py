@@ -7,6 +7,7 @@ import os
 import sys
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from urllib.error import HTTPError, URLError
@@ -16,6 +17,32 @@ from urllib.request import Request, urlopen
 
 SPELLBOOK_VARIANTS_V1_VERSION = "commander_spellbook_variants_v1"
 TWO_CARD_COMBOS_V2_VERSION = "two_card_combos_v2"
+COMBO_BRACKETS_V1_VERSION = "combo_brackets_v1.0"
+
+
+# Per-letter bracket mapping derived from the Spellbook Django model:
+# commander-spellbook-backend/backend/spellbook/models/variant.py
+# BracketTag TextChoices + the `bracket` GeneratedField Case/When (1-4).
+# Spellbook collapses Wizards B4+B5; we map their highest bracket to both.
+_LETTER_TO_BRACKETS_ALLOWED: Dict[str, List[str]] = {
+    "E": ["B1", "B2", "B3", "B4", "B5"],  # Exhibition
+    "C": ["B2", "B3", "B4", "B5"],         # Core
+    "O": ["B2", "B3", "B4", "B5"],         # Oddball
+    "S": ["B3", "B4", "B5"],                # Spicy
+    "P": ["B3", "B4", "B5"],                # Powerful
+    "R": ["B4", "B5"],                       # Ruthless
+    "B": [],                                  # Banned
+}
+
+_LETTER_TO_CATEGORY: Dict[str, str] = {
+    "E": "universal",
+    "C": "core_plus",
+    "O": "core_plus",
+    "S": "late",
+    "P": "late",
+    "R": "early",
+    "B": "banned",
+}
 
 
 def _stable_json_dumps(payload: Any) -> str:
@@ -24,6 +51,11 @@ def _stable_json_dumps(payload: Any) -> str:
 
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _now_iso_utc() -> str:
+    # Indirection so tests can patch a fixed timestamp into deterministic output.
+    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _nonempty_str(value: Any) -> str | None:
@@ -57,9 +89,34 @@ def _canonical_card_key(value: Any) -> str | None:
 
 def _fetch_json(url: str, *, timeout_seconds: int) -> Any:
     request = Request(url=url, headers={"Accept": "application/json", "User-Agent": "mtg-engine-combo-updater/1.0"})
-    with urlopen(request, timeout=timeout_seconds) as response:
-        body = response.read().decode("utf-8")
-    return json.loads(body)
+    # 429-resilient: back off honoring Retry-After (if provided) or exponential
+    # fallback. Spellbook rate-limits aggressively on bursty paginated reads;
+    # the 2026-05-17 corpus-bracket scrape burnt the budget in pre-flight probes
+    # and the updater hit 429 on its first full-page fetch. Per Phase 5a.2
+    # playbook halt rules, 429 is "back off + resume", not a hard stop.
+    max_attempts = 6
+    for attempt in range(max_attempts):
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response:
+                body = response.read().decode("utf-8")
+            return json.loads(body)
+        except HTTPError as exc:
+            if exc.code != 429 or attempt == max_attempts - 1:
+                raise
+            retry_after_header = exc.headers.get("Retry-After") if exc.headers else None
+            try:
+                wait_seconds = int(retry_after_header) if retry_after_header else 0
+            except (TypeError, ValueError):
+                wait_seconds = 0
+            if wait_seconds <= 0:
+                wait_seconds = min(300, 30 * (2 ** attempt))  # 30, 60, 120, 240, 300...
+            print(
+                f"WARN: 429 from {url} (attempt {attempt + 1}/{max_attempts}); "
+                f"backing off {wait_seconds}s",
+                file=sys.stderr,
+            )
+            time.sleep(wait_seconds)
+    raise RuntimeError("unreachable: max_attempts loop exited without return")
 
 
 def _extract_rows_and_next(payload: Any) -> Tuple[List[Any], str | None]:
@@ -195,6 +252,126 @@ def _build_two_card_payload(variants_payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _build_combo_brackets_payload(rows: List[Any], *, scraped_at: str) -> Dict[str, Any]:
+    """Build the EDHREC-style combo_brackets_v1.json from raw Spellbook variants.
+
+    Spellbook's bracketTag is the authoritative per-combo bracket signal. See
+    commander-spellbook-backend/backend/spellbook/models/variant.py BracketTag
+    TextChoices and the `bracket` GeneratedField Case/When for the canonical
+    letter -> numeric bracket mapping (1-4, where Spellbook collapses Wizards
+    B4+B5 into their bracket 4).
+
+    Operates on RAW API rows (not _normalize_variant output) because the
+    existing variants normalizer is pinned by tests with strict equality
+    assertions on its output shape, and bulking it up with the dozen new
+    fields would force test churn for no benefit.
+
+    Filters out variants not legal in Commander. Halts on unknown bracketTag
+    (signals Spellbook added a new tier we don't handle).
+    """
+    by_variant: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        variant_id = _nonempty_str(row.get("variant_id")) or _nonempty_str(row.get("id"))
+        if variant_id is None:
+            continue
+
+        legalities = row.get("legalities") if isinstance(row.get("legalities"), dict) else None
+        if not legalities or not legalities.get("commander"):
+            continue
+
+        bracket_tag = _nonempty_str(row.get("bracketTag"))
+        if bracket_tag is None:
+            continue
+        if bracket_tag not in _LETTER_TO_BRACKETS_ALLOWED:
+            raise RuntimeError(
+                "Unknown bracketTag " + repr(bracket_tag) + " on variant " + variant_id
+                + " - Spellbook may have added a new tier; update _LETTER_TO_BRACKETS_ALLOWED."
+            )
+
+        uses_raw = row.get("uses") if isinstance(row.get("uses"), list) else []
+        card_names: List[str] = []
+        for use in uses_raw:
+            if not isinstance(use, dict):
+                continue
+            card = use.get("card") if isinstance(use.get("card"), dict) else {}
+            name = _nonempty_str(card.get("name"))
+            if name is not None:
+                card_names.append(name)
+        if len(card_names) < 2:
+            continue
+
+        identity_str = _nonempty_str(row.get("identity")) or ""
+        color_identity = sorted({ch for ch in identity_str if ch in "WUBRG"})
+
+        produces_raw = row.get("produces") if isinstance(row.get("produces"), list) else []
+        results: List[str] = []
+        for produced in produces_raw:
+            if not isinstance(produced, dict):
+                continue
+            feature = produced.get("feature") if isinstance(produced.get("feature"), dict) else {}
+            name = _nonempty_str(feature.get("name"))
+            if name is not None:
+                results.append(name)
+
+        requires_raw = row.get("requires") if isinstance(row.get("requires"), list) else []
+        requires_text: List[str] = []
+        for req in requires_raw:
+            if isinstance(req, dict):
+                txt = _nonempty_str(req.get("name"))
+                if txt is None and isinstance(req.get("template"), dict):
+                    txt = _nonempty_str(req["template"].get("name"))
+                if txt is not None:
+                    requires_text.append(txt)
+            elif isinstance(req, str):
+                txt = _nonempty_str(req)
+                if txt is not None:
+                    requires_text.append(txt)
+
+        # has_extra_prerequisite is the signal that a "combo" needs more than just
+        # its named cards on the battlefield — e.g. "any sac outlet" or "equipment
+        # with equip cost {1}". Spellbook represents these as `requires[]` template
+        # objects. (The legacy `nonCardPrerequisiteCount` int field is populated on
+        # the per-variant detail endpoint but comes back as null from the bulk list
+        # endpoint we paginate here, so we derive from requires[] which IS populated.)
+        has_extra_prerequisite = len(requires_text) > 0
+
+        popularity_raw = row.get("popularity")
+        popularity = int(popularity_raw) if isinstance(popularity_raw, int) else None
+
+        mv_raw = row.get("manaValueNeeded")
+        mana_value_needed = int(mv_raw) if isinstance(mv_raw, int) else None
+
+        by_variant[variant_id] = {
+            "card_names": card_names,
+            "color_identity": color_identity,
+            "combo_size": len(card_names),
+            "brackets_allowed": list(_LETTER_TO_BRACKETS_ALLOWED[bracket_tag]),
+            "category": _LETTER_TO_CATEGORY[bracket_tag],
+            "bracket_tag_raw": bracket_tag,
+            "popularity": popularity,
+            "mana_value_needed": mana_value_needed,
+            "mana_needed": _nonempty_str(row.get("manaNeeded")) or "",
+            "description": _nonempty_str(row.get("description")) or "",
+            "easy_prerequisites": _nonempty_str(row.get("easyPrerequisites")) or "",
+            "notable_prerequisites": _nonempty_str(row.get("notablePrerequisites")) or "",
+            "results": results,
+            "requires_text": requires_text,
+            "has_extra_prerequisite": has_extra_prerequisite,
+            "legalities": dict(legalities),
+            "source_url": "https://commanderspellbook.com/combo/" + variant_id,
+        }
+
+    return {
+        "version": COMBO_BRACKETS_V1_VERSION,
+        "scraped_at": scraped_at,
+        "source": "json.commanderspellbook.com/variants/",
+        "total_variants": len(by_variant),
+        "by_variant_id": by_variant,
+    }
+
+
 def _read_file_text(path: Path) -> str | None:
     if not path.is_file():
         return None
@@ -287,21 +464,27 @@ def main(argv: List[str] | None = None) -> int:
 
     variants_payload = _build_variants_payload(rows, generated_from=args.endpoint)
     two_card_payload = _build_two_card_payload(variants_payload)
+    combo_brackets_payload = _build_combo_brackets_payload(rows, scraped_at=_now_iso_utc())
 
     output_dir = Path(args.output_dir)
     variants_path = output_dir / "commander_spellbook_variants_v1.json"
     two_card_path = output_dir / "two_card_combos_v2.json"
+    combo_brackets_path = output_dir / "combo_brackets_v1.json"
 
     variants_text = _stable_json_dumps(variants_payload) + "\n"
     two_card_text = _stable_json_dumps(two_card_payload) + "\n"
+    combo_brackets_text = _stable_json_dumps(combo_brackets_payload) + "\n"
 
     previous_variants = _read_file_text(variants_path)
     previous_two_card = _read_file_text(two_card_path)
+    previous_combo_brackets = _read_file_text(combo_brackets_path)
 
     new_variants_hash = _sha256_text(variants_text)
     new_two_card_hash = _sha256_text(two_card_text)
+    new_combo_brackets_hash = _sha256_text(combo_brackets_text)
     old_variants_hash = _sha256_text(previous_variants) if previous_variants is not None else None
     old_two_card_hash = _sha256_text(previous_two_card) if previous_two_card is not None else None
+    old_combo_brackets_hash = _sha256_text(previous_combo_brackets) if previous_combo_brackets is not None else None
 
     if not args.dry_run:
         try:
@@ -309,6 +492,7 @@ def main(argv: List[str] | None = None) -> int:
                 {
                     variants_path: variants_text,
                     two_card_path: two_card_text,
+                    combo_brackets_path: combo_brackets_text,
                 },
                 allow_partial_write=bool(args.allow_partial_write),
             )
@@ -318,9 +502,11 @@ def main(argv: List[str] | None = None) -> int:
 
     variants_count = len(variants_payload.get("variants") or [])
     two_card_count = len(two_card_payload.get("pairs") or [])
+    combo_brackets_count = len(combo_brackets_payload.get("by_variant_id") or {})
 
     print(f"variants_count={variants_count}")
     print(f"two_card_pairs_count={two_card_count}")
+    print(f"combo_brackets_count={combo_brackets_count}")
     print(
         "commander_spellbook_variants_v1.json "
         f"old_sha256={old_variants_hash or 'none'} new_sha256={new_variants_hash} "
@@ -330,6 +516,11 @@ def main(argv: List[str] | None = None) -> int:
         "two_card_combos_v2.json "
         f"old_sha256={old_two_card_hash or 'none'} new_sha256={new_two_card_hash} "
         f"changed={old_two_card_hash != new_two_card_hash}"
+    )
+    print(
+        "combo_brackets_v1.json "
+        f"old_sha256={old_combo_brackets_hash or 'none'} new_sha256={new_combo_brackets_hash} "
+        f"changed={old_combo_brackets_hash != new_combo_brackets_hash}"
     )
     print(f"dry_run={bool(args.dry_run)}")
 
