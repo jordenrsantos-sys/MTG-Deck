@@ -19,9 +19,9 @@
         "W"
       ],
       "commander_slug": "giada-font-of-hope",
-      "corpus_deck_count_after": 14,
-      "rank": 14,
-      "scraped_at": "2026-05-17T21:16:26Z",
+      "corpus_deck_count_after": 28,
+      "rank": 4,
+      "scraped_at": "2026-05-17T21:41:27Z",
       "strategy_text": "Popular decks and cards for Giada, Font of Hope\n\nRecent articles:\n- March Commandness Bracket - South Conference Round Two\n- Commander Philosophy — Playing With Brackets at Home\n- The Top 10 Most Played Commander Cards in Avatar\n- The Top 40 Two-Mana Commanders\n- The Best Artifacts and Lands From Avatar: The Last Airbender"
     },
     "Kaalia of the Vast": {
@@ -45,9 +45,9 @@
         "W"
       ],
       "commander_slug": "kaalia-of-the-vast",
-      "corpus_deck_count_after": 15,
-      "rank": 6,
-      "scraped_at": "2026-05-17T21:04:19Z",
+      "corpus_deck_count_after": 31,
+      "rank": 1,
+      "scraped_at": "2026-05-17T21:28:55Z",
       "strategy_text": "Popular decks and cards for Kaalia of the Vast\n\nRecent articles:\n- The Top 20 Commanders With Two-Card Combos\n- Cocktail Hour for the Top 10 Commanders, With mtgdemonictutor\n- Hidden Gems for Kaalia of the Vast\n- The Top 40 Four-Mana Commanders\n- Archidekt Deckbuilding Contest - March 2026"
     },
     "Lathril, Blade of the Elves": {
@@ -70,9 +70,9 @@
         "G"
       ],
       "commander_slug": "lathril-blade-of-the-elves",
-      "corpus_deck_count_after": 15,
-      "rank": 12,
-      "scraped_at": "2026-05-17T21:10:02Z",
+      "corpus_deck_count_after": 31,
+      "rank": 2,
+      "scraped_at": "2026-05-17T21:32:52Z",
       "strategy_text": "Popular decks and cards for Lathril, Blade of the Elves\n\nRecent articles:\n- Another Final Fantasy Commander Has Cracked the EDHREC Top 10\n- Cocktail Hour for the Top 10 Commanders, With mtgdemonictutor\n- The Top 40 Four-Mana Commanders\n- March Commandness Bracket - West Conference Round Two\n- The Top 10 Commanders for Biorhythm"
     },
     "Teval, the Balanced Scale": {
@@ -122,10 +122,35 @@
         "U"
       ],
       "commander_slug": "the-wise-mothman",
-      "corpus_deck_count_after": 15,
-      "rank": 13,
-      "scraped_at": "2026-05-17T21:13:12Z",
+      "corpus_deck_count_after": 31,
+      "rank": 3,
+      "scraped_at": "2026-05-17T21:36:59Z",
       "strategy_text": "Popular decks and cards for The Wise Mothman\n\nRecent articles:\n- Cocktail Hour for the Top 10 Commanders, With mtgdemonictutor\n- The Top 40 Four-Mana Commanders\n- March Commandness - North and South Round Three\n- Budget Replacements for Doubling Season in Commander\n- Ranking the Swords of X and Y in Commander"
+    },
+    "Vivi Ornitier": {
+      "article_titles": [
+        "Another Final Fantasy Commander Has Cracked the EDHREC Top 10",
+        "Is Atraxa, Praetors' Voice Overrated?",
+        "The Top 20 Commanders With Two-Card Combos",
+        "The Top 10 Most Played Prowess Cards in Commander",
+        "Fun Alternatives for the Top Ten Saltiest Commanders"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/another-final-fantasy-commander-has-cracked-the-edhrec-top-10/",
+        "https://edhrec.com/articles/is-atraxa-praetors-voice-overrated/",
+        "https://edhrec.com/articles/the-top-20-commanders-with-two-card-combos/",
+        "https://edhrec.com/articles/the-top-10-most-played-prowess-cards-in-commander/",
+        "https://edhrec.com/articles/fun-alternatives-for-the-top-ten-saltiest-commanders/"
+      ],
+      "color_identity": [
+        "R",
+        "U"
+      ],
+      "commander_slug": "vivi-ornitier",
+      "corpus_deck_count_after": 35,
+      "rank": 5,
+      "scraped_at": "2026-05-17T21:45:40Z",
+      "strategy_text": "Popular decks and cards for Vivi Ornitier\n\nRecent articles:\n- Another Final Fantasy Commander Has Cracked the EDHREC Top 10\n- Is Atraxa, Praetors' Voice Overrated?\n- The Top 20 Commanders With Two-Card Combos\n- The Top 10 Most Played Prowess Cards in Commander\n- Fun Alternatives for the Top Ten Saltiest Commanders"
     }
   },
   "version": "commander_strategy_notes_v1.0"

@@ -482,9 +482,20 @@ def _fetch_bracket_index_top2_with_tags(slug: str, bracket_slug: str) -> List[Tu
 
 
 def _fetch_precon_decklist(precon_url: str) -> Optional[Tuple[List[str], str]]:
-    """Returns (cards, precon_name) or None.
+    """Returns (cards, precon_slug) or None.
 
-    precon_name is derived from the URL slug for source_label use.
+    Precon pages serve a different `__NEXT_DATA__` shape than deckpreview pages:
+      data.deck = {
+        "commander": [str, ...],   # list of commander names
+        "cards":     {type_name: [[card_name, count], ...]},  # nested by type
+        "name":      str,          # precon display name (e.g. "Breed Lethality")
+      }
+    vs. deckpreview's `data.deck = ["1 Sol Ring", ...]`.
+
+    The precon URL pattern is /precon/<set-slug>[/<commander-slug>] — both forms
+    return the same deck for the primary commander; alternate-commander variants
+    return that commander's variant deck. We just flatten whatever cards dict is
+    present.
     """
     html = _http_get_html(precon_url)
     if not html:
@@ -495,16 +506,42 @@ def _fetch_precon_decklist(precon_url: str) -> Optional[Tuple[List[str], str]]:
     data = (nd.get("props") or {}).get("pageProps", {}).get("data")
     if not isinstance(data, dict):
         return None
-    raw_deck = data.get("deck")
-    if not isinstance(raw_deck, list):
+    deck = data.get("deck")
+    if not isinstance(deck, dict):
         return None
-    cards = _parse_decklist_strings(raw_deck)
-    # Extract precon slug from URL: /precon/<set>/<commander> or /precon/<slug>
-    parts = precon_url.rstrip("/").split("/")
-    precon_slug = parts[-1] if len(parts) >= 2 else "unknown"
-    if len(parts) >= 3 and parts[-2] != "precon":
-        precon_slug = parts[-2]
-    return cards, precon_slug
+    cards_by_type = deck.get("cards")
+    if not isinstance(cards_by_type, dict):
+        return None
+    flat_cards: List[str] = []
+    # Include the commander(s) at the top of the flattened list
+    commanders = deck.get("commander")
+    if isinstance(commanders, list):
+        for c in commanders:
+            if isinstance(c, str) and c.strip():
+                flat_cards.append(c.strip())
+    for type_name, entries in cards_by_type.items():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if isinstance(entry, list) and len(entry) >= 1:
+                name = entry[0]
+                if isinstance(name, str) and name.strip():
+                    flat_cards.append(name.strip())
+            elif isinstance(entry, str) and entry.strip():
+                flat_cards.append(entry.strip())
+    if len(flat_cards) < 50:
+        return None
+    # Prefer deck.name for the slug (e.g. "Breed Lethality" → "breed-lethality");
+    # fall back to URL-derived slug.
+    precon_name = deck.get("name") if isinstance(deck.get("name"), str) else None
+    if precon_name:
+        precon_slug = re.sub(r"[^a-z0-9]+", "-", precon_name.lower()).strip("-")
+    else:
+        parts = precon_url.rstrip("/").split("/")
+        precon_slug = parts[-1] if len(parts) >= 2 else "unknown"
+        if len(parts) >= 3 and parts[-2] != "precon":
+            precon_slug = parts[-2]
+    return flat_cards, precon_slug
 
 
 def _fetch_strategy_notes(slug: str) -> Optional[Dict[str, Any]]:
@@ -877,29 +914,28 @@ def main(argv: Optional[List[str]] = None) -> int:
             _log(f"  note: requested --count {args.count} but EDHREC ranking endpoint caps at {EDHREC_RANKING_CAP}; this run will process at most {EDHREC_RANKING_CAP} net-new")
         planned = [c for c in top_commanders if c["rank"] >= args.start_rank]
 
-    # Filter: skip already-in-corpus + already-SUCCESS in progress, then slice
-    # to args.count net-new (only in top-N mode; explicit-slug mode processes
-    # the exact list provided).
+    # Filter: in top-N mode, skip already-in-corpus + already-attempted in progress,
+    # then slice to args.count net-new. In explicit-slug mode the user is being
+    # explicit about what they want — skip both filters and always process.
     to_process: List[Dict[str, Any]] = []
     skipped_corpus = 0
     skipped_progress = 0
+    explicit_mode = bool(args.commander_slugs.strip())
     for c in planned:
-        # In explicit-slug mode the name is a guess; we can't reliably match
-        # against existing_commanders by name. Skip the corpus-membership
-        # filter in explicit mode (let the engine do dedupe at ingest time).
-        name_norm = _norm_commander_name(c["name"])
-        if not args.commander_slugs.strip() and name_norm in existing_commanders:
-            skipped_corpus += 1
-            continue
-        prior = progress.get(c["slug"])
-        if prior and prior.get("status") == "SUCCESS" and not args.retry_failed:
-            skipped_progress += 1
-            continue
-        if prior and prior.get("status") in ("PARTIAL", "FAILED") and not args.retry_failed:
-            skipped_progress += 1
-            continue
+        if not explicit_mode:
+            name_norm = _norm_commander_name(c["name"])
+            if name_norm in existing_commanders:
+                skipped_corpus += 1
+                continue
+            prior = progress.get(c["slug"])
+            if prior and prior.get("status") == "SUCCESS" and not args.retry_failed:
+                skipped_progress += 1
+                continue
+            if prior and prior.get("status") in ("PARTIAL", "FAILED") and not args.retry_failed:
+                skipped_progress += 1
+                continue
         to_process.append(c)
-        if not args.commander_slugs.strip() and len(to_process) >= args.count:
+        if not explicit_mode and len(to_process) >= args.count:
             break
 
     _log(f"  skipped (in corpus): {skipped_corpus}")
