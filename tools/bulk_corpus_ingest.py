@@ -949,20 +949,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         # `--count N` means "process N NET-NEW commanders" (not "fetch top-N raw").
         # Over-fetch from EDHREC then dedupe + slice; the corpus may already
         # contain many of the top-ranked commanders from prior manual sweeps.
-        # EDHREC's `commanders/year.json` and equivalent HTML page both cap at
-        # 100 commanders — no JSON pagination is exposed, so this is a hard
-        # ceiling on the orchestrator's reach via this ranking source.
-        EDHREC_RANKING_CAP = 100
-        over_fetch = min(EDHREC_RANKING_CAP, max(args.count * 2, EDHREC_RANKING_CAP))
-        _log(f"Fetching top {over_fetch} commanders from EDHREC year.json (over-fetch for --count={args.count} net-new)...")
+        # `_fetch_top_commanders` reaches beyond year.json's 100-entry cap via a
+        # color-slice-page union (see its docstring). Capped at TOP_COMMANDERS_HARD_CAP.
+        over_fetch = max(args.count * 2, 100)
+        _log(f"Fetching top {over_fetch} commanders from EDHREC (year.json + color-slice union, over-fetch for --count={args.count} net-new)...")
         top_commanders = _fetch_top_commanders(over_fetch)
         if len(top_commanders) < 50:
-            _log(f"HALT: top-2-years fetch returned only {len(top_commanders)} commanders (<50 floor — API health issue)")
+            _log(f"HALT: ranking fetch returned only {len(top_commanders)} commanders (<50 floor — API health issue)")
             return 3
-        if len(top_commanders) < EDHREC_RANKING_CAP:
-            _log(f"  note: EDHREC returned {len(top_commanders)} (under {EDHREC_RANKING_CAP} expected cap)")
-        if args.count > EDHREC_RANKING_CAP:
-            _log(f"  note: requested --count {args.count} but EDHREC ranking endpoint caps at {EDHREC_RANKING_CAP}; this run will process at most {EDHREC_RANKING_CAP} net-new")
+        if len(top_commanders) < over_fetch:
+            _log(f"  note: union returned {len(top_commanders)} of {over_fetch} requested (color slices may not yield enough net-new for very large --count values)")
         planned = [c for c in top_commanders if c["rank"] >= args.start_rank]
 
     # Filter: in top-N mode, skip already-in-corpus + already-attempted in progress,
