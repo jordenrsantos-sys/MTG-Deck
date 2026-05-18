@@ -1,5 +1,31 @@
 {
   "by_commander": {
+    "Alela, Artful Provocateur": {
+      "article_titles": [
+        "The Best Faerie Combo Cards in Commander",
+        "The Top 40 Four-Mana Commanders",
+        "The Top 40 Three-Colored Commanders",
+        "Rule Zero: Avatar's Double-Faced Sagas as Commanders",
+        "The Best Warlock Combos in Commander"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-best-faerie-combo-cards-in-commander/",
+        "https://edhrec.com/articles/the-top-40-four-mana-commanders/",
+        "https://edhrec.com/articles/the-top-40-three-colored-commanders/",
+        "https://edhrec.com/articles/rule-zero-avatars-double-faced-sagas-as-commanders/",
+        "https://edhrec.com/articles/the-best-warlock-combos-in-commander/"
+      ],
+      "color_identity": [
+        "B",
+        "U",
+        "W"
+      ],
+      "commander_slug": "alela-artful-provocateur",
+      "corpus_deck_count_after": 13,
+      "rank": 98,
+      "scraped_at": "2026-05-18T00:59:15Z",
+      "strategy_text": "Popular decks and cards for Alela, Artful Provocateur\n\nRecent articles:\n- The Best Faerie Combo Cards in Commander\n- The Top 40 Four-Mana Commanders\n- The Top 40 Three-Colored Commanders\n- Rule Zero: Avatar's Double-Faced Sagas as Commanders\n- The Best Warlock Combos in Commander"
+    },
     "Alela, Cunning Conqueror": {
       "article_titles": [
         "The Top 40 Four-Mana Commanders",
@@ -1178,6 +1204,32 @@
       "scraped_at": "2026-05-18T00:44:23Z",
       "strategy_text": "Popular decks and cards for Maralen, Fae Ascendant\n\nRecent articles:\n- The Top 10 Most Played Commander Cards in Lorwyn Eclipsed\n- Fire and Ice: Which Cards are Hot and Cold for Yarok, the Desecrated?\n- The Changeling Communique: Lorwyn Eclipsed Edition\n- Maralen, Fae Ascendant - Elves and Faeries Team Up on a Budget\n- Top 10 Elves and Faeries With Flash for Maralen, Fae Ascendant"
     },
+    "Marneus Calgar": {
+      "article_titles": [
+        "The Top 10 Most Played Commander Cards with Changeling",
+        "Esper Renaissance: A Major Glow-Up in 2025",
+        "The Top 40 Three-Colored Commanders",
+        "The Most Played Three-Color Non-Legends in Commander: Shards",
+        "The Top 10 Most Played Esper Cards in Commander"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-top-10-most-played-commander-cards-with-changeling/",
+        "https://edhrec.com/articles/esper-renaissance-a-major-glow-up-in-2025/",
+        "https://edhrec.com/articles/the-top-40-three-colored-commanders/",
+        "https://edhrec.com/articles/the-most-played-three-color-non-legends-in-commander-shards/",
+        "https://edhrec.com/articles/the-top-10-most-played-esper-cards-in-commander/"
+      ],
+      "color_identity": [
+        "B",
+        "U",
+        "W"
+      ],
+      "commander_slug": "marneus-calgar",
+      "corpus_deck_count_after": 15,
+      "rank": 96,
+      "scraped_at": "2026-05-18T00:57:39Z",
+      "strategy_text": "Popular decks and cards for Marneus Calgar\n\nRecent articles:\n- The Top 10 Most Played Commander Cards with Changeling\n- Esper Renaissance: A Major Glow-Up in 2025\n- The Top 40 Three-Colored Commanders\n- The Most Played Three-Color Non-Legends in Commander: Shards\n- The Top 10 Most Played Esper Cards in Commander"
+    },
     "Meren of Clan Nel Toth": {
       "article_titles": [
         "Top 10 Most Played Commander Cards from Strixhaven: School of Mages",
@@ -1307,6 +1359,31 @@
       "scraped_at": "2026-05-17T23:32:21Z",
       "strategy_text": "Popular decks and cards for Nekusar, the Mindrazer\n\nRecent articles:\n- Is Paradigm a Fixed Version of Epic?\n- The Top 20 Commanders With Two-Card Combos\n- Top 10 Group Hug Commanders for Lavaleaper\n- The Top 40 Three-Colored Commanders\n- The Top 10 Most Played Grixis Cards in Commander"
     },
+    "Niv-Mizzet, Parun": {
+      "article_titles": [
+        "The Best Nonlegendary Creatures of Lorwyn Eclipsed",
+        "The Top 40 Two-Colored Commanders",
+        "Spider-Man 2099 Commander Deck Tech",
+        "10 Surprisingly Expensive Commons for Commander",
+        "60 to 100 - Temur Reclamation"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-best-nonlegendary-creatures-of-lorwyn-eclipsed/",
+        "https://edhrec.com/articles/the-top-40-two-colored-commanders/",
+        "https://edhrec.com/articles/spider-man-2099-commander-deck-tech/",
+        "https://edhrec.com/articles/10-surprisingly-expensive-commons-for-commander/",
+        "https://edhrec.com/articles/60-to-100-temur-reclamation/"
+      ],
+      "color_identity": [
+        "R",
+        "U"
+      ],
+      "commander_slug": "niv-mizzet-parun",
+      "corpus_deck_count_after": 14,
+      "rank": 97,
+      "scraped_at": "2026-05-18T00:58:28Z",
+      "strategy_text": "Popular decks and cards for Niv-Mizzet, Parun\n\nRecent articles:\n- The Best Nonlegendary Creatures of Lorwyn Eclipsed\n- The Top 40 Two-Colored Commanders\n- Spider-Man 2099 Commander Deck Tech\n- 10 Surprisingly Expensive Commons for Commander\n- 60 to 100 - Temur Reclamation"
+    },
     "Obeka, Splitter of Seconds": {
       "article_titles": [
         "The Top 20 Commanders With Two-Card Combos",
@@ -1412,6 +1489,31 @@
       "scraped_at": "2026-05-18T00:50:24Z",
       "strategy_text": "Popular decks and cards for Queen Marchesa\n\nRecent articles:\n- Am I the Bolas? - You Can't Shut Me Down, I Shut You Down!\n- The Top 40 Four-Mana Commanders\n- The Best Enchantments in Lorwyn Eclipsed\n- The Top 40 Three-Colored Commanders\n- The Top 10 Most Played Mardu Cards in Commander"
     },
+    "Ragost, Deft Gastronaut": {
+      "article_titles": [
+        "The Top 40 Two-Mana Commanders",
+        "The EDHREC Writers' Favorite New Commanders of 2025",
+        "Top 10 \"Worst\" Food Commanders",
+        "The Top Ten Typal Commanders of 2025",
+        "How Fun Are the Edges of Eternities Commanders?"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-top-40-two-mana-commanders/",
+        "https://edhrec.com/articles/the-edhrec-writers-favorite-new-commanders-of-2025/",
+        "https://edhrec.com/articles/top-10-worst-food-commanders/",
+        "https://edhrec.com/articles/the-top-ten-typal-commanders-of-2025/",
+        "https://edhrec.com/articles/how-fun-are-the-edges-of-eternities-commanders/"
+      ],
+      "color_identity": [
+        "R",
+        "W"
+      ],
+      "commander_slug": "ragost-deft-gastronaut",
+      "corpus_deck_count_after": 14,
+      "rank": 99,
+      "scraped_at": "2026-05-18T01:00:02Z",
+      "strategy_text": "Popular decks and cards for Ragost, Deft Gastronaut\n\nRecent articles:\n- The Top 40 Two-Mana Commanders\n- The EDHREC Writers' Favorite New Commanders of 2025\n- Top 10 \"Worst\" Food Commanders\n- The Top Ten Typal Commanders of 2025\n- How Fun Are the Edges of Eternities Commanders?"
+    },
     "Rin and Seri, Inseparable": {
       "article_titles": [
         "Am I the Bolas? - Concede to Play Again",
@@ -1437,6 +1539,32 @@
       "rank": 44,
       "scraped_at": "2026-05-18T00:13:54Z",
       "strategy_text": "Popular decks and cards for Rin and Seri, Inseparable\n\nRecent articles:\n- Am I the Bolas? - Concede to Play Again\n- The Top 40 Four-Mana Commanders\n- The Top 10 Most Played Commander Cards with Changeling\n- The Top 40 Three-Colored Commanders\n- The Most Played Three-Color Non-Legends in Commander: Shards"
+    },
+    "Satya, Aetherflux Genius": {
+      "article_titles": [
+        "The Top 40 Four-Mana Commanders",
+        "How Fun Are All of the Jeskai Commanders?",
+        "Am I the Bolas? - A Rebuttal From the Salties",
+        "The Top 10 Most Played Commander Cards from Aetherdrift",
+        "Article 100 Special - Ranking all the Jeskai Commanders"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-top-40-four-mana-commanders/",
+        "https://edhrec.com/articles/how-fun-are-all-of-the-jeskai-commanders/",
+        "https://edhrec.com/articles/am-i-the-bolas-a-rebuttal-from-the-salties/",
+        "https://edhrec.com/articles/the-top-10-most-played-commander-cards-from-aetherdrift/",
+        "https://edhrec.com/articles/article-100-special-ranking-all-the-jeskai-commanders/"
+      ],
+      "color_identity": [
+        "R",
+        "U",
+        "W"
+      ],
+      "commander_slug": "satya-aetherflux-genius",
+      "corpus_deck_count_after": 15,
+      "rank": 100,
+      "scraped_at": "2026-05-18T01:00:48Z",
+      "strategy_text": "Popular decks and cards for Satya, Aetherflux Genius\n\nRecent articles:\n- The Top 40 Four-Mana Commanders\n- How Fun Are All of the Jeskai Commanders?\n- Am I the Bolas? - A Rebuttal From the Salties\n- The Top 10 Most Played Commander Cards from Aetherdrift\n- Article 100 Special - Ranking all the Jeskai Commanders"
     },
     "Sephiroth, Fabled SOLDIER": {
       "article_titles": [

@@ -8,11 +8,11 @@ import { readStagedImport as _readStagedImport, clearStagedImport as _clearStage
 import SufficiencyDashboard from "../components/stats/SufficiencyDashboard";
 import SwapSuggestionsList from "../components/stats/SwapSuggestionsList";
 import AddedCardsPanel from "../components/stats/AddedCardsPanel";
-// v1.7.2 Stage 3 — surface engine's deck-combo insight payload
+// v1.7.2 Stage 3 — engine's deck-combo insight payload
 // (detected_combos_v1 + missing_partners_v1) from /deck/complete_v1.
-// The panel null-renders on combo-free decks AND on legacy responses
-// without the new engine fields (props default to empty arrays).
-import DeckCombosPanel from "../components/stats/DeckCombosPanel";
+// DeckCombosPanel is now wrapped by CombosDrawer (right-anchored drawer
+// toggled from the workspace toolbar) instead of rendered inline.
+import CombosDrawer from "../components/stats/CombosDrawer";
 import DeckThemesPanel from "../components/stats/DeckThemesPanel";
 // v1.7.5 — bracket-combo violation warning. Renders red banner when the
 // engine response carries TWO_CARD_COMBOS_DISALLOWED_B* violations or
@@ -252,6 +252,9 @@ type DeckCompleteResponseV1 = {
   // appear on the engine's Game Changers userlist. Drives the GC badge
   // overlay on AddedCardRow / deck overview rows.
   game_changers_v1?: string[];
+  detected_combos_v1?: unknown[];
+  missing_partners_v1?: unknown[];
+  deck_themes_v1?: unknown[];
 };
 
 type SnapshotPreflightErrorRow = {
@@ -1483,6 +1486,9 @@ export default function WorkspaceView() {
   // Phase 4 BUNDLE Integration (4.13): parent page mode toggle. EDIT/TOOLS/
   // ANALYZE remain children of WORKSPACE per autonomous_repair_log #8.
   const [pageMode, setPageMode] = useState<"WORKSPACE" | "SEED_BUILDER">("WORKSPACE");
+  // Right-rail combos drawer open state. Toggled by the workspace toolbar
+  // "Combos" button; closed by default so the surface stays opt-in.
+  const [combosDrawerOpen, setCombosDrawerOpen] = useState<boolean>(false);
 
   // Phase 4.13.2: Build button pending/error state derive from the reducer.
   // The Build click handler dispatches BUILD_PENDING → fetch → BUILD_SUCCESS
@@ -1733,6 +1739,16 @@ export default function WorkspaceView() {
     const raw = completionResult?.game_changers_v1;
     if (!Array.isArray(raw)) return new Set<string>();
     return new Set<string>(raw.filter((n): n is string => typeof n === "string" && n.trim() !== ""));
+  }, [completionResult]);
+  // Memoized combos count for the toolbar Combos button badge.
+  // Sums detected_combos_v1.length + missing_partners_v1.length so the
+  // user sees one glanceable count of combo-related entries.
+  const combosTotalCount = useMemo<number>(() => {
+    const det = completionResult?.detected_combos_v1;
+    const miss = completionResult?.missing_partners_v1;
+    const detLen = Array.isArray(det) ? det.length : 0;
+    const missLen = Array.isArray(miss) ? miss.length : 0;
+    return detLen + missLen;
   }, [completionResult]);
   // v1.3 Stage 1: diff-based fallback for AddedCardsPanel. When the
   // engine returns empty added_cards_v1 but the completed_decklist_text_v1
@@ -4555,6 +4571,29 @@ export default function WorkspaceView() {
                     {deckState.upgradeError}
                   </span>
                 ) : null}
+                {/* Combos drawer toggle — opens the right-anchored
+                    CombosDrawer wrapper around DeckCombosPanel. The
+                    count badge sums detected + missing partner pairs
+                    surfaced by /deck/complete_v1; renders no badge
+                    when zero so the button stays uncluttered. */}
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => setCombosDrawerOpen((prev) => !prev)}
+                  title="Show detected combos and missing-partner suggestions for this deck."
+                  aria-label={combosDrawerOpen ? "Close Combos drawer" : "Open Combos drawer"}
+                  aria-expanded={combosDrawerOpen}
+                  data-testid="combos-drawer-toggle"
+                >
+                  <span className="inline-flex items-center gap-token-1">
+                    Combos
+                    {combosTotalCount > 0 ? (
+                      <Badge variant="info" aria-label={`${combosTotalCount} combo entries`}>
+                        {combosTotalCount}
+                      </Badge>
+                    ) : null}
+                  </span>
+                </Button>
               </div>
             </div>
 
@@ -4653,14 +4692,15 @@ export default function WorkspaceView() {
                   />
                 ) : null}
 
-                {/* v1.7.2 Stage 3 — deck-combo insight surfaces from
-                    /deck/complete_v1's detected_combos_v1 +
-                    missing_partners_v1. Panel self-hides (returns null)
-                    when both arrays are empty AND on legacy responses
-                    where the engine fields are absent (props default
-                    to []). No reducer plumbing — reads completionResult
-                    directly, same source as addedRowsForPanel above. */}
-                <DeckCombosPanel
+                {/* Combos surface moved to the right-anchored CombosDrawer
+                    toggled by the workspace toolbar "Combos" button. The
+                    drawer wraps DeckCombosPanel — the same panel that
+                    previously rendered inline here. Props are sourced
+                    from completionResult exactly as before; the only
+                    layout change is the dismissible drawer surface. */}
+                <CombosDrawer
+                  open={combosDrawerOpen}
+                  onOpenChange={setCombosDrawerOpen}
                   detected_combos_v1={
                     Array.isArray(completionResult?.detected_combos_v1)
                       ? (completionResult?.detected_combos_v1 as never)
