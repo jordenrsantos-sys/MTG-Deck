@@ -337,6 +337,124 @@ Deck
         self.assertIn("baseline_build_ms", metrics)
         self.assertIn("total_ms", metrics)
 
+    def test_complete_response_carries_game_changers_v1(self) -> None:
+        """The response surfaces a flat sorted list of card names from the
+        submitted deck that match the engine's Game Changers userlist. The
+        UI uses this to badge AddedCardRow / deck overview rows.
+
+        The fixture DB does not contain any cards that are also on the
+        production GC userlist, so we patch ``api.main.GAME_CHANGERS_SET``
+        to include the fixture-deck cards. The detection logic itself is
+        independent of which set is configured."""
+        if _IMPORT_ERROR is not None:
+            self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")
+
+        payload = {
+            "db_snapshot_id": DECKLIST_FIXTURE_SNAPSHOT_ID,
+            "raw_decklist_text": """
+Commander
+1 Krenko, Mob Boss
+Deck
+1 Sol Ring
+1 Arcane Signet
+""",
+            "format": "commander",
+            "profile_id": "focused",
+            "bracket_id": "B2",
+            "mulligan_model_id": "NORMAL",
+            "target_deck_size": 100,
+            "max_adds": 200,
+            "allow_basic_lands": True,
+            "land_target_mode": "AUTO",
+        }
+
+        mocked_build_payload = {
+            "status": "OK",
+            "deck_size_total": 3,
+            "result": {},
+        }
+        mocked_complete_payload = {
+            "version": "deck_complete_engine_v1",
+            "status": "OK",
+            "baseline_summary_v1": {"build_status": "OK", "deck_size_total": 3},
+            "added_cards_v1": [],
+            "completed_decklist_text_v1": (
+                "Commander\n1 Krenko, Mob Boss\nDeck\n"
+                "1 Sol Ring\n1 Arcane Signet"
+            ),
+        }
+
+        # Patch the module-level GAME_CHANGERS_SET so the test is not
+        # coupled to the production userlist contents.
+        with (
+            patch.dict(os.environ, {"MTG_ENGINE_DEV_METRICS": "0"}, clear=False),
+            patch("api.main.GAME_CHANGERS_SET", {"Sol Ring", "Krenko, Mob Boss"}),
+            patch("api.main.run_build_pipeline", return_value=mocked_build_payload),
+            patch("api.main.run_deck_complete_engine_v1", return_value=mocked_complete_payload),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            response = client.post("/deck/complete_v1", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIn("game_changers_v1", body)
+        gc = body.get("game_changers_v1")
+        self.assertIsInstance(gc, list)
+        # Sol Ring (deck) + Krenko, Mob Boss (commander) both surface in
+        # the response since both are in the patched GC set; Arcane Signet
+        # is not in the set so it must be absent.
+        self.assertIn("Sol Ring", gc)
+        self.assertIn("Krenko, Mob Boss", gc)
+        self.assertNotIn("Arcane Signet", gc)
+        # Sorted output preserves the engine's deterministic ordering.
+        self.assertEqual(gc, sorted(gc))
+
+    def test_complete_response_game_changers_v1_empty_for_no_match_deck(self) -> None:
+        """When the deck has no GC overlap, the field is an empty list."""
+        if _IMPORT_ERROR is not None:
+            self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")
+
+        payload = {
+            "db_snapshot_id": DECKLIST_FIXTURE_SNAPSHOT_ID,
+            "raw_decklist_text": """
+Commander
+1 Krenko, Mob Boss
+Deck
+1 Arcane Signet
+""",
+            "format": "commander",
+            "profile_id": "focused",
+            "bracket_id": "B2",
+            "mulligan_model_id": "NORMAL",
+            "target_deck_size": 100,
+            "max_adds": 200,
+            "allow_basic_lands": True,
+            "land_target_mode": "AUTO",
+        }
+
+        mocked_build_payload = {"status": "OK", "deck_size_total": 2, "result": {}}
+        mocked_complete_payload = {
+            "version": "deck_complete_engine_v1",
+            "status": "OK",
+            "baseline_summary_v1": {"build_status": "OK", "deck_size_total": 2},
+            "added_cards_v1": [],
+            "completed_decklist_text_v1": (
+                "Commander\n1 Krenko, Mob Boss\nDeck\n1 Arcane Signet"
+            ),
+        }
+
+        with (
+            patch.dict(os.environ, {"MTG_ENGINE_DEV_METRICS": "0"}, clear=False),
+            patch("api.main.run_build_pipeline", return_value=mocked_build_payload),
+            patch("api.main.run_deck_complete_engine_v1", return_value=mocked_complete_payload),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            response = client.post("/deck/complete_v1", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body.get("game_changers_v1"), [])
+
     def test_complete_warn_codes_promote_to_violations(self) -> None:
         if _IMPORT_ERROR is not None:
             self.skipTest(f"FastAPI integration dependencies unavailable: {_IMPORT_ERROR}")

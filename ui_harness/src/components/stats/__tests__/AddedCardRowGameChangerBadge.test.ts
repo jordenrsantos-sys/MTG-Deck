@@ -95,10 +95,13 @@ describe("AddedCardRow — GC badge presence", () => {
 
 
 describe("AddedCardsPanel → AddedCardRow GC integration", () => {
-  test("Sol Ring + Cyclonic Rift + Smothering Tithe all render GC badges", () => {
-    // Spec scenario: a deck with three known GC cards must surface badges
-    // on each row. The set is hardcoded here to mirror the real
-    // gc_v0_userlist_2025-11-20.json entries used by the engine.
+  test("Sol Ring + Cyclonic Rift + Smothering Tithe all render GC badges (spec scenario)", () => {
+    // Spec-fixed scenario: a hypothetical deck with three named GC cards
+    // surfaces a badge on each row. Note: Sol Ring is NOT actually on the
+    // production gc_v0_userlist_2025-11-20.json (only Cyclonic Rift +
+    // Smothering Tithe are), but this test mirrors the spec wording; the
+    // component contract is that any name in the provided Set gets a badge,
+    // regardless of which set the caller plumbs in.
     const gc = new Set<string>([
       "Sol Ring",
       "Cyclonic Rift",

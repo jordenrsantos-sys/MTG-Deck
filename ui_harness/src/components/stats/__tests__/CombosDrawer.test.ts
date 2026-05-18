@@ -105,8 +105,9 @@ describe("CombosDrawer — open state", () => {
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain("Deck combos");
-    // DeckCombosPanel's data-v172-stage attribute confirms the panel mounts.
-    expect(html).toContain('data-v172-stage="deck-combos-panel"');
+    // DeckCombosPanel's section discriminator confirms the panel mounts
+    // (Card primitive doesn't forward data-* attrs, but inner sections do).
+    expect(html).toContain('data-v172-section="detected"');
     // Detected combo card names render.
     expect(html).toContain("Sol Ring");
     expect(html).toContain("Mana Crypt");
@@ -119,8 +120,9 @@ describe("CombosDrawer — open state", () => {
     expect(html).toContain('role="dialog"');
     expect(html).toContain("Deck combos");
     // DeckCombosPanel returns null when both arrays empty, so the
-    // panel discriminator is absent.
-    expect(html).not.toContain('data-v172-stage="deck-combos-panel"');
+    // inner section discriminators are absent.
+    expect(html).not.toContain('data-v172-section="detected"');
+    expect(html).not.toContain('data-v172-section="missing"');
   });
 
   test("open → drawer is right-anchored (top-0 right-0 + border-l)", () => {
