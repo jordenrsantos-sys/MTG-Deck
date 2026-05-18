@@ -127,6 +127,31 @@
       "scraped_at": "2026-05-18T00:09:54Z",
       "strategy_text": "Popular decks and cards for Animar, Soul of Elements\n\nRecent articles:\n- The Top 20 Commanders With Two-Card Combos\n- The Top 40 Three-Mana Commanders\n- The Top 40 Three-Colored Commanders\n- How Fun Are All of the Temur Commanders?\n- The Top 10 Most Played Temur Cards in Commander"
     },
+    "Anowon, the Ruin Thief": {
+      "article_titles": [
+        "The Top 10 Most Played Commander Cards with Changeling",
+        "Why You Should Have an Elevator Pitch for Your Commander Decks",
+        "Which Commanders Are Most Affected by the New Game Changers?",
+        "Under the Radar - Zareth San, the Trickster",
+        "Too-Specific Top 10 - Budget Boss Revisited"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-top-10-most-played-commander-cards-with-changeling/",
+        "https://edhrec.com/articles/why-you-should-have-an-elevator-pitch-for-your-commander-decks/",
+        "https://edhrec.com/articles/which-commanders-are-most-affected-by-the-new-game-changers/",
+        "https://edhrec.com/articles/under-the-radar-zareth-san-the-trickster/",
+        "https://edhrec.com/articles/too-specific-top-10-budget-boss-revisited/"
+      ],
+      "color_identity": [
+        "B",
+        "U"
+      ],
+      "commander_slug": "anowon-the-ruin-thief",
+      "corpus_deck_count_after": 14,
+      "rank": 189,
+      "scraped_at": "2026-05-18T03:04:44Z",
+      "strategy_text": "Popular decks and cards for Anowon, the Ruin Thief\n\nRecent articles:\n- The Top 10 Most Played Commander Cards with Changeling\n- Why You Should Have an Elevator Pitch for Your Commander Decks\n- Which Commanders Are Most Affected by the New Game Changers?\n- Under the Radar - Zareth San, the Trickster\n- Too-Specific Top 10 - Budget Boss Revisited"
+    },
     "Anti-Venom, Horrifying Healer": {
       "article_titles": [
         "The Top 10 Most Played Commander Cards in Spider-Man",
@@ -282,6 +307,27 @@
       "scraped_at": "2026-05-18T00:22:32Z",
       "strategy_text": "Popular decks and cards for Ashling, the Limitless\n\nRecent articles:\n- The Changeling Communique: Lorwyn Eclipsed Edition\n- Missed Opportunities in Lorwyn Eclipsed\n- How Fun Are the Lorwyn Eclipsed Commanders?\n- The Best Combo Cards from Lorwyn Eclipsed\n- The Over/Under - Predicting the Popularity of Lorwyn Eclipsed Commanders"
     },
+    "Astarion, the Decadent": {
+      "article_titles": [
+        "Deathtouch and First Strike With Syr Vondam, the Lucent",
+        "Brew For Your Buck - Baldur's Gate Budget Hot Swap",
+        "The 600 - Predicting the Popularity of Baldur's Gate Commanders, Part 2"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/deathtouch-and-first-strike-with-syr-vondam-the-lucent/",
+        "https://edhrec.com/articles/brew-for-your-buck-baldurs-gate-budget-hot-swap/",
+        "https://edhrec.com/articles/the-600-predicting-the-popularity-of-baldurs-gate-commanders-part-2/"
+      ],
+      "color_identity": [
+        "B",
+        "W"
+      ],
+      "commander_slug": "astarion-the-decadent",
+      "corpus_deck_count_after": 13,
+      "rank": 196,
+      "scraped_at": "2026-05-18T03:10:14Z",
+      "strategy_text": "Popular decks and cards for Astarion, the Decadent\n\nRecent articles:\n- Deathtouch and First Strike With Syr Vondam, the Lucent\n- Brew For Your Buck - Baldur's Gate Budget Hot Swap\n- The 600 - Predicting the Popularity of Baldur's Gate Commanders, Part 2"
+    },
     "Athreos, God of Passage": {
       "article_titles": [
         "Building an Orzhov Scam Commander Deck with Papalymo Totolymo",
@@ -359,6 +405,54 @@
       "rank": 86,
       "scraped_at": "2026-05-18T00:49:37Z",
       "strategy_text": "Popular decks and cards for Atraxa, Grand Unifier\n\nRecent articles:\n- Is Atraxa, Praetors' Voice Overrated?\n- March Commandness Bracket - West Conference Round Two\n- The Top 10 Most Played 4-Color Cards in Commander\n- The Top 10 Most Played 5-Color Cards in Commander\n- The Best Commander From Every Year of the 2000s"
+    },
+    "Ayara, First of Locthwain": {
+      "article_titles": [
+        "Fun Alternatives for the Top Ten Saltiest Commanders",
+        "Rat King, Verminister Relentless Rats Commander Deck",
+        "Mono-Black \"Blink\" With Armaggon, Future Shark",
+        "The Best Nonlegendary Creatures in Teenage Mutant Ninja Turtles",
+        "Controlling the Zombie Wasteland With The Ghoul, Gunslinger"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/fun-alternatives-for-the-top-ten-saltiest-commanders/",
+        "https://edhrec.com/articles/rat-king-verminister-relentless-rats-commander-deck/",
+        "https://edhrec.com/articles/mono-black-blink-with-armaggon-future-shark/",
+        "https://edhrec.com/articles/the-best-nonlegendary-creatures-in-teenage-mutant-ninja-turtles/",
+        "https://edhrec.com/articles/controlling-the-zombie-wasteland-with-the-ghoul-gunslinger/"
+      ],
+      "color_identity": [
+        "B"
+      ],
+      "commander_slug": "ayara-first-of-locthwain",
+      "corpus_deck_count_after": 12,
+      "rank": 199,
+      "scraped_at": "2026-05-18T03:12:34Z",
+      "strategy_text": "Popular decks and cards for Ayara, First of Locthwain\n\nRecent articles:\n- Fun Alternatives for the Top Ten Saltiest Commanders\n- Rat King, Verminister Relentless Rats Commander Deck\n- Mono-Black \"Blink\" With Armaggon, Future Shark\n- The Best Nonlegendary Creatures in Teenage Mutant Ninja Turtles\n- Controlling the Zombie Wasteland With The Ghoul, Gunslinger"
+    },
+    "Azusa, Lost but Seeking": {
+      "article_titles": [
+        "Fire and Ice: Which Cards are Hot and Cold for Yarok, the Desecrated?",
+        "The Top 40 Monocolored Commanders",
+        "The Top 10 Most Played Sultai Cards in Commander",
+        "Fire and Ice: What Cards are Hot and Cold for July 25th?",
+        "Szarel, Genesis Shepherd Deck Tech"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/which-cards-are-hot-and-cold-for-yarok-the-desecrated/",
+        "https://edhrec.com/articles/the-top-40-monocolored-commanders/",
+        "https://edhrec.com/articles/the-top-10-most-played-sultai-cards-in-commander/",
+        "https://edhrec.com/articles/fire-and-ice-what-cards-are-hot-and-cold-for-july-25th/",
+        "https://edhrec.com/articles/szarel-genesis-shepherd-deck-tech/"
+      ],
+      "color_identity": [
+        "G"
+      ],
+      "commander_slug": "azusa-lost-but-seeking",
+      "corpus_deck_count_after": 12,
+      "rank": 188,
+      "scraped_at": "2026-05-18T03:03:58Z",
+      "strategy_text": "Popular decks and cards for Azusa, Lost but Seeking\n\nRecent articles:\n- Fire and Ice: Which Cards are Hot and Cold for Yarok, the Desecrated?\n- The Top 40 Monocolored Commanders\n- The Top 10 Most Played Sultai Cards in Commander\n- Fire and Ice: What Cards are Hot and Cold for July 25th?\n- Szarel, Genesis Shepherd Deck Tech"
     },
     "Baylen, the Haymaker": {
       "article_titles": [
@@ -460,6 +554,31 @@
       "scraped_at": "2026-05-18T02:44:56Z",
       "strategy_text": "Popular decks and cards for Braids, Arisen Nightmare\n\nRecent articles:\n- Making Demonic Deals With Madame Null, Power Broker\n- Mardu Clues for 100 Dollars, With Sophina and Wernog\n- Fire and Ice: What Cards are Hot and Cold for August 29th?\n- Top 10 Creatures That Can Sacrifice Lands for Hearthhull, the Worldseed\n- The Top 40 Monocolored Commanders"
     },
+    "Breena, the Demagogue": {
+      "article_titles": [
+        "Goading and Enchanting With Killian, Decisive Mentor",
+        "The Rate of Change With the Commander Format",
+        "The Best Enchantments in Lorwyn Eclipsed",
+        "The Best Warlock Combos in Commander",
+        "The Turks of Final Fantasy - Pride Event Commander Deck"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/goading-and-enchanting-with-killian-decisive-mentor/",
+        "https://edhrec.com/articles/the-rate-of-change-with-the-commander-format/",
+        "https://edhrec.com/articles/the-best-enchantments-in-lorwyn-eclipsed/",
+        "https://edhrec.com/articles/the-best-warlock-combos-in-commander/",
+        "https://edhrec.com/articles/beyond-the-multiverse-the-turks-of-final-fantasy/"
+      ],
+      "color_identity": [
+        "B",
+        "W"
+      ],
+      "commander_slug": "breena-the-demagogue",
+      "corpus_deck_count_after": 14,
+      "rank": 184,
+      "scraped_at": "2026-05-18T03:00:52Z",
+      "strategy_text": "Popular decks and cards for Breena, the Demagogue\n\nRecent articles:\n- Goading and Enchanting With Killian, Decisive Mentor\n- The Rate of Change With the Commander Format\n- The Best Enchantments in Lorwyn Eclipsed\n- The Best Warlock Combos in Commander\n- The Turks of Final Fantasy - Pride Event Commander Deck"
+    },
     "Breya, Etherium Shaper": {
       "article_titles": [
         "The Top 40 Four-Mana Commanders",
@@ -509,6 +628,54 @@
       "rank": 160,
       "scraped_at": "2026-05-18T02:41:49Z",
       "strategy_text": "Popular decks and cards for Brimaz, Blight of Oreskos\n\nRecent articles:\n- Growing Threat - Precon Primer\n- Growing Threat - Upgrade Guide\n- March of the Machine Set Review - Remaining Commander Precon Legends\n- The Over/Under - Predicting the Popularity of March of the Machine Commanders"
+    },
+    "Bristly Bill, Spine Sower": {
+      "article_titles": [
+        "The Best Plant Combos in Commander",
+        "The Best Enchantments in Teenage Mutant Ninja Turtles",
+        "The Top 40 Two-Mana Commanders",
+        "The Best Enchantments in Avatar: The Last Airbender",
+        "Building a Lands Deck with Bumi, Eclectic Earthbender"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-best-plant-combos-in-commander/",
+        "https://edhrec.com/articles/the-best-enchantments-in-teenage-mutant-ninja-turtles/",
+        "https://edhrec.com/articles/the-top-40-two-mana-commanders/",
+        "https://edhrec.com/articles/the-best-enchantments-in-avatar-the-last-airbender/",
+        "https://edhrec.com/articles/building-a-lands-deck-with-bumi-eclectic-earthbender/"
+      ],
+      "color_identity": [
+        "G"
+      ],
+      "commander_slug": "bristly-bill-spine-sower",
+      "corpus_deck_count_after": 13,
+      "rank": 178,
+      "scraped_at": "2026-05-18T02:56:12Z",
+      "strategy_text": "Popular decks and cards for Bristly Bill, Spine Sower\n\nRecent articles:\n- The Best Plant Combos in Commander\n- The Best Enchantments in Teenage Mutant Ninja Turtles\n- The Top 40 Two-Mana Commanders\n- The Best Enchantments in Avatar: The Last Airbender\n- Building a Lands Deck with Bumi, Eclectic Earthbender"
+    },
+    "Bruvac the Grandiloquent": {
+      "article_titles": [
+        "Fire and Ice: Which Cards Are Hot and Cold for The Mindskinner?",
+        "The Top 40 Monocolored Commanders",
+        "How To Play Blue Differently in EDH",
+        "The Top 10 Most Played Commander Cards from KTK",
+        "Countering Etiquette - Blue Players, We Need To Talk"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/fire-and-ice-which-cards-are-hot-and-cold-for-the-mindskinner/",
+        "https://edhrec.com/articles/the-top-40-monocolored-commanders/",
+        "https://edhrec.com/articles/how-to-play-blue-differently-in-edh/",
+        "https://edhrec.com/articles/the-top-10-most-played-commander-cards-from-ktk/",
+        "https://edhrec.com/articles/countering-etiquette-blue-players-we-need-to-talk/"
+      ],
+      "color_identity": [
+        "U"
+      ],
+      "commander_slug": "bruvac-the-grandiloquent",
+      "corpus_deck_count_after": 9,
+      "rank": 185,
+      "scraped_at": "2026-05-18T03:01:40Z",
+      "strategy_text": "Popular decks and cards for Bruvac the Grandiloquent\n\nRecent articles:\n- Fire and Ice: Which Cards Are Hot and Cold for The Mindskinner?\n- The Top 40 Monocolored Commanders\n- How To Play Blue Differently in EDH\n- The Top 10 Most Played Commander Cards from KTK\n- Countering Etiquette - Blue Players, We Need To Talk"
     },
     "Caesar, Legion's Emperor": {
       "article_titles": [
@@ -585,6 +752,31 @@
       "rank": 25,
       "scraped_at": "2026-05-17T23:58:38Z",
       "strategy_text": "Popular decks and cards for Chatterfang, Squirrel General\n\nRecent articles:\n- Top 10 Infinite Mana Combos\n- The Top 20 Commanders With Two-Card Combos\n- March Commandness - North and South Round Four\n- March Commandness - North and South Round Three\n- Five Different Ways to Use The Ooze in Commander"
+    },
+    "Chishiro, the Shattered Blade": {
+      "article_titles": [
+        "How to Build Three Naya Decks Without Being A-Naya-ing",
+        "Top 10 Token Equipment Makers",
+        "Borderland Explorer – Kaima, the Fractured Calm",
+        "How to Build an Equipment Deck in EDH",
+        "Back to Basics - The Top 10 Most Played Gruul Cards in Commander"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/how-to-build-three-naya-decks-without-being-a-naya-ing/",
+        "https://edhrec.com/articles/top-10-token-equipment-makers/",
+        "https://edhrec.com/articles/borderland-explorer-kaima-the-fractured-calm/",
+        "https://edhrec.com/articles/how-to-build-an-equipment-deck-in-edh/",
+        "https://edhrec.com/articles/back-to-basics-the-top-10-most-played-gruul-cards-in-commander/"
+      ],
+      "color_identity": [
+        "G",
+        "R"
+      ],
+      "commander_slug": "chishiro-the-shattered-blade",
+      "corpus_deck_count_after": 13,
+      "rank": 186,
+      "scraped_at": "2026-05-18T03:02:24Z",
+      "strategy_text": "Popular decks and cards for Chishiro, the Shattered Blade\n\nRecent articles:\n- How to Build Three Naya Decks Without Being A-Naya-ing\n- Top 10 Token Equipment Makers\n- Borderland Explorer – Kaima, the Fractured Calm\n- How to Build an Equipment Deck in EDH\n- Back to Basics - The Top 10 Most Played Gruul Cards in Commander"
     },
     "Choco, Seeker of Paradise": {
       "article_titles": [
@@ -663,6 +855,30 @@
       "scraped_at": "2026-05-18T00:03:22Z",
       "strategy_text": "Popular decks and cards for Cloud, Ex-SOLDIER\n\nRecent articles:\n- Am I Lying in a Game of Commander, or Am I Playing to My Outs?\n- Ranking the Swords of X and Y in Commander\n- The 10 Most Fun Commanders of 2025\n- The 2025 Commanders That Broke EDHREC Top 100\n- The Top 40 Three-Colored Commanders"
     },
+    "Cloud, Midgar Mercenary": {
+      "article_titles": [
+        "Ranking Every Card That Doubles Triggered Abilities",
+        "Ranking the Swords of X and Y in Commander",
+        "Archidekt Deckbuilding Contest Finalists - February 2026",
+        "Sneaking Into Combat With Noctis, Heir Apparent in Commander",
+        "The Top 10 Most Played Legendary Commander Cards in 2025"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/ranking-every-card-that-doubles-triggered-abilities/",
+        "https://edhrec.com/articles/ranking-the-swords-of-x-and-y-in-commander/",
+        "https://edhrec.com/articles/archidekt-deckbuilding-contest-finalists-february-2026/",
+        "https://edhrec.com/articles/sneaking-into-combat-with-noctis-heir-apparent-in-commander/",
+        "https://edhrec.com/articles/the-top-10-most-played-legendary-commander-cards-in-2025/"
+      ],
+      "color_identity": [
+        "W"
+      ],
+      "commander_slug": "cloud-midgar-mercenary",
+      "corpus_deck_count_after": 13,
+      "rank": 198,
+      "scraped_at": "2026-05-18T03:11:47Z",
+      "strategy_text": "Popular decks and cards for Cloud, Midgar Mercenary\n\nRecent articles:\n- Ranking Every Card That Doubles Triggered Abilities\n- Ranking the Swords of X and Y in Commander\n- Archidekt Deckbuilding Contest Finalists - February 2026\n- Sneaking Into Combat With Noctis, Heir Apparent in Commander\n- The Top 10 Most Played Legendary Commander Cards in 2025"
+    },
     "Deadpool, Trading Card": {
       "article_titles": [
         "Let's Learn the Allied Color Pairs of Magic",
@@ -707,6 +923,30 @@
       "rank": 165,
       "scraped_at": "2026-05-18T02:45:47Z",
       "strategy_text": "Popular decks and cards for Elas il-Kor, Sadistic Pilgrim\n\nRecent articles:\n- Silverquill, the Disputant - Spellslinger & Token Aristocrats\n- The Top 40 Two-Mana Commanders\n- Fire and Ice: What Cards are Hot and Cold for August 29th?\n- Building a Lifegain Deck with Aunt May\n- Archetypes of Imagination - Making a Death Triggers Deck"
+    },
+    "Elesh Norn, Mother of Machines": {
+      "article_titles": [
+        "Am I the Bolas? - You Can't Shut Me Down, I Shut You Down!",
+        "Ranking Every Card That Doubles Triggered Abilities",
+        "Ranking the Swords of X and Y in Commander",
+        "The Top 40 Monocolored Commanders",
+        "Building an Ally Deck with Katara, the Fearless"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/am-i-the-bolas-you-cant-shut-me-down-i-shut-you-down/",
+        "https://edhrec.com/articles/ranking-every-card-that-doubles-triggered-abilities/",
+        "https://edhrec.com/articles/ranking-the-swords-of-x-and-y-in-commander/",
+        "https://edhrec.com/articles/the-top-40-monocolored-commanders/",
+        "https://edhrec.com/articles/building-an-ally-deck-with-katara-the-fearless/"
+      ],
+      "color_identity": [
+        "W"
+      ],
+      "commander_slug": "elesh-norn-mother-of-machines",
+      "corpus_deck_count_after": 13,
+      "rank": 179,
+      "scraped_at": "2026-05-18T02:56:58Z",
+      "strategy_text": "Popular decks and cards for Elesh Norn, Mother of Machines\n\nRecent articles:\n- Am I the Bolas? - You Can't Shut Me Down, I Shut You Down!\n- Ranking Every Card That Doubles Triggered Abilities\n- Ranking the Swords of X and Y in Commander\n- The Top 40 Monocolored Commanders\n- Building an Ally Deck with Katara, the Fearless"
     },
     "Ellivere of the Wild Court": {
       "article_titles": [
@@ -1123,6 +1363,31 @@
       "scraped_at": "2026-05-17T21:41:27Z",
       "strategy_text": "Popular decks and cards for Giada, Font of Hope\n\nRecent articles:\n- March Commandness Bracket - South Conference Round Two\n- Commander Philosophy — Playing With Brackets at Home\n- The Top 10 Most Played Commander Cards in Avatar\n- The Top 40 Two-Mana Commanders\n- The Best Artifacts and Lands From Avatar: The Last Airbender"
     },
+    "Gisa and Geralf": {
+      "article_titles": [
+        "The Top 10 Most Played Sultai Cards in Commander",
+        "Bottom of the Barrel - Tobias, Doomed Conqueror",
+        "Recross the Paths - Building a Zombie Deck With Myrkul, Lord of Bone",
+        "Back to Basics - The Top 10 Most Played Dimir Cards in Commander",
+        "Too-Specific Top 10 - &"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-top-10-most-played-sultai-cards-in-commander/",
+        "https://edhrec.com/articles/bottom-of-the-barrel-tobias-doomed-conqueror/",
+        "https://edhrec.com/articles/recross-the-paths-building-a-zombie-deck-with-myrkul-lord-of-bone/",
+        "https://edhrec.com/articles/back-to-basics-the-top-10-most-played-dimir-cards-in-commander/",
+        "https://edhrec.com/articles/too-specific-top-10/"
+      ],
+      "color_identity": [
+        "B",
+        "U"
+      ],
+      "commander_slug": "gisa-and-geralf",
+      "corpus_deck_count_after": 14,
+      "rank": 187,
+      "scraped_at": "2026-05-18T03:03:10Z",
+      "strategy_text": "Popular decks and cards for Gisa and Geralf\n\nRecent articles:\n- The Top 10 Most Played Sultai Cards in Commander\n- Bottom of the Barrel - Tobias, Doomed Conqueror\n- Recross the Paths - Building a Zombie Deck With Myrkul, Lord of Bone\n- Back to Basics - The Top 10 Most Played Dimir Cards in Commander\n- Too-Specific Top 10 - &"
+    },
     "Gishath, Sun's Avatar": {
       "article_titles": [
         "The Best Nonlegendary Creatures in Teenage Mutant Ninja Turtles",
@@ -1174,6 +1439,31 @@
       "rank": 41,
       "scraped_at": "2026-05-18T00:11:30Z",
       "strategy_text": "Popular decks and cards for Glarb, Calamity&#x27;s Augur\n\nRecent articles:\n- Top 10 Most Played Commander Cards from Strixhaven: School of Mages\n- March Commandness - East and West Round Four\n- March Commandness - East and West Round Three\n- March Commandness Bracket - West Conference Round Two\n- The Top 40 Three-Mana Commanders"
+    },
+    "Gluntch, the Bestower": {
+      "article_titles": [
+        "Commander Unoptimized - Group Hugs",
+        "100 Creators, 100 Decks - Your Favorite Creator's Favorite Decks!",
+        "Peace Offering Upgrade Guide - Bloomburrow",
+        "Technically Playable - Gluntch, the Bestower",
+        "Do Your Worst - Selesnya Wheels"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/commander-unoptimized-group-hugs/",
+        "https://edhrec.com/articles/100-creators-100-decks-your-favorite-creators-favorite-decks/",
+        "https://edhrec.com/articles/peace-offering-upgrade-guide-bloomburrow/",
+        "https://edhrec.com/articles/technically-playable-gluntch-the-bestower/",
+        "https://edhrec.com/articles/do-your-worst-selesnya-wheels/"
+      ],
+      "color_identity": [
+        "G",
+        "W"
+      ],
+      "commander_slug": "gluntch-the-bestower",
+      "corpus_deck_count_after": 14,
+      "rank": 181,
+      "scraped_at": "2026-05-18T02:58:29Z",
+      "strategy_text": "Popular decks and cards for Gluntch, the Bestower\n\nRecent articles:\n- Commander Unoptimized - Group Hugs\n- 100 Creators, 100 Decks - Your Favorite Creator's Favorite Decks!\n- Peace Offering Upgrade Guide - Bloomburrow\n- Technically Playable - Gluntch, the Bestower\n- Do Your Worst - Selesnya Wheels"
     },
     "Go-Shintai of Life's Origin": {
       "article_titles": [
@@ -1432,6 +1722,28 @@
       "scraped_at": "2026-05-18T02:11:33Z",
       "strategy_text": "Popular decks and cards for Hylda of the Icy Crown\n\nRecent articles:\n- The Best Nonlegendary Creatures of Lorwyn Eclipsed\n- The Top 40 Two-Colored Commanders\n- Build a \"Tapper\" Deck with Sharae of Numbing Depths\n- The Over/Under - A Review of Wilds of Eldraine Commanders\n- The Over/Under - Predicting the Popularity of Wilds of Eldraine Commanders"
     },
+    "Imodane, the Pyrohammer": {
+      "article_titles": [
+        "The Top 40 Monocolored Commanders",
+        "Commander Unoptimized - It's A Deck, Not An Engine",
+        "The Over/Under - A Review of Wilds of Eldraine Commanders",
+        "The Over/Under - Predicting the Popularity of Wilds of Eldraine Commanders"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-top-40-monocolored-commanders/",
+        "https://edhrec.com/articles/commander-unoptimized-its-a-deck-not-an-engine/",
+        "https://edhrec.com/articles/the-over-under-a-review-of-wilds-of-eldraine-commanders/",
+        "https://edhrec.com/articles/the-over-under-predicting-the-popularity-of-wilds-of-eldraine-commanders/"
+      ],
+      "color_identity": [
+        "R"
+      ],
+      "commander_slug": "imodane-the-pyrohammer",
+      "corpus_deck_count_after": 13,
+      "rank": 202,
+      "scraped_at": "2026-05-18T03:14:51Z",
+      "strategy_text": "Popular decks and cards for Imodane, the Pyrohammer\n\nRecent articles:\n- The Top 40 Monocolored Commanders\n- Commander Unoptimized - It's A Deck, Not An Engine\n- The Over/Under - A Review of Wilds of Eldraine Commanders\n- The Over/Under - Predicting the Popularity of Wilds of Eldraine Commanders"
+    },
     "Imotekh the Stormlord": {
       "article_titles": [
         "Be Smashing With This Trimmed Slinza, the Spiked Stampede Deck",
@@ -1609,6 +1921,31 @@
       "rank": 1,
       "scraped_at": "2026-05-17T21:28:55Z",
       "strategy_text": "Popular decks and cards for Kaalia of the Vast\n\nRecent articles:\n- The Top 20 Commanders With Two-Card Combos\n- Cocktail Hour for the Top 10 Commanders, With mtgdemonictutor\n- Hidden Gems for Kaalia of the Vast\n- The Top 40 Four-Mana Commanders\n- Archidekt Deckbuilding Contest - March 2026"
+    },
+    "Kardur, Doomscourge": {
+      "article_titles": [
+        "Hidden Gems for Kaalia of the Vast",
+        "The Best Enchantments in Teenage Mutant Ninja Turtles",
+        "Ten Brutal Cards To Try With The Cloning of Shredder",
+        "The Top Ten ETB Effects In Commander",
+        "Commander Unoptimized - Group Hugs"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/hidden-gems-for-kaalia-of-the-vast/",
+        "https://edhrec.com/articles/the-best-enchantments-in-teenage-mutant-ninja-turtles/",
+        "https://edhrec.com/articles/ten-brutal-cards-to-try-with-the-cloning-of-shredder/",
+        "https://edhrec.com/articles/the-top-ten-etb-effects-in-commander/",
+        "https://edhrec.com/articles/commander-unoptimized-group-hugs/"
+      ],
+      "color_identity": [
+        "B",
+        "R"
+      ],
+      "commander_slug": "kardur-doomscourge",
+      "corpus_deck_count_after": 14,
+      "rank": 191,
+      "scraped_at": "2026-05-18T03:06:21Z",
+      "strategy_text": "Popular decks and cards for Kardur, Doomscourge\n\nRecent articles:\n- Hidden Gems for Kaalia of the Vast\n- The Best Enchantments in Teenage Mutant Ninja Turtles\n- Ten Brutal Cards To Try With The Cloning of Shredder\n- The Top Ten ETB Effects In Commander\n- Commander Unoptimized - Group Hugs"
     },
     "Kastral, the Windcrested": {
       "article_titles": [
@@ -1809,6 +2146,28 @@
       "scraped_at": "2026-05-18T00:47:52Z",
       "strategy_text": "Popular decks and cards for Kotis, the Fangkeeper\n\nRecent articles:\n- Examining Tarkir: Dragonstorm, One Year Later\n- The Top 40 Four-Mana Commanders\n- March Commandness Bracket - West Conference Round Two\n- Ranking the Swords of X and Y in Commander\n- The 2025 Commanders That Broke EDHREC Top 100"
     },
+    "Kratos, God of War": {
+      "article_titles": [
+        "2025: The Year in Universes Beyond",
+        "The Top 10 Most Played Commander Cards in Spider-Man",
+        "Kratos, God of War Commander Deck Tech",
+        "Big Reveals at the Secret Lair Panel at MagicCon Atlanta"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/2025-the-year-of-universes-beyond/",
+        "https://edhrec.com/articles/the-top-10-most-played-commander-cards-in-spider-man/",
+        "https://edhrec.com/articles/kratos-god-of-war-commander-deck-tech/",
+        "https://edhrec.com/articles/big-reveals-at-the-secret-lair-panel-at-magiccon-atlanta/"
+      ],
+      "color_identity": [
+        "R"
+      ],
+      "commander_slug": "kratos-god-of-war",
+      "corpus_deck_count_after": 13,
+      "rank": 180,
+      "scraped_at": "2026-05-18T02:57:44Z",
+      "strategy_text": "Popular decks and cards for Kratos, God of War\n\nRecent articles:\n- 2025: The Year in Universes Beyond\n- The Top 10 Most Played Commander Cards in Spider-Man\n- Kratos, God of War Commander Deck Tech\n- Big Reveals at the Secret Lair Panel at MagicCon Atlanta"
+    },
     "Kudo, King Among Bears": {
       "article_titles": [
         "Let's Learn the Allied Color Pairs of Magic",
@@ -1856,6 +2215,31 @@
       "scraped_at": "2026-05-18T00:42:42Z",
       "strategy_text": "Popular decks and cards for Kuja, Genome Sorcerer\n\nRecent articles:\n- Let's Learn the Allied Color Pairs of Magic\n- Top 10 Most Played Commander Cards from Strixhaven: School of Mages\n- The Top 10 Most Played Prowess Cards in Commander\n- The Top 40 Four-Mana Commanders\n- The Best MTG Sorceries of 2025 for Commander"
     },
+    "Lathiel, the Bounteous Dawn": {
+      "article_titles": [
+        "Commander Spotlight: Betor, Ancestor's Voice",
+        "Singleton Shmingleton - Lifegain EDH Deck with Congregate",
+        "Do Your Worst - Izzet Lifegain",
+        "Ultra Budget Brews - Lathiel, the Bounteous Dawn",
+        "The 600 – Predicting the Popularity of Commander Legends, Part 2"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/commander-spotlight-betor-ancestors-voice/",
+        "https://edhrec.com/articles/singleton-shmingleton-lifegain-edh-deck-with-congregate/",
+        "https://edhrec.com/articles/do-your-worst-izzet-lifegain/",
+        "https://edhrec.com/articles/ultra-budget-brews-lathiel-the-bounteous-dawn/",
+        "https://edhrec.com/articles/the-600-predicting-the-popularity-of-commander-legends-part-2/"
+      ],
+      "color_identity": [
+        "G",
+        "W"
+      ],
+      "commander_slug": "lathiel-the-bounteous-dawn",
+      "corpus_deck_count_after": 13,
+      "rank": 192,
+      "scraped_at": "2026-05-18T03:07:10Z",
+      "strategy_text": "Popular decks and cards for Lathiel, the Bounteous Dawn\n\nRecent articles:\n- Commander Spotlight: Betor, Ancestor's Voice\n- Singleton Shmingleton - Lifegain EDH Deck with Congregate\n- Do Your Worst - Izzet Lifegain\n- Ultra Budget Brews - Lathiel, the Bounteous Dawn\n- The 600 – Predicting the Popularity of Commander Legends, Part 2"
+    },
     "Lathril, Blade of the Elves": {
       "article_titles": [
         "Another Final Fantasy Commander Has Cracked the EDHREC Top 10",
@@ -1880,6 +2264,29 @@
       "rank": 2,
       "scraped_at": "2026-05-17T21:32:52Z",
       "strategy_text": "Popular decks and cards for Lathril, Blade of the Elves\n\nRecent articles:\n- Another Final Fantasy Commander Has Cracked the EDHREC Top 10\n- Cocktail Hour for the Top 10 Commanders, With mtgdemonictutor\n- The Top 40 Four-Mana Commanders\n- March Commandness Bracket - West Conference Round Two\n- The Top 10 Commanders for Biorhythm"
+    },
+    "Laughing Jasper Flint": {
+      "article_titles": [
+        "The Top 10 Most Played Commander Cards from Aetherdrift",
+        "Kindred Spirits - Choosing Rogues for Commander",
+        "Top 10 Most Played Commander Cards From OTJ",
+        "The Over/Under - Predicting the Popularity of Outlaws of Thunder Junction Commanders"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-top-10-most-played-commander-cards-from-aetherdrift/",
+        "https://edhrec.com/articles/kindred-spirits-choosing-rogues-for-commander/",
+        "https://edhrec.com/articles/top-10-most-played-commander-cards-from-otj/",
+        "https://edhrec.com/articles/the-over-under-predicting-the-popularity-of-outlaws-of-thunder-junction-commanders/"
+      ],
+      "color_identity": [
+        "B",
+        "R"
+      ],
+      "commander_slug": "laughing-jasper-flint",
+      "corpus_deck_count_after": 13,
+      "rank": 193,
+      "scraped_at": "2026-05-18T03:07:57Z",
+      "strategy_text": "Popular decks and cards for Laughing Jasper Flint\n\nRecent articles:\n- The Top 10 Most Played Commander Cards from Aetherdrift\n- Kindred Spirits - Choosing Rogues for Commander\n- Top 10 Most Played Commander Cards From OTJ\n- The Over/Under - Predicting the Popularity of Outlaws of Thunder Junction Commanders"
     },
     "Liesa, Shroud of Dusk": {
       "article_titles": [
@@ -1955,6 +2362,30 @@
       "scraped_at": "2026-05-18T02:03:01Z",
       "strategy_text": "Popular decks and cards for Lord of the Nazgûl\n\nRecent articles:\n- Ranking the Swords of X and Y in Commander\n- The Top 40 Two-Colored Commanders\n- The Top 10 Most Played Commander Cards from FDN\n- Top 10 Universes Beyond Commanders\n- The Over/Under - A Review of The Lord of the Rings Commanders"
     },
+    "Lumra, Bellow of the Woods": {
+      "article_titles": [
+        "Avatar: The Last Airbender: A cEDH Review",
+        "Semi-Blue and the Value of Interaction in cEDH",
+        "Hearthhull, the Worldseed Commander Deck Tech",
+        "Death Toll Upgrade Guide - Duskmourn",
+        "The Top 10 Most Played Commander Cards from BLB"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/avatar-the-last-airbender-a-cedh-review/",
+        "https://edhrec.com/articles/semi-blue-and-the-value-of-interaction-in-cedh/",
+        "https://edhrec.com/articles/hearthhull-the-worldseed-commander-deck-tech/",
+        "https://edhrec.com/articles/death-toll-upgrade-guide-duskmourn/",
+        "https://edhrec.com/articles/the-top-10-most-played-commander-cards-from-blb/"
+      ],
+      "color_identity": [
+        "G"
+      ],
+      "commander_slug": "lumra-bellow-of-the-woods",
+      "corpus_deck_count_after": 14,
+      "rank": 182,
+      "scraped_at": "2026-05-18T02:59:17Z",
+      "strategy_text": "Popular decks and cards for Lumra, Bellow of the Woods\n\nRecent articles:\n- Avatar: The Last Airbender: A cEDH Review\n- Semi-Blue and the Value of Interaction in cEDH\n- Hearthhull, the Worldseed Commander Deck Tech\n- Death Toll Upgrade Guide - Duskmourn\n- The Top 10 Most Played Commander Cards from BLB"
+    },
     "Magda, Brazen Outlaw": {
       "article_titles": [
         "Some Excellent Convoluted Commander Combos",
@@ -1978,6 +2409,30 @@
       "rank": 91,
       "scraped_at": "2026-05-18T00:53:36Z",
       "strategy_text": "Popular decks and cards for Magda, Brazen Outlaw\n\nRecent articles:\n- Some Excellent Convoluted Commander Combos\n- Fire and Ice: Which Cards are Hot and Cold for Magda, Brazen Outlaw?\n- The Top 40 Two-Mana Commanders\n- The Top 10 Lords in Commander\n- The Art of Playing It Cool in Commander"
+    },
+    "Maha, Its Feathers Night": {
+      "article_titles": [
+        "Fun Alternatives for the Top Ten Saltiest Commanders",
+        "The Over/Under - A Review of Bloomburrow Commanders",
+        "20 Best Bird Cards for Commander",
+        "Commander Fusion- Vhati + Captain Lannery = ?",
+        "The Over/Under - Predicting the Popularity of Bloomburrow Commanders"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/fun-alternatives-for-the-top-ten-saltiest-commanders/",
+        "https://edhrec.com/articles/the-over-under-a-review-of-bloomburrow-commanders/",
+        "https://edhrec.com/articles/20-best-bird-cards-for-commander/",
+        "https://edhrec.com/articles/commander-fusion-vhati-captain-lannery/",
+        "https://edhrec.com/articles/the-over-under-predicting-the-popularity-of-bloomburrow-commanders/"
+      ],
+      "color_identity": [
+        "B"
+      ],
+      "commander_slug": "maha-its-feathers-night",
+      "corpus_deck_count_after": 13,
+      "rank": 195,
+      "scraped_at": "2026-05-18T03:09:28Z",
+      "strategy_text": "Popular decks and cards for Maha, Its Feathers Night\n\nRecent articles:\n- Fun Alternatives for the Top Ten Saltiest Commanders\n- The Over/Under - A Review of Bloomburrow Commanders\n- 20 Best Bird Cards for Commander\n- Commander Fusion- Vhati + Captain Lannery = ?\n- The Over/Under - Predicting the Popularity of Bloomburrow Commanders"
     },
     "Maralen, Fae Ascendant": {
       "article_titles": [
@@ -2179,6 +2634,31 @@
       "rank": 23,
       "scraped_at": "2026-05-17T23:57:03Z",
       "strategy_text": "Popular decks and cards for Miirym, Sentinel Wyrm\n\nRecent articles:\n- Creatures, Lands, and Nothing Else, With Arnyn, Deathbloom Botanist\n- Winning the Theme Deck Throwdown With Lathliss, Dragon Queen\n- The Top 20 Commanders With Two-Card Combos\n- March Commandness Bracket - West Conference Round Two\n- Am I the Bolas? - \"Don't Attack Me, You'll Win!\""
+    },
+    "Millicent, Restless Revenant": {
+      "article_titles": [
+        "The Top 10 Most Played Commander Cards with Changeling",
+        "The Five Worst Commander Precons of the Last Five Years",
+        "Building Spirit Typal With Millicent, Restless Revenant",
+        "Commander Fusion - Jem Lightfoote + Crovax = ?",
+        "Recross the Paths - Building a Spirits Deck with Marneus Calgar"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-top-10-most-played-commander-cards-with-changeling/",
+        "https://edhrec.com/articles/the-five-worst-commander-precons-of-the-last-five-years/",
+        "https://edhrec.com/articles/building-spirit-typal-with-millicent-restless-revenant/",
+        "https://edhrec.com/articles/commander-fusion-jem-lightfoote-crovax/",
+        "https://edhrec.com/articles/recross-the-paths-building-a-spirits-deck-with-marneus-calgar/"
+      ],
+      "color_identity": [
+        "U",
+        "W"
+      ],
+      "commander_slug": "millicent-restless-revenant",
+      "corpus_deck_count_after": 14,
+      "rank": 190,
+      "scraped_at": "2026-05-18T03:05:32Z",
+      "strategy_text": "Popular decks and cards for Millicent, Restless Revenant\n\nRecent articles:\n- The Top 10 Most Played Commander Cards with Changeling\n- The Five Worst Commander Precons of the Last Five Years\n- Building Spirit Typal With Millicent, Restless Revenant\n- Commander Fusion - Jem Lightfoote + Crovax = ?\n- Recross the Paths - Building a Spirits Deck with Marneus Calgar"
     },
     "Minsc & Boo, Timeless Heroes": {
       "article_titles": [
@@ -2971,6 +3451,30 @@
       "scraped_at": "2026-05-18T02:24:47Z",
       "strategy_text": "Popular decks and cards for Shilgengar, Sire of Famine\n\nRecent articles:\n- The Best New Cards for Kaalia of the Vast Commander Decks\n- Fire and Ice: Which Cards are Hot and Cold for Shilgengar?\n- 2024’s EDHighlights -  Shilgengar, Sire of Famine\n- Modern Horizons 3 Set Review - Enemies & Wedges\n- The Over/Under - Predicting the Popularity of Modern Horizons 3 Commanders"
     },
+    "Shirei, Shizo's Caretaker": {
+      "article_titles": [
+        "Creatures, Lands, and Nothing Else, With Arnyn, Deathbloom Botanist",
+        "The Best Commander From Every Year of the 2000s",
+        "Deckbuilding Contest Finalists - November 2025",
+        "The Top 40 Monocolored Commanders",
+        "How to Get Your Friends Into EDH With Commander Masters"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/creatures-lands-and-nothing-else-with-arnyn-deathbloom-botanist/",
+        "https://edhrec.com/articles/the-best-commander-from-every-year-of-the-2000s/",
+        "https://edhrec.com/articles/deckbuilding-contest-finalists-november-2025/",
+        "https://edhrec.com/articles/the-top-40-monocolored-commanders/",
+        "https://edhrec.com/articles/how-to-get-your-friends-into-edh-with-commander-masters/"
+      ],
+      "color_identity": [
+        "B"
+      ],
+      "commander_slug": "shirei-shizos-caretaker",
+      "corpus_deck_count_after": 13,
+      "rank": 183,
+      "scraped_at": "2026-05-18T03:00:04Z",
+      "strategy_text": "Popular decks and cards for Shirei, Shizo&#x27;s Caretaker\n\nRecent articles:\n- Creatures, Lands, and Nothing Else, With Arnyn, Deathbloom Botanist\n- The Best Commander From Every Year of the 2000s\n- Deckbuilding Contest Finalists - November 2025\n- The Top 40 Monocolored Commanders\n- How to Get Your Friends Into EDH With Commander Masters"
+    },
     "Shorikai, Genesis Engine": {
       "article_titles": [
         "The Top 20 Commanders With Two-Card Combos",
@@ -3046,6 +3550,53 @@
       "scraped_at": "2026-05-18T00:41:50Z",
       "strategy_text": "Popular decks and cards for Sidar Jabari of Zhalfir\n\nRecent articles:\n- The Top 40 Four-Mana Commanders\n- Esper Renaissance: A Major Glow-Up in 2025\n- The Top 40 Three-Colored Commanders\n- Brewing Abzan Knights with Felothar, Dawn of the Abzan\n- Building a Knight Deck with Kwende, Pride of Femeref"
     },
+    "Sigarda, Font of Blessings": {
+      "article_titles": [
+        "Fire and Ice: Which Cards Are Hot and Cold for Calix?",
+        "Innistrad Remastered: Start Me Up!",
+        "Recross the Paths - Build an Angel Deck with Saskia the Unyielding",
+        "The Other Ability - Atraxa's Four Other Abilities (They're Keywords)",
+        "The Over/Under - Predicting the Popularity of March of the Machine: The Aftermath Commanders"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/fire-and-ice-which-cards-are-hot-and-cold-for-calix/",
+        "https://edhrec.com/articles/innistrad-remastered-start-me-up/",
+        "https://edhrec.com/articles/recross-the-paths-build-an-angel-deck-with-saskia-the-unyielding/",
+        "https://edhrec.com/articles/the-other-ability-atraxas-four-other-abilities-theyre-keywords/",
+        "https://edhrec.com/articles/the-over-under-predicting-the-popularity-of-mom-the-aftermath-commanders/"
+      ],
+      "color_identity": [
+        "G",
+        "W"
+      ],
+      "commander_slug": "sigarda-font-of-blessings",
+      "corpus_deck_count_after": 13,
+      "rank": 201,
+      "scraped_at": "2026-05-18T03:14:05Z",
+      "strategy_text": "Popular decks and cards for Sigarda, Font of Blessings\n\nRecent articles:\n- Fire and Ice: Which Cards Are Hot and Cold for Calix?\n- Innistrad Remastered: Start Me Up!\n- Recross the Paths - Build an Angel Deck with Saskia the Unyielding\n- The Other Ability - Atraxa's Four Other Abilities (They're Keywords)\n- The Over/Under - Predicting the Popularity of March of the Machine: The Aftermath Commanders"
+    },
+    "Silverquill, the Disputant": {
+      "article_titles": [
+        "Silverquill, the Disputant Creature-less Storm Deck",
+        "How Fun Are the Secrets of Strixhaven Commanders?",
+        "Top 10 Combos for Silverquill, the Disputant in cEDH",
+        "The Over/Under - Predicting the Popularity of Secrets of Strixhaven Commanders",
+        "Silverquill, the Disputant - Spellslinger & Token Aristocrats"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/silverquill-the-disputant-creature-less-storm-deck/",
+        "https://edhrec.com/articles/how-fun-are-the-secrets-of-strixhaven-commanders/",
+        "https://edhrec.com/articles/top-10-combos-for-silverquill-the-disputant-in-cedh/",
+        "https://edhrec.com/articles/the-over-under-predicting-the-popularity-of-secrets-of-strixhaven-commanders/",
+        "https://edhrec.com/articles/silverquill-the-disputant-spellslinger-token-aristocrats/"
+      ],
+      "color_identity": [],
+      "commander_slug": "silverquill-the-disputant",
+      "corpus_deck_count_after": 13,
+      "rank": 194,
+      "scraped_at": "2026-05-18T03:08:42Z",
+      "strategy_text": "Popular decks and cards for Silverquill, the Disputant\n\nRecent articles:\n- Silverquill, the Disputant Creature-less Storm Deck\n- How Fun Are the Secrets of Strixhaven Commanders?\n- Top 10 Combos for Silverquill, the Disputant in cEDH\n- The Over/Under - Predicting the Popularity of Secrets of Strixhaven Commanders\n- Silverquill, the Disputant - Spellslinger & Token Aristocrats"
+    },
     "Sisay, Weatherlight Captain": {
       "article_titles": [
         "The Best Instants and Sorceries in Teenage Mutant Ninja Turtles",
@@ -3073,6 +3624,28 @@
       "rank": 81,
       "scraped_at": "2026-05-18T00:45:14Z",
       "strategy_text": "Popular decks and cards for Sisay, Weatherlight Captain\n\nRecent articles:\n- The Best Instants and Sorceries in Teenage Mutant Ninja Turtles\n- The Top 40 Three-Mana Commanders\n- The Top 10 Most Played Commander Cards in Avatar\n- The Top 10 cEDH Decks of 2025\n- The Top 10 Most Played Commanders Cards with Five-Color Abilities"
+    },
+    "Sorin of House Markov": {
+      "article_titles": [
+        "The Top 40 Two-Mana Commanders",
+        "Use Your Life Total as a Resource With This Cecil, Dark Knight Brew",
+        "Recross the Paths - Building a Vampire Deck with Liesa, Shroud of Dusk",
+        "Myth Realized - Should We Bring Back Banned Only As Commander?",
+        "Modern Horizons 3 Set Review - Enemies & Wedges"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/the-top-40-two-mana-commanders/",
+        "https://edhrec.com/articles/use-your-life-total-as-a-resource-with-this-cecil-dark-knight-brew/",
+        "https://edhrec.com/articles/recross-the-paths-building-a-vampire-deck-with-liesa-shroud-of-dusk/",
+        "https://edhrec.com/articles/myth-realized-should-we-bring-back-banned-only-as-commander/",
+        "https://edhrec.com/articles/modern-horizons-3-set-review-enemies-wedges/"
+      ],
+      "color_identity": [],
+      "commander_slug": "sorin-of-house-markov",
+      "corpus_deck_count_after": 13,
+      "rank": 200,
+      "scraped_at": "2026-05-18T03:13:19Z",
+      "strategy_text": "Popular decks and cards for Sorin of House Markov\n\nRecent articles:\n- The Top 40 Two-Mana Commanders\n- Use Your Life Total as a Resource With This Cecil, Dark Knight Brew\n- Recross the Paths - Building a Vampire Deck with Liesa, Shroud of Dusk\n- Myth Realized - Should We Bring Back Banned Only As Commander?\n- Modern Horizons 3 Set Review - Enemies & Wedges"
     },
     "Strefan, Maurer Progenitor": {
       "article_titles": [
@@ -4004,6 +4577,30 @@
       "rank": 66,
       "scraped_at": "2026-05-18T00:32:06Z",
       "strategy_text": "Popular decks and cards for Xyris, the Writhing Storm\n\nRecent articles:\n- Fire and Ice: Which Cards are Hot and Cold for Xyris, the Writhing Storm?\n- Top 10 Group Hug Commanders for Lavaleaper\n- The Top 40 Three-Colored Commanders\n- How To Play Sea Creatures Differently In Commander\n- How Fun Are All of the Temur Commanders?"
+    },
+    "Yawgmoth, Thran Physician": {
+      "article_titles": [
+        "Golgari Legends and +1/+1 Counters With Cleopatra, Exiled Pharaoh",
+        "Building Long Feng, Grand Secretariat in cEDH",
+        "Brewing Mardu Party with Terra, Herald of Hope",
+        "Counters and Combos With Tayam, Luminous Enigma",
+        "5 More Magic Characters Who Deserved Better in the Story"
+      ],
+      "article_urls": [
+        "https://edhrec.com/articles/golgari-legends-and-1-1-counters-with-cleopatra-exiled-pharaoh/",
+        "https://edhrec.com/articles/building-long-feng-grand-secretariat-in-cedh/",
+        "https://edhrec.com/articles/brewing-mardu-party-with-terra-herald-of-hope/",
+        "https://edhrec.com/articles/counters-and-combos-with-tayam-luminous-enigma/",
+        "https://edhrec.com/articles/5-more-magic-characters-who-deserved-better-in-the-story/"
+      ],
+      "color_identity": [
+        "B"
+      ],
+      "commander_slug": "yawgmoth-thran-physician",
+      "corpus_deck_count_after": 13,
+      "rank": 197,
+      "scraped_at": "2026-05-18T03:11:01Z",
+      "strategy_text": "Popular decks and cards for Yawgmoth, Thran Physician\n\nRecent articles:\n- Golgari Legends and +1/+1 Counters With Cleopatra, Exiled Pharaoh\n- Building Long Feng, Grand Secretariat in cEDH\n- Brewing Mardu Party with Terra, Herald of Hope\n- Counters and Combos With Tayam, Luminous Enigma\n- 5 More Magic Characters Who Deserved Better in the Story"
     },
     "Ygra, Eater of All": {
       "article_titles": [
