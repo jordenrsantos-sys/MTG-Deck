@@ -29,13 +29,24 @@ export type AddedCardRowProps = {
   entry: AddedCardEntry;
   /** Optional hover callback to wire CardHoverPreview at the parent scope. */
   onHover?: (name: string) => void;
+  /** Optional Game-Changer name set (O(1) lookup). When the row's card name
+   *  appears in this set, a "GC" Badge renders next to the name with a
+   *  tooltip explaining the bracket-floor impact. Sourced from
+   *  /deck/complete_v1 → game_changers_v1. Defaults to no badge when omitted
+   *  (back-compat for callers that don't yet plumb the set). */
+  gameChangers?: ReadonlySet<string>;
 };
 
-export default function AddedCardRow({ entry, onHover }: AddedCardRowProps) {
+/** Tooltip copy for the GC badge — spec-fixed. */
+export const GAME_CHANGER_TOOLTIP_TEXT =
+  "Game Changer — counts toward bracket floor (1-3 GCs → B3, 4+ → B4)";
+
+export default function AddedCardRow({ entry, onHover, gameChangers }: AddedCardRowProps) {
   const name = typeof entry.name === "string" ? entry.name.trim() : "";
   const reasons = Array.isArray(entry.reasons_v1) ? entry.reasons_v1 : [];
   const primitives = Array.isArray(entry.primitives_added_v1) ? entry.primitives_added_v1 : [];
   const safeName = name === "" ? "(unnamed)" : name;
+  const isGameChanger = gameChangers !== undefined && name !== "" && gameChangers.has(name);
   return (
     <li
       className="flex flex-wrap items-baseline gap-token-2 py-token-1 border-b border-glass-border"
@@ -44,6 +55,19 @@ export default function AddedCardRow({ entry, onHover }: AddedCardRowProps) {
       }}
     >
       <span className="font-semibold text-text-primary text-sm">{safeName}</span>
+      {isGameChanger ? (
+        // GC badge — uses the warn variant (amber) since the GC list is a
+        // bracket-floor signal. Badge primitive doesn't forward title, so
+        // wrap with a span that carries the spec tooltip text.
+        <span
+          data-game-changer="true"
+          title={GAME_CHANGER_TOOLTIP_TEXT}
+          aria-label={GAME_CHANGER_TOOLTIP_TEXT}
+          className="inline-flex"
+        >
+          <Badge variant="warn">GC</Badge>
+        </span>
+      ) : null}
       {reasons.length > 0 ? (
         <span className="flex flex-wrap items-center gap-1" aria-label="Reasons">
           {reasons.map((r, i) => {

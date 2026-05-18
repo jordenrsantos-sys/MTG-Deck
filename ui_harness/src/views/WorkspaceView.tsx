@@ -248,6 +248,10 @@ type DeckCompleteResponseV1 = {
   completed_decklist_text_v1?: string;
   unknowns?: ValidateUnknownRow[];
   violations_v1?: ValidateViolationRow[];
+  // Game-changer detection — flat list of card names from this deck that
+  // appear on the engine's Game Changers userlist. Drives the GC badge
+  // overlay on AddedCardRow / deck overview rows.
+  game_changers_v1?: string[];
 };
 
 type SnapshotPreflightErrorRow = {
@@ -1723,6 +1727,13 @@ export default function WorkspaceView() {
   const tuneSwapRows = useMemo(() => asDeckTuneSwapRows(deckTuneResponse?.recommended_swaps_v1), [deckTuneResponse]);
   const completeAddedRows = useMemo(() => asDeckCompleteAddedRows(completionResult?.added_cards_v1), [completionResult]);
   const completedDecklistText = useMemo(() => asString(completionResult?.completed_decklist_text_v1), [completionResult]);
+  // Game-Changer name set derived from /deck/complete_v1's game_changers_v1.
+  // Memoized as a Set<string> for O(1) lookup in AddedCardRow.
+  const gameChangerNameSet = useMemo<ReadonlySet<string>>(() => {
+    const raw = completionResult?.game_changers_v1;
+    if (!Array.isArray(raw)) return new Set<string>();
+    return new Set<string>(raw.filter((n): n is string => typeof n === "string" && n.trim() !== ""));
+  }, [completionResult]);
   // v1.3 Stage 1: diff-based fallback for AddedCardsPanel. When the
   // engine returns empty added_cards_v1 but the completed_decklist_text_v1
   // is actually larger than what we sent in, derive the additions
@@ -4583,6 +4594,7 @@ export default function WorkspaceView() {
                 {deckState.pendingAdds.length > 0 ? (
                   <AddedCardsPanel
                     rows={[]}
+                    gameChangers={gameChangerNameSet}
                     pendingAdds={deckState.pendingAdds}
                     onTogglePendingAdd={(index) =>
                       dispatchDeckAction({ type: "TOGGLE_PROPOSED_ADD", index })
@@ -4611,7 +4623,11 @@ export default function WorkspaceView() {
                     }
                   />
                 ) : completeAddedRows.length > 0 ? (
-                  <AddedCardsPanel rows={completeAddedRows} source="engine" />
+                  <AddedCardsPanel
+                    rows={completeAddedRows}
+                    source="engine"
+                    gameChangers={gameChangerNameSet}
+                  />
                 ) : completedDecklistText !== "" && derivedAddedRows.length > 0 ? (
                   // v1.7 Stage 5 Deliverable A — partial-completion mode.
                   // AddedCardsPanel computes its own diff from deckText +
@@ -4621,6 +4637,7 @@ export default function WorkspaceView() {
                   // pair so no new reducer action is introduced.
                   <AddedCardsPanel
                     rows={[]}
+                    gameChangers={gameChangerNameSet}
                     deckText={preCompleteDeckTextRef.current ?? ""}
                     completedDecklistText={completedDecklistText}
                     onApplyAllPartial={() => {

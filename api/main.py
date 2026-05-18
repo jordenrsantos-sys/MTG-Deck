@@ -32,8 +32,10 @@ from api.engine.constants import (
     RULESET_VERSION,
     BRACKET_DEFINITION_VERSION,
     GAME_CHANGERS_VERSION,
+    GAME_CHANGERS_SET,
     REPO_ROOT,
 )
+from engine.game_changers import detect_game_changers
 from api.engine.decklist_ingest_v1 import (
     build_canonical_deck_input_v1,
     compute_request_hash_v1,
@@ -286,6 +288,13 @@ class DeckCompleteV1Response(BaseModel):
     # arrays — strict `extra="forbid"` preserved.
     detected_combos_v1: List[Dict[str, Any]] = Field(default_factory=list)
     missing_partners_v1: List[Dict[str, Any]] = Field(default_factory=list)
+    # Game-changer detection for the submitted decklist (commander + cards).
+    # Flat sorted list of card names from this deck that appear on the
+    # Game Changers list (api/engine/data/game_changers/...). The UI uses
+    # this to render "GC" badges on AddedCardRow / deck overview rows.
+    # Default empty so legacy clients see a stable shape — strict
+    # `extra="forbid"` preserved.
+    game_changers_v1: List[str] = Field(default_factory=list)
     # Phase 2.1a — deck theme classification surface (additive, opaque dict
     # shape per entry). Engine layer:
     # api/engine/layers/deck_theme_classifier_v1.py. Each entry has
@@ -2248,6 +2257,25 @@ async def deck_complete_v1(req: DeckCompleteV1Request, request: Request):
                 )
             )
 
+    # Game-changer detection across (commander + cards + engine-added cards).
+    # Mirrors pipeline_build's invocation pattern — names are coerced to a
+    # flat string list before passing into detect_game_changers. The result
+    # is a sorted unique list of card names from this deck that match the
+    # GC userlist; UI uses it to badge AddedCardRow + deck overview rows.
+    _gc_playable_names: List[str] = [
+        name for name in canonical_deck_input_dict.get("cards", []) if isinstance(name, str)
+    ]
+    for _added_row in added_cards_v1:
+        _added_name = _coerce_nonempty_str(_added_row.name)
+        if _added_name != "":
+            _gc_playable_names.append(_added_name)
+    _gc_commander_name = canonical_deck_input_dict.get("commander") if isinstance(canonical_deck_input_dict.get("commander"), str) else None
+    _game_changers_found, _ = detect_game_changers(
+        playable_names=_gc_playable_names,
+        commander_name=_gc_commander_name,
+        gc_set=GAME_CHANGERS_SET,
+    )
+
     response = DeckCompleteV1Response(
         status=complete_status,
         codes_v1=complete_codes,
@@ -2258,6 +2286,7 @@ async def deck_complete_v1(req: DeckCompleteV1Request, request: Request):
         baseline_unknowns_v1=baseline_unknowns_v1,
         snapshot_preflight_v1=snapshot_preflight_v1,
         added_cards_v1=added_cards_v1,
+        game_changers_v1=_game_changers_found,
         completed_decklist_text_v1=(
             complete_payload.get("completed_decklist_text_v1")
             if isinstance(complete_payload.get("completed_decklist_text_v1"), str)

@@ -50,19 +50,31 @@ export function Drawer(props: DrawerProps) {
   );
 }
 
+type DrawerSide = "left" | "right";
+
 type DrawerContentProps = {
   children: ReactNode;
   className?: string;
+  /** Edge to anchor the drawer panel against. Defaults to "left" so all
+   *  pre-existing callers (LeftRail) keep their layout BYTE-IDENTICAL.
+   *  "right" anchors to the right viewport edge and flips the border side. */
+  side?: DrawerSide;
 };
 
 export function DrawerContent(props: DrawerContentProps) {
-  const { children, className } = props;
-  // Slide-in panel: fixed to the left edge, full viewport height,
-  // bounded width. Borders + elevation match Dialog visual weight.
+  const { children, className, side = "left" } = props;
+  // Slide-in panel: fixed to the chosen edge, full viewport height,
+  // bounded width. Borders + elevation match Dialog visual weight. The
+  // border lives on the inner edge — `border-r` for left-anchored,
+  // `border-l` for right-anchored.
+  const sideClasses =
+    side === "right"
+      ? "fixed top-0 right-0 h-full border-l border-glass-border"
+      : "fixed top-0 left-0 h-full border-r border-glass-border";
   const classes = [
-    "fixed top-0 left-0 h-full",
+    sideClasses,
     "bg-bg-base text-text-primary",
-    "border-r border-glass-border shadow-token-modal",
+    "shadow-token-modal",
     "w-72 max-w-[85vw] p-panel-pad overflow-y-auto",
     className,
   ]

@@ -80,6 +80,11 @@ export type AddedCardsPanelProps = {
    *  Caller wires this to APPLY_ACCEPTED_ADDS-equivalent dispatch. When
    *  omitted the Apply All button renders disabled. */
   onApplyAllPartial?: () => void;
+  /** Game-Changer set forwarded to each AddedCardRow. When a row's card
+   *  name appears in this set, the row renders a GC badge with a tooltip
+   *  describing the bracket-floor impact. Sourced from
+   *  /deck/complete_v1 → game_changers_v1. Defaults to no badge. */
+  gameChangers?: ReadonlySet<string>;
   className?: string;
 };
 
@@ -108,6 +113,7 @@ export default function AddedCardsPanel(props: AddedCardsPanelProps) {
     deckText,
     completedDecklistText,
     onApplyAllPartial,
+    gameChangers,
     className,
   } = props;
   const [dismissed, setDismissed] = useState(false);
@@ -371,6 +377,7 @@ export default function AddedCardsPanel(props: AddedCardsPanelProps) {
               key={`${entry.name ?? "row"}-${i}`}
               entry={entry}
               onHover={onHoverCardName}
+              gameChangers={gameChangers}
             />
           ))}
         </ul>
