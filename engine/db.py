@@ -327,13 +327,45 @@ def snapshot_exists(snapshot_id: str) -> bool:
         ).fetchone()
         return row is not None
 
+_CARDS_SELECT_COLS = (
+    "SELECT snapshot_id, oracle_id, name, mana_cost, cmc, type_line, colors, "
+    "color_identity, legalities_json, primitives_json "
+)
+
+
 def find_card_by_name(snapshot_id: str, name: str) -> Optional[Dict[str, Any]]:
     with connect() as con:
         row = con.execute(
-            "SELECT snapshot_id, oracle_id, name, mana_cost, cmc, type_line, colors, color_identity, legalities_json, primitives_json "
-            "FROM cards WHERE snapshot_id = ? AND LOWER(name) = LOWER(?) LIMIT 1",
+            _CARDS_SELECT_COLS
+            + "FROM cards WHERE snapshot_id = ? AND LOWER(name) = LOWER(?) LIMIT 1",
             (snapshot_id, name)
         ).fetchone()
+        # Face-name fallback for DFC / Adventure cards (Scryfall stores the
+        # canonical name as 'Front // Back'; callers often pass just one
+        # face). When exact match fails AND the caller did NOT pass a
+        # composite name, try matching <name> as either the front or back
+        # face of a '// '-joined row. Prefer rows whose two faces actually
+        # differ (the canonical Scryfall form) over data artifacts where
+        # both halves are identical (e.g. 'Tovolar, Dire Overlord //
+        # Tovolar, Dire Overlord'). Card names don't contain SQL LIKE
+        # metacharacters (% and _) in practice — Scryfall sanitizes them —
+        # so a plain LIKE pattern is safe.
+        if row is None and " // " not in (name or ""):
+            row = con.execute(
+                _CARDS_SELECT_COLS
+                + "FROM cards WHERE snapshot_id = ? AND ("
+                "  LOWER(name) LIKE LOWER(?) || ' // %' "
+                "  OR LOWER(name) LIKE '% // ' || LOWER(?) "
+                ") "
+                "ORDER BY "
+                "  CASE WHEN instr(name, ' // ') > 0 AND "
+                "       substr(name, 1, instr(name, ' // ') - 1) = "
+                "       substr(name, instr(name, ' // ') + 4) "
+                "  THEN 1 ELSE 0 END, "
+                "  LENGTH(name) DESC, name ASC "
+                "LIMIT 1",
+                (snapshot_id, name, name)
+            ).fetchone()
         card = dict(row) if row else None
         if card is not None:
             card["legalities"] = _parse_json_object(card.get("legalities_json"))

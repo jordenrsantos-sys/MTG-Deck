@@ -217,6 +217,21 @@ def _load_cards_index(con, db_snapshot_id: str) -> Tuple[
         if dfc_faces is None:
             continue
 
+        # Skip stub-pattern rows from face-based indexing. The cards table
+        # ships ~2,030 placeholder rows shaped 'X // X' with type_line
+        # 'Card // Card' (separate oracle_ids from the real cards). Indexing
+        # them under face name 'X' alongside a real card 'X // Y' produces
+        # two candidates for the same lookup, surfacing as CARD_NAME_AMBIGUOUS
+        # when the user types just 'X'. Tarkir: Dragonstorm Omen cards
+        # (e.g. 'Bloomvine Regent // Claim Territory') trigger this exact
+        # pattern because the front-face name 'Bloomvine Regent' also has
+        # a stub row. The stub rows remain in exact_index / cards_by_oracle
+        # for backward compatibility with any direct oracle_id lookups —
+        # only the face indexes filter them out.
+        face_a, face_b = dfc_faces
+        if face_a.casefold() == face_b.casefold():
+            continue
+
         combined_norm = _normalize_dfc_combined_name(name)
         if combined_norm is not None:
             dfc_combined_normalized_index.setdefault(combined_norm, []).append(candidate)

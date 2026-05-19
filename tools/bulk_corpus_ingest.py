@@ -87,8 +87,16 @@ def _http_request(
     body: Optional[Dict[str, Any]] = None,
     timeout: int = HTTP_TIMEOUT,
     max_retries: int = MAX_HTTP_RETRIES,
+    idempotent: bool = False,
 ) -> Tuple[int, str]:
-    """Return (status_code, body_text). Retries on 429 with exponential backoff."""
+    """Return (status_code, body_text). Retries on 429 with exponential backoff.
+
+    `idempotent=True` opts a POST back into timeout-retry behavior. Use
+    ONLY when the caller can guarantee the server-side action has no
+    duplicate side effects (e.g. a version-ping with empty entries list).
+    The default (False) is safe: POST timeouts raise on the first attempt
+    to avoid the Deadpool 2026-05-18 retry-storm regression.
+    """
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json,text/html"}
     data_bytes: Optional[bytes] = None
     if body is not None:
@@ -114,6 +122,19 @@ def _http_request(
             return exc.code, ""
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             last_exc = exc
+            # Non-idempotent methods (POST) must NOT be retried on TimeoutError:
+            # the server may have completed the request before the client gave up
+            # reading the response. Retrying causes duplicate side effects (the
+            # Deadpool 2026-05-18 incident: 5 retries → 75 corpus entries from one
+            # logical ingest call).
+            is_timeout = isinstance(exc, TimeoutError) or (
+                isinstance(exc, urllib.error.URLError)
+                and isinstance(getattr(exc, "reason", None), TimeoutError)
+            )
+            if method == "POST" and is_timeout and not idempotent:
+                _log(f"  POST timeout — NOT retrying (server may have completed; "
+                     f"retry would duplicate side effects): {url[:80]}")
+                raise
             if attempt < max_retries - 1:
                 wait_s = min(60, 2 ** attempt)
                 _log(f"  network error {exc!r}; retrying in {wait_s}s (attempt {attempt+1}/{max_retries})")
@@ -142,8 +163,10 @@ def _http_get_html(url: str) -> Optional[str]:
     return body
 
 
-def _engine_post(path: str, body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    status, text = _http_request(f"{ENGINE_HOST}{path}", method="POST", body=body)
+def _engine_post(path: str, body: Dict[str, Any], *, idempotent: bool = False) -> Optional[Dict[str, Any]]:
+    status, text = _http_request(
+        f"{ENGINE_HOST}{path}", method="POST", body=body, idempotent=idempotent
+    )
     if status != 200:
         _log(f"  engine POST {path} returned {status}: {text[:200]}")
         return None
@@ -659,7 +682,10 @@ def _engine_version_check_via_ingest_ping() -> Optional[str]:
         "entries": [],
         "skip_bracket_verification": False,
     }
-    resp = _engine_post("/corpus/batch_ingest_v1", body)
+    # Idempotent: empty entries list → engine returns version, 0 accepted,
+    # no corpus mutation. Safe to retry on timeout (cold engine first-call
+    # may take >60s while loading the corpus + warming vectorizers).
+    resp = _engine_post("/corpus/batch_ingest_v1", body, idempotent=True)
     if not resp:
         return None
     return resp.get("version")
@@ -951,8 +977,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         # contain many of the top-ranked commanders from prior manual sweeps.
         # `_fetch_top_commanders` reaches beyond year.json's 100-entry cap via a
         # color-slice-page union (see its docstring). Capped at TOP_COMMANDERS_HARD_CAP.
-        over_fetch = max(args.count * 2, 100)
-        _log(f"Fetching top {over_fetch} commanders from EDHREC (year.json + color-slice union, over-fetch for --count={args.count} net-new)...")
+        #
+        # Scale the buffer by the existing corpus size: a 1k-commander corpus
+        # needs ~1k fetched just to *clear* the dedupe before any net-new shows
+        # up. Fixed `args.count * 2` produced "Planned: 1 commander" once the
+        # corpus exceeded ~1000 entries (2026-05-18 incident).
+        existing_count = len(existing_commanders)
+        over_fetch = min(existing_count + max(args.count * 2, 100), TOP_COMMANDERS_HARD_CAP)
+        _log(f"Fetching top {over_fetch} commanders from EDHREC (year.json + color-slice union, "
+             f"over-fetch for --count={args.count} net-new on top of {existing_count}-commander corpus)...")
         top_commanders = _fetch_top_commanders(over_fetch)
         if len(top_commanders) < 50:
             _log(f"HALT: ranking fetch returned only {len(top_commanders)} commanders (<50 floor — API health issue)")

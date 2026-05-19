@@ -340,6 +340,24 @@ def _is_singleton_exempt_name(card_name: str) -> bool:
     return card_name in _SINGLETON_EXEMPT_NAMES
 
 
+def _face_variants(card_name: str) -> Set[str]:
+    """Return all face-name variants of a card name.
+
+    Scryfall stores DFCs / Adventures with a '// '-joined canonical name
+    ('Decadent Dragon // Expensive Taste'). User-imported decks often
+    contain only one face. Treat the full name AND each face as the same
+    physical card so the singleton-dedupe at the completion step doesn't
+    add a second copy under a different surface name.
+    """
+    variants: Set[str] = {card_name}
+    if " // " in card_name:
+        for face in card_name.split(" // "):
+            face = face.strip()
+            if face:
+                variants.add(face)
+    return variants
+
+
 def _attach_dev_metrics(
     payload: Dict[str, Any],
     *,
@@ -719,6 +737,13 @@ def run_deck_complete_engine_v1(
 
     remaining_budget = int(add_budget)
     working_cards = list(deck_cards)
+    # Face-aware dedup set: 'Decadent Dragon // Expensive Taste' contributes
+    # all three variants ({full, 'Decadent Dragon', 'Expensive Taste'}) so a
+    # candidate offering 'Decadent Dragon' is recognized as a duplicate.
+    working_card_variants: Set[str] = set()
+    for _existing in working_cards:
+        if isinstance(_existing, str) and _existing.strip():
+            working_card_variants |= _face_variants(_existing)
     added_cards: List[Dict[str, Any]] = []
     nonland_added_count = 0
     nonland_pool_attempted = False
@@ -755,12 +780,16 @@ def run_deck_complete_engine_v1(
             name = _nonempty_str(row.get("name"))
             if name == "":
                 continue
-            if (not _is_singleton_exempt_name(name)) and name in working_cards:
+            candidate_variants = _face_variants(name)
+            if (not _is_singleton_exempt_name(name)) and (
+                candidate_variants & working_card_variants
+            ):
                 continue
             primitive_ids = normalize_primitives_source(row.get("_primitive_ids"))
             _apply_primitive_counts(primitive_counts_by_id, primitive_ids)
 
             working_cards.append(name)
+            working_card_variants |= candidate_variants
             added_cards.append(
                 {
                     "name": name,
