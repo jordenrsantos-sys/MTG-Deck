@@ -114,6 +114,47 @@ Phase 5's "detect opponent wincon piece + cast removal" requires removal spells 
 
 - **Aggregate state after Phase 6:** N=10: 1/6 in band, draw rate 13%. N=20: 2/6 in band, draw rate 20%. Success criterion (N=10, ≥4/6) NOT met.
 
+### Phase 7: combo-deck cast filter + color-aware mana redux — REVERTED
+
+- **Intent:** combine Phase 4b's color-aware mana with a new cast-filter that prevents Thoracle-combo-capable decks (defined as: Thoracle + a consult effect anywhere in any zone) from casting "junk" big spells. Allowlist of `_COMBO_DECK_CASTABLE` covers draw effects (Wheel of Fortune, Ponder, Brainstorm, Ad Nauseam, etc.), rituals (Dark Ritual, Cabal Ritual, Jeska's Will), counterspells (Force of Will, Mental Misstep, Flusterstorm). Other cards skipped → fall through to attack/block/pass.
+- **Code:** `_COMBO_DECK_CASTABLE` set, `_is_thoracle_combo_deck` helper, filter inserted in `choose_action`'s cast_highest_cmc branch. Re-applied `_land_color` tuple-return and curated non-basic land table from Phase 4b.
+- **Tests:** 5 new in `test_mpa_combo_deck_filter.py`; 38/38 green.
+- **Full calibration N=10:** B5_vs_B2 0.8 → 0.2, B4_vs_B2 0.0 → 0.5, B4_vs_B3 0.1 → 0.4, B3_vs_B2 0.6 → 0.6, B5_vs_B4 0.9 → 0.2, mirror_B3 0.7 → 0.2. In band 1→1 (B3_vs_B2). Draws 13% → 0%.
+- **Full calibration N=20:** B5_vs_B2 0.9 → 0.4 (in band → out), B4_vs_B2 0 → 0.6 (close to band), B4_vs_B3 0.05 → 0.3, B3_vs_B2 0.5 → 0.45, B5_vs_B4 0.8 → 0.2, mirror_B3 0.55 → 0.5 (in band → in band). In band 2→1 at N=20.
+- **Diagnosis:** Same failure mode as Phase 4b. The combo filter prevents Ezio from casting Mnemonic Betrayal but doesn't prevent Yuriko from PASSING on tempo creatures it needs to win (Yuriko's wincon is ninjutsu attacks, not Thoracle storm — the filter incorrectly classifies Yuriko as Thoracle-combo and starves it of creatures). And Ezio's combo still doesn't beat Ur-Dragon B2's accelerated race.
+- **Reverted per methodology.** This is the second attempt at color-aware mana to fail.
+
+## Hard stop summary
+
+**Hard stop condition triggered: #2 — Architectural blocker.**
+
+Remaining matchup drifts require capabilities beyond additive code:
+- **B4_vs_B2 / B4_vs_B3 in band:** requires B4 decks to actually CAST their colored-cost threats (Aggravated Assault, big dragons) — needs color-aware manabase. But color-aware mana also benefits opponents' colored-cost spells, which races cEDH decks (B5) below their expected bands. The "wincon-relevant cast filter" (Phase 7) was meant to fix this for B5 decks but conflates Thoracle storm decks (where filter is correct) with tempo decks like Yuriko (where filter starves the deck of action).
+- **B5_vs_B4 in band:** Yuriko vs Sauron requires Yuriko to be tempo-active (attacks, ninjutsu, commander damage) while Sauron interacts via stax pieces. Neither half is modeled — the MPA has no ninjutsu, no triggered abilities, no activated abilities beyond mana production.
+- **Higher fidelity policy** would need: archetype tagging (combo vs tempo vs midrange vs control) with per-archetype play strategy, stack-aware response timing, triggered/activated ability modeling.
+
+These are not additive — they require rewriting the action-enumeration and runner layers. Per the kickoff's hard stop language, this is the architectural blocker.
+
+## Final state
+
+**Calibration at N=10 (success-criterion measurement):**
+
+| Matchup | Final WR | Expected | In Band |
+|---|---|---|---|
+| B5_vs_B2 | 0.800 | 0.85-0.95 | ✗ (drift 0.05) |
+| B4_vs_B2 | 0.000 | 0.70-0.85 | ✗ (drift 0.70) |
+| B4_vs_B3 | 0.100 | 0.55-0.70 | ✗ (drift 0.45) |
+| B3_vs_B2 | 0.600 | 0.55-0.70 | ✓ |
+| B5_vs_B4 | 0.900 | 0.55-0.70 | ✗ (drift 0.20 overshoot) |
+| mirror_B3 | 0.700 | 0.45-0.55 | ✗ (drift 0.15 overshoot) |
+
+**In band: 1/6** | **Draw rate: 13.3%** (well under 30% threshold)
+
+**At N=20** (richer evidence): 2/6 in band (B5_vs_B2 + mirror_B3), confirming the N=10 results for B5_vs_B2 and mirror_B3 are both at-or-near band when noise is reduced.
+
+**Anti-bias mirror (N=20):** seat 0 share = 47.4% of decisive games. Anti-bias mirroring is structurally sound.
+
+
 
 
 
