@@ -134,13 +134,27 @@ class AnthropicClient:
         """True iff the SDK imported AND we have an API key. Cheap to
         call repeatedly. Callers MUST guard every network-invoking method
         on this — the fallback path (skip LLM augmentation, emit warning)
-        is the only legal alternative."""
+        is the only legal alternative.
+
+        Kill switch: setting MTG_ENGINE_DISABLE_LLM=1 in the environment
+        forces is_available() to False even if everything else is set.
+        Used by the test suite (tests/conftest.py) to prevent stray real
+        Anthropic API calls during local pytest runs on developer
+        machines where ANTHROPIC_API_KEY may already be present.
+        """
+        if os.environ.get("MTG_ENGINE_DISABLE_LLM") == "1":
+            return False
         return bool(self._sdk_available and self._resolve_api_key())
 
     def unavailable_reason(self) -> str:
         """Human-readable reason why is_available() returned False.
         Surface this in the response warnings array so users know why
         they're seeing iteration-1 behavior."""
+        if os.environ.get("MTG_ENGINE_DISABLE_LLM") == "1":
+            return (
+                "MTG_ENGINE_DISABLE_LLM=1 is set; the iteration-2 LLM reasoning layer "
+                "is disabled by this kill switch. Unset the env var to re-enable."
+            )
         if not self._sdk_available:
             return (
                 f"`anthropic` SDK could not be imported: {self._sdk_import_error}. "

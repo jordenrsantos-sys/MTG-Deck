@@ -77,3 +77,43 @@ def mtg_test_db_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.fixture(autouse=True)
 def _use_mtg_test_db_path(mtg_test_db_path: Path) -> None:
     _ = mtg_test_db_path
+
+
+@pytest.fixture(autouse=True)
+def _disable_llm_layer_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pillar D iteration 2 added the LLM reasoning layer. By default
+    pytest runs MUST NOT make real Anthropic API calls — developer
+    machines have ANTHROPIC_API_KEY in the shell env, and silent
+    network calls during the test suite are both expensive and a
+    reproducibility hazard.
+
+    This autouse fixture sets MTG_ENGINE_DISABLE_LLM=1 for every test.
+    Tests that explicitly want to exercise the LLM path (Phase B2 / C2 /
+    D2 unit tests) can re-enable it by patching the env var inside the
+    test body or by using `enable_llm_layer` below.
+    """
+    monkeypatch.setenv("MTG_ENGINE_DISABLE_LLM", "1")
+    # Force a clean singleton so a stale cached client doesn't carry
+    # over a previous test's availability state.
+    try:
+        from api.engine.layers.agent_llm_client_v1 import reset_default_client_for_tests
+        reset_default_client_for_tests()
+    except Exception:
+        pass
+
+
+@pytest.fixture
+def enable_llm_layer(monkeypatch: pytest.MonkeyPatch):
+    """Re-enables the LLM layer for a single test. Pair with a mocked
+    `call_with_budget` — this fixture does NOT permit real network calls.
+    Sets ANTHROPIC_API_KEY to a dummy and unsets the kill switch so
+    `is_available()` returns True.
+    """
+    monkeypatch.delenv("MTG_ENGINE_DISABLE_LLM", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-fixture")
+    try:
+        from api.engine.layers.agent_llm_client_v1 import reset_default_client_for_tests
+        reset_default_client_for_tests()
+    except Exception:
+        pass
+    yield

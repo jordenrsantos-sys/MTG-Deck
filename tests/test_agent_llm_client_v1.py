@@ -103,6 +103,9 @@ class JsonParserTests(unittest.TestCase):
 class IsAvailableTests(unittest.TestCase):
     def setUp(self) -> None:
         reset_default_client_for_tests()
+        # Conftest's autouse fixture sets MTG_ENGINE_DISABLE_LLM=1;
+        # clear it here so these tests verify the live availability path.
+        self._saved_kill = os.environ.pop("MTG_ENGINE_DISABLE_LLM", None)
         self._saved_key = os.environ.pop("ANTHROPIC_API_KEY", None)
 
     def tearDown(self) -> None:
@@ -110,6 +113,8 @@ class IsAvailableTests(unittest.TestCase):
             os.environ["ANTHROPIC_API_KEY"] = self._saved_key
         else:
             os.environ.pop("ANTHROPIC_API_KEY", None)
+        if self._saved_kill is not None:
+            os.environ["MTG_ENGINE_DISABLE_LLM"] = self._saved_kill
         reset_default_client_for_tests()
 
     def test_unavailable_when_env_var_missing_and_no_explicit_key(self) -> None:
@@ -129,12 +134,26 @@ class IsAvailableTests(unittest.TestCase):
         c = AnthropicClient()
         self.assertTrue(c.is_available())
 
+    def test_kill_switch_disables_even_with_key(self) -> None:
+        # MTG_ENGINE_DISABLE_LLM=1 forces is_available() to False.
+        os.environ["ANTHROPIC_API_KEY"] = "sk-real-key"
+        os.environ["MTG_ENGINE_DISABLE_LLM"] = "1"
+        try:
+            c = AnthropicClient()
+            self.assertFalse(c.is_available())
+            self.assertIn("MTG_ENGINE_DISABLE_LLM", c.unavailable_reason())
+        finally:
+            os.environ.pop("MTG_ENGINE_DISABLE_LLM", None)
+
 
 class BudgetGuardTests(unittest.TestCase):
     """Pre-call input-token budget guard. No SDK call should happen when
     the input estimate blows the budget."""
 
     def setUp(self) -> None:
+        # Conftest sets MTG_ENGINE_DISABLE_LLM=1 by default; clear it
+        # here so these tests can exercise the live availability path.
+        os.environ.pop("MTG_ENGINE_DISABLE_LLM", None)
         os.environ["ANTHROPIC_API_KEY"] = "sk-test"
 
     def tearDown(self) -> None:
@@ -177,6 +196,9 @@ class SuccessfulCallTests(unittest.TestCase):
     computed."""
 
     def setUp(self) -> None:
+        # Conftest sets MTG_ENGINE_DISABLE_LLM=1 by default; clear it
+        # here so these tests can exercise the live availability path.
+        os.environ.pop("MTG_ENGINE_DISABLE_LLM", None)
         os.environ["ANTHROPIC_API_KEY"] = "sk-test"
 
     def tearDown(self) -> None:
@@ -241,6 +263,9 @@ class RetryTests(unittest.TestCase):
     backoff; permanent errors (AuthenticationError) do not."""
 
     def setUp(self) -> None:
+        # Conftest sets MTG_ENGINE_DISABLE_LLM=1 by default; clear it
+        # here so these tests can exercise the live availability path.
+        os.environ.pop("MTG_ENGINE_DISABLE_LLM", None)
         os.environ["ANTHROPIC_API_KEY"] = "sk-test"
 
     def tearDown(self) -> None:

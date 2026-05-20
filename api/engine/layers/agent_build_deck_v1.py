@@ -137,6 +137,45 @@ def compute_agent_build_deck_v1(
             ),
         })
 
+    # ---- Iteration 2 Phase B2: LLM call #1 — intent interpreter ----
+    # Inspects (commander, bracket, theme_hints, must_include_cards) and
+    # returns implicit_themes, suggested_extensions, conflict_warnings,
+    # and a likely_win_condition. Augments theme_hints (without forcing)
+    # and gives suggested_extensions a non-locked score boost in the
+    # candidate pool. Skipped cleanly when LLM unavailable.
+    intent_analysis: Optional[Dict[str, Any]] = None
+    augmented_theme_hints = list(theme_hints)
+    suggested_extension_names: List[str] = []
+    if llm_client.is_available():
+        intent_analysis = _run_intent_interpreter(
+            llm_client=llm_client,
+            commander=commander.strip(),
+            bracket=bracket,
+            theme_hints=theme_hints,
+            must_include_cards=must_include_cards,
+            llm_metrics=llm_metrics,
+            warnings=warnings,
+        )
+        if intent_analysis:
+            # Inferred themes added to hints; tracked separately via the
+            # `intent_analysis.implicit_themes` field in the response so
+            # the user can see what we inferred.
+            for inferred in intent_analysis.get("implicit_themes") or []:
+                if isinstance(inferred, str) and inferred and inferred not in augmented_theme_hints:
+                    augmented_theme_hints.append(inferred)
+            for ext in intent_analysis.get("suggested_extensions") or []:
+                if isinstance(ext, dict):
+                    name = ext.get("card")
+                    if isinstance(name, str) and name.strip():
+                        suggested_extension_names.append(name.strip())
+            # Surface conflict_warnings to the user.
+            for cw in intent_analysis.get("conflict_warnings") or []:
+                if isinstance(cw, str) and cw:
+                    warnings.append({
+                        "code": "INTENT_CONFLICT_WARNING",
+                        "message": cw,
+                    })
+
     # ---- Phase B: build the candidate pool ----
     t_pool = perf_counter()
     try:
@@ -144,10 +183,11 @@ def compute_agent_build_deck_v1(
             db_snapshot_id=db_snapshot_id,
             commander=commander.strip(),
             bracket=bracket,
-            theme_hints=theme_hints,
+            theme_hints=augmented_theme_hints,
             must_include_cards=must_include_cards,
             seed=seed,
             call_counter=call_counter,
+            suggested_extension_names=suggested_extension_names,
         )
     except Exception as exc:
         return {
@@ -185,6 +225,10 @@ def compute_agent_build_deck_v1(
     }] + body
 
     # ---- Phase D: validation + swap iteration (≤12 iters, total ≤30 calls) ----
+    # Note: we validate against the USER-STATED theme_hints, not the
+    # LLM-augmented ones. Theme coherence is a "did we honor what the
+    # user asked for" check; the LLM's inferred themes are bonuses, not
+    # requirements.
     t_validate = perf_counter()
     deck, last_findings, validate_warnings = _validate_and_iterate(
         deck=deck, pool=pool,
@@ -248,7 +292,7 @@ def compute_agent_build_deck_v1(
         "summary_narrative": last_findings.get("summary_narrative"),
         "consider_adding": last_findings.get("consider_adding") or [],
         "novel_combo_flags": last_findings.get("novel_combo_flags") or [],
-        "intent_analysis": last_findings.get("intent_analysis"),
+        "intent_analysis": intent_analysis,
     }
 
     return {
@@ -314,6 +358,12 @@ THEME_MATCH_WEIGHT = 10.0          # per primitive overlapping with a theme
 ARCHETYPE_STAPLE_BASELINE = 5.0    # small boost for "fits commander archetype"
 FREQUENCY_PENALTY_THRESHOLD = 0.30  # corpus freq above this gets penalized
 FREQUENCY_PENALTY_WEIGHT = 30.0    # how strongly to penalize common-corpus cards
+# Iteration 2 — Phase B2: additive boost for cards the LLM intent
+# interpreter named in `suggested_extensions`. Strong enough to outrank
+# pure staples and most theme-medium cards, but well below user picks
+# (USER_PICK_SCORE=INF). The boost is ADDITIVE so a card that's also a
+# theme match stays better than a card that's only an LLM suggestion.
+LLM_EXTENSION_BOOST = 25.0
 
 
 def _normalize_color_identity(raw: Any) -> List[str]:
@@ -426,12 +476,23 @@ def _build_candidate_pool(
     must_include_cards: List[str],
     seed: Optional[int],
     call_counter: Dict[str, int],
+    suggested_extension_names: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Compose archetype_brief + theme_top_cards into a ranked candidate pool.
 
     `call_counter` is a single-key mutable dict ({"calls": int}) so callers
     can enforce the ENDPOINT_CALL_BUDGET across the whole build. Each upstream
     layer call increments this counter.
+
+    `suggested_extension_names` (iteration 2): card names the LLM intent
+    interpreter (Phase B2) flagged as likely-intended creative extensions.
+    Each such name gets LLM_EXTENSION_BOOST added to its score, raising
+    it above ordinary staples but never above a user must-include (which
+    is INF-scored). Names not present in the theme/staple universe are
+    NOT injected as new candidates — the LLM only re-ranks the
+    deterministic pool. (Iteration 3 may add a separate broader-pool
+    injection if Phase F2's report shows the LLM's suggestions are being
+    drowned out by the deterministic top-N.)
     """
     from api.engine.layers.agent_endpoints_v1 import (
         compute_archetype_brief_v1,
@@ -552,6 +613,28 @@ def _build_candidate_pool(
             source="archetype_staple",
             rationale=f"Corpus staple for {commander} (usage_pct={freq:.2f}).",
         )
+
+    # Iteration 2 Phase B2: apply LLM-suggested-extension boost. Cards
+    # named by the intent interpreter get LLM_EXTENSION_BOOST added to
+    # their existing score (theme/staple/whatever). User picks (INF)
+    # are unaffected (INF + 25 = INF).
+    if suggested_extension_names:
+        ext_lower = {n.strip().lower() for n in suggested_extension_names if isinstance(n, str)}
+        for name, cand in by_name.items():
+            if name.strip().lower() in ext_lower:
+                old = cand["score"]
+                if old == USER_PICK_SCORE:
+                    continue
+                cand["score"] = old + LLM_EXTENSION_BOOST
+                rc = list(cand.get("rationale_components") or [])
+                rc.append(
+                    f"LLM intent interpreter flagged as a likely-intended creative "
+                    f"extension (+{LLM_EXTENSION_BOOST:.0f} score boost)."
+                )
+                cand["rationale_components"] = rc
+                # Combine the source string for downstream visibility.
+                if "llm_intent_extension" not in cand["source"].split("|"):
+                    cand["source"] = cand["source"] + "|llm_intent_extension"
 
     # Deterministic tie-break. When seed is provided, hash(name, seed) gives a
     # stable seed-dependent ordering for equal-score candidates without
@@ -1289,3 +1372,192 @@ def _validate_and_iterate(
             break
 
     return deck, last_findings, warnings
+
+
+# ============================================================
+# Iteration 2 Phase B2 — LLM call #1 (intent interpreter).
+# ============================================================
+#
+# The intent interpreter runs BEFORE the deterministic candidate pool
+# builds. It reads the user's stated intent (commander + bracket +
+# theme_hints + must_includes) and:
+#   1. Notes the type / abilities / signaled archetype of each must-include.
+#   2. Proposes 3-5 IMPLICIT themes the user probably wants but didn't
+#      state explicitly (e.g. user states "Vampires" with Vito as a must-
+#      include → implicit theme is "lifegain payoffs").
+#   3. Proposes 5-10 cards the user likely INTENDS but didn't list. These
+#      are creative extensions of the stated request — NOT auto-expansion
+#      of combo chains from a single anchor (the creativity-envelope rule
+#      from iteration 1).
+#   4. Flags conflicts (e.g. "bracket B2 + Thoracle+Consult must-includes"
+#      is a B5-class combo at a casual bracket).
+#   5. Identifies the deck's likely primary win condition.
+#
+# Output is folded into the build:
+#   - implicit_themes → appended to theme_hints (purely additive; theme
+#     coherence is still scored against the USER's hints, not the LLM's).
+#   - suggested_extensions → flagged in the candidate pool with a
+#     deterministic score boost (LLM_EXTENSION_BOOST=+25). They are NOT
+#     score=INF — that's reserved for user must_include_cards.
+#   - conflict_warnings → surfaced as INTENT_CONFLICT_WARNING entries.
+#   - intent_analysis (full structured output) → exposed under
+#     summary.intent_analysis for the UI to render.
+
+
+_INTENT_INTERPRETER_SYSTEM_PROMPT = (
+    "You are an expert MTG Commander (cEDH-literate) deck-building assistant. "
+    "Your job is to read a user's deck-build request BEFORE the deterministic "
+    "candidate-pool algorithm runs, and produce a structured analysis that "
+    "improves the build.\n\n"
+    "RULES — these are hard:\n"
+    "1. NEVER auto-expand a combo chain from a single anchor card. If the user "
+    "named one half of a known combo but not the other, do NOT propose the "
+    "other half as a suggested_extension. That is the user's choice to make.\n"
+    "2. Suggested extensions must be CREATIVE EXTENSIONS of the stated request "
+    "— cards a thoughtful player would consider if they liked the user's picks "
+    "and themes. Do NOT just list the top-frequency staples for the commander.\n"
+    "3. Implicit themes should be themes the user CLEARLY wants but didn't say "
+    "out loud (e.g. user picked Vito → +life payoffs implicit). Don't invent "
+    "themes they'd plausibly reject.\n"
+    "4. Output VALID JSON ONLY. No prose before or after, no markdown fences. "
+    "If any field is unknown, return an empty list / empty string for it; "
+    "never invent unknown card names.\n"
+    "5. Card names must be EXACT Magic: The Gathering printed names "
+    "(case-sensitive, with any apostrophes and commas).\n"
+)
+
+
+def _build_intent_interpreter_user_prompt(
+    *, commander: str, bracket: str,
+    theme_hints: List[str], must_include_cards: List[str],
+) -> str:
+    th_str = ", ".join(theme_hints) if theme_hints else "(none provided)"
+    mi_str = ", ".join(must_include_cards) if must_include_cards else "(none provided)"
+    return (
+        f"Commander: {commander}\n"
+        f"Bracket target: {bracket}  (B1=ultra-casual ... B5=cEDH)\n"
+        f"User-stated theme hints: {th_str}\n"
+        f"User must-include cards: {mi_str}\n\n"
+        "For each must-include card, briefly note: its primary type, two or "
+        "three key abilities, and what archetype/role it signals.\n\n"
+        "Then output JSON exactly in this shape:\n"
+        "{\n"
+        '  "must_include_analysis": [\n'
+        '    {"card": "...", "type": "...", "key_abilities": ["...", "..."], "signals_archetype": "..."}\n'
+        "  ],\n"
+        '  "implicit_themes": ["...", "..."],\n'
+        '  "suggested_extensions": [\n'
+        '    {"card": "Exact Card Name", "why": "one sentence reason grounded in the user picks/themes"}\n'
+        "  ],\n"
+        '  "conflict_warnings": ["..."],\n'
+        '  "likely_win_condition": "one sentence"\n'
+        "}\n\n"
+        "Limits: implicit_themes 3-5 entries. suggested_extensions 5-10 entries. "
+        "conflict_warnings 0-3 entries (only real conflicts, e.g. bracket vs combo).\n"
+        "Remember: no combo auto-expansion. If a must-include is half of a "
+        "known combo, the other half is NOT a suggested_extension."
+    )
+
+
+# Budget for the intent interpreter call. The plan target is ~$0.04 per
+# build call at Sonnet 4.6 pricing: 3k input × $3/MT + 2k output × $15/MT
+# = $0.009 + $0.030 = $0.039. Pre-call guard set at 3000 input tokens.
+_INTENT_INTERPRETER_INPUT_TOKEN_BUDGET = 3000
+_INTENT_INTERPRETER_OUTPUT_TOKEN_BUDGET = 2000
+
+
+def _run_intent_interpreter(
+    *,
+    llm_client: Any,
+    commander: str,
+    bracket: str,
+    theme_hints: List[str],
+    must_include_cards: List[str],
+    llm_metrics: Dict[str, Any],
+    warnings: List[Dict[str, str]],
+) -> Optional[Dict[str, Any]]:
+    """Run LLM call #1 (intent interpreter). Returns the parsed structured
+    output dict on success, or None on any failure (which is surfaced as
+    a warning; the build then proceeds without LLM augmentation for this
+    phase — iteration-1 behavior).
+
+    Tracks token / cost / latency in `llm_metrics["calls"]` so the
+    response payload accumulates the cost across all four LLM phases.
+    """
+    system = _INTENT_INTERPRETER_SYSTEM_PROMPT
+    user = _build_intent_interpreter_user_prompt(
+        commander=commander, bracket=bracket,
+        theme_hints=theme_hints, must_include_cards=must_include_cards,
+    )
+
+    result = llm_client.call_with_budget(
+        system=system,
+        user=user,
+        max_input_tokens=_INTENT_INTERPRETER_INPUT_TOKEN_BUDGET,
+        max_output_tokens=_INTENT_INTERPRETER_OUTPUT_TOKEN_BUDGET,
+    )
+
+    # Always record metrics — even on failure — so the UI shows what the
+    # iteration-2 layer attempted.
+    llm_metrics["calls"].append({
+        "phase": "B2_intent_interpreter",
+        "ok": result.ok,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "cost_usd": result.cost_usd,
+        "latency_ms": result.latency_ms,
+        "error_code": result.error_code,
+        "retries": result.retries,
+    })
+
+    if not result.ok:
+        warnings.append({
+            "code": "INTENT_INTERPRETER_FAILED",
+            "message": (
+                f"LLM call #1 (intent interpreter) failed: "
+                f"{result.error_code}: {result.error_message}. "
+                "Falling back to iteration-1 deterministic pool build."
+            ),
+        })
+        return None
+
+    parsed = result.parsed_json
+    if not isinstance(parsed, dict):
+        warnings.append({
+            "code": "INTENT_INTERPRETER_INVALID_JSON",
+            "message": (
+                "LLM call #1 succeeded but the response was not parseable JSON. "
+                "Falling back to iteration-1 deterministic pool build. "
+                f"Raw text head: {result.text[:200]!r}"
+            ),
+        })
+        return None
+
+    # Defensive shape check — make sure the keys we'll read exist with the
+    # expected types. We do NOT fail hard on missing optional fields; we
+    # just normalize.
+    return {
+        "must_include_analysis": _as_list_of_dicts(parsed.get("must_include_analysis")),
+        "implicit_themes": _as_list_of_strings(parsed.get("implicit_themes")),
+        "suggested_extensions": _as_list_of_dicts(parsed.get("suggested_extensions")),
+        "conflict_warnings": _as_list_of_strings(parsed.get("conflict_warnings")),
+        "likely_win_condition": str(parsed.get("likely_win_condition") or "").strip(),
+    }
+
+
+def _as_list_of_strings(v: Any) -> List[str]:
+    """Normalize an unknown value into a list of stripped, non-empty strings."""
+    if not isinstance(v, list):
+        return []
+    out: List[str] = []
+    for item in v:
+        if isinstance(item, str) and item.strip():
+            out.append(item.strip())
+    return out
+
+
+def _as_list_of_dicts(v: Any) -> List[Dict[str, Any]]:
+    """Normalize an unknown value into a list of dicts (drop non-dicts)."""
+    if not isinstance(v, list):
+        return []
+    return [item for item in v if isinstance(item, dict)]
