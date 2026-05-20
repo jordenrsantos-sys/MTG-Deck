@@ -245,6 +245,28 @@ def compute_agent_build_deck_v1(
         )
         warnings.extend(critic_warnings)
 
+    # ---- Iteration 2 Phase C2.2: wild combo discovery ----
+    # With the near-final 99-card deck assembled, build a WIDER pool
+    # (300-500 cards, color-legal + theme-adjacent, full oracle text)
+    # and ask the LLM to find wild synergies / novel combos the
+    # iteration-1 corpus-driven pool wouldn't surface. Suggestions can
+    # be either a SWAP (drop X, add Y because Y forms combo with Z) or
+    # a FLAG (note combo already present, no swap needed).
+    if llm_client.is_available():
+        deck, wild_warnings = _run_wild_combo_discovery(
+            llm_client=llm_client,
+            deck=deck,
+            pool=pool,
+            commander=commander.strip(),
+            bracket=bracket,
+            theme_hints=theme_hints,
+            db_snapshot_id=db_snapshot_id,
+            intent_analysis=intent_analysis,
+            llm_metrics=llm_metrics,
+            novel_combo_flags=novel_combo_flags,
+        )
+        warnings.extend(wild_warnings)
+
     # ---- Phase D: validation + swap iteration (≤12 iters, total ≤30 calls) ----
     # Note: we validate against the USER-STATED theme_hints, not the
     # LLM-augmented ones. Theme coherence is a "did we honor what the
@@ -2084,3 +2106,386 @@ def _run_candidate_critic(
         })
 
     return new_deck, warnings
+
+
+# ============================================================
+# Iteration 2 Phase C2.2 — LLM call #2.5 (wild combo discovery).
+# ============================================================
+#
+# The candidate critic (Phase C2.1) is bounded by Phase B's corpus-prior
+# pool — it can re-rank what the deterministic skeleton already
+# surfaced. Phase C2.2 expands the search space: a separate 300-500
+# card pool (color-legal + theme-adjacent, NOT pre-narrowed by corpus
+# frequency) is computed and offered to the LLM along with the near-
+# final deck. The LLM is asked to find wild synergies the iteration-1
+# pipeline could not — non-Spellbook combos, engine+payoff pairings,
+# underexplored mechanic interactions.
+#
+# Two suggestion modes:
+#   ADD swap — drop card X from the deck, add card Y. Bracket policy +
+#     color identity re-checked on every applied swap.
+#   FLAG only — the LLM noticed a combo already present (no swap
+#     needed); recorded in novel_combo_flags so the UI can render it.
+
+_WILD_COMBO_INPUT_TOKEN_BUDGET = 22000
+_WILD_COMBO_OUTPUT_TOKEN_BUDGET = 3500
+_WILD_COMBO_POOL_SIZE = 350  # smaller than the wide-pool max so token
+                              # budget fits at the call_with_budget guard.
+_WILD_COMBO_MAX_SUGGESTIONS = 5
+
+
+_WILD_COMBO_SYSTEM_PROMPT = (
+    "You are an expert MTG Commander deck-builder with deep cEDH and "
+    "casual-EDH literacy. The deck is essentially complete — your job is "
+    "to find WILD synergies and combos the deck doesn't currently have "
+    "but COULD. Read the card text and reason about interactions; don't "
+    "just list well-known Spellbook combos.\n\n"
+    "Look for:\n"
+    "  - Cards that would close a near-combo (2 of 3 pieces present — "
+    "what's the third?).\n"
+    "  - Novel 2-card combos not in Spellbook (either because the cards "
+    "are new or because the combo is non-obvious).\n"
+    "  - 'Engine + payoff' synergies (e.g. recursion engine + payoff "
+    "that triggers off recursion).\n"
+    "  - Underexplored mechanic interactions.\n"
+    "  - Cards that would let a borderline-functional combo go off "
+    "reliably (tutor effects for fragile combos).\n\n"
+    "RULES — hard:\n"
+    "1. Each suggestion is either an ADD (with a corresponding REMOVE) "
+    "or a FLAG (combo already present in the deck — no swap needed).\n"
+    "2. ADD swaps must respect the bracket combo policy. If the bracket "
+    "doesn't allow the combo type, FLAG it instead and explain.\n"
+    "3. ADD cards must come from the supplied candidate pool. The pool "
+    "is wider than the iteration-1 pool on purpose — use it.\n"
+    "4. Bias toward INTERESTING over SAFE. If nothing creative jumps "
+    "out, return an empty list — don't pad. A short, sharp list beats "
+    "a long boring one.\n"
+    "5. Maximum {n_max} suggestions total (ADD + FLAG combined).\n"
+    "6. Output VALID JSON ONLY. Card names must be EXACT printed names."
+)
+
+
+def _build_wild_combo_user_prompt(
+    *,
+    commander: str,
+    bracket: str,
+    theme_hints: List[str],
+    intent_analysis: Optional[Dict[str, Any]],
+    deck: List[Dict[str, str]],
+    wide_pool: List[Dict[str, Any]],
+    bracket_policy_summary: str,
+) -> str:
+    deck_lines = [f"  - {c['card_name']} ({c.get('source', 'agent')})" for c in deck]
+    pool_lines: List[str] = []
+    for cand in wide_pool:
+        name = cand.get("name", "?")
+        type_line = cand.get("type_line") or ""
+        cmc = cand.get("cmc")
+        prims = ", ".join((cand.get("primitives") or [])[:3])
+        oracle_text = cand.get("oracle_text") or ""
+        if oracle_text and len(oracle_text) > 200:
+            oracle_text = oracle_text[:197] + "..."
+        line = f"  - {name} | {type_line} | CMC={cmc} | primitives=[{prims}]"
+        if oracle_text:
+            line += f"\n      text: {oracle_text}"
+        pool_lines.append(line)
+
+    intent_block = ""
+    if intent_analysis:
+        wc = intent_analysis.get("likely_win_condition") or ""
+        if wc:
+            intent_block = f"\nLikely win condition (from intent interpreter): {wc}\n"
+
+    return (
+        f"Commander: {commander}\n"
+        f"Bracket: {bracket}\n"
+        f"Themes: {theme_hints}\n"
+        f"{intent_block}"
+        f"\nBracket combo policy: {bracket_policy_summary}\n"
+        f"\nCURRENT 99-CARD DECK:\n"
+        + "\n".join(deck_lines)
+        + f"\n\nWIDE CANDIDATE POOL ({len(wide_pool)} cards):\n"
+        + "\n".join(pool_lines)
+        + "\n\nOutput JSON exactly:\n"
+        + "{\n"
+        + '  "suggestions": [\n'
+        + '    {"action": "add_swap",\n'
+        + '     "add_card": "Card to add (must be from pool)",\n'
+        + '     "remove_card": "Card to remove (must be in current deck)",\n'
+        + '     "combo_partner": "Card already in deck that the add interacts with",\n'
+        + '     "outcome": "what the interaction produces",\n'
+        + '     "is_known_spellbook_combo": false,\n'
+        + '     "is_creative_outlier": true},\n'
+        + '    {"action": "flag_only",\n'
+        + '     "combo_cards": ["Card A in deck", "Card B in deck"],\n'
+        + '     "outcome": "what they produce together",\n'
+        + '     "is_known_spellbook_combo": true,\n'
+        + '     "is_creative_outlier": false}\n'
+        + "  ]\n"
+        + "}\n"
+        + f"\nReturn 0 to {_WILD_COMBO_MAX_SUGGESTIONS} suggestions. Empty list is fine."
+    )
+
+
+def _run_wild_combo_discovery(
+    *,
+    llm_client: Any,
+    deck: List[Dict[str, str]],
+    pool: Dict[str, Any],
+    commander: str,
+    bracket: str,
+    theme_hints: List[str],
+    db_snapshot_id: str,
+    intent_analysis: Optional[Dict[str, Any]],
+    llm_metrics: Dict[str, Any],
+    novel_combo_flags: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+    """Run the wild-combo-discovery pass. Returns (new_deck, warnings).
+    Applies ADD swaps that pass color/bracket/singleton validation; logs
+    FLAG-only suggestions and dropped ADD swaps in novel_combo_flags."""
+    warnings: List[Dict[str, str]] = []
+    color_identity = set(pool.get("color_identity") or [])
+    if not color_identity:
+        warnings.append({
+            "code": "WILD_COMBO_SKIPPED_NO_CI",
+            "message": "Skipped wild-combo discovery — empty commander color identity.",
+        })
+        return deck, warnings
+
+    # Collect theme primitives from the existing pool's candidates so
+    # the wide pool can rank theme-adjacent cards higher.
+    theme_primitives_set: set = set()
+    for cand in pool.get("candidates", []) or []:
+        for p in cand.get("primitives") or []:
+            if isinstance(p, str):
+                theme_primitives_set.add(p)
+
+    # Build the wide pool.
+    deck_names = [c["card_name"] for c in deck]
+    try:
+        from api.engine.layers.agent_wide_candidate_pool_v1 import (
+            compute_agent_wide_candidate_pool_v1,
+        )
+        wide_pool_result = compute_agent_wide_candidate_pool_v1(
+            db_snapshot_id=db_snapshot_id,
+            commander=commander,
+            color_identity=sorted(color_identity),
+            theme_primitives=sorted(theme_primitives_set),
+            pool_size=_WILD_COMBO_POOL_SIZE,
+            exclude_names=deck_names,
+        )
+    except Exception as exc:
+        warnings.append({
+            "code": "WILD_COMBO_POOL_FAILED",
+            "message": f"{exc.__class__.__name__}: {exc}",
+        })
+        return deck, warnings
+
+    wide_candidates = wide_pool_result.get("candidates") or []
+    for w in wide_pool_result.get("warnings") or []:
+        warnings.append({
+            "code": f"WIDE_POOL_{w.get('code', 'WARNING')}",
+            "message": w.get("message", ""),
+        })
+    if not wide_candidates:
+        warnings.append({
+            "code": "WILD_COMBO_SKIPPED_EMPTY_WIDE_POOL",
+            "message": "Wide candidate pool returned 0 cards; skipping wild-combo discovery.",
+        })
+        return deck, warnings
+
+    # Call the LLM.
+    system = _WILD_COMBO_SYSTEM_PROMPT.format(n_max=_WILD_COMBO_MAX_SUGGESTIONS)
+    user = _build_wild_combo_user_prompt(
+        commander=commander, bracket=bracket, theme_hints=theme_hints,
+        intent_analysis=intent_analysis, deck=deck, wide_pool=wide_candidates,
+        bracket_policy_summary=_summarize_bracket_policy(bracket),
+    )
+    result = llm_client.call_with_budget(
+        system=system, user=user,
+        max_input_tokens=_WILD_COMBO_INPUT_TOKEN_BUDGET,
+        max_output_tokens=_WILD_COMBO_OUTPUT_TOKEN_BUDGET,
+    )
+    llm_metrics["calls"].append({
+        "phase": "C2_2_wild_combo_discovery",
+        "ok": result.ok,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "cost_usd": result.cost_usd,
+        "latency_ms": result.latency_ms,
+        "error_code": result.error_code,
+        "retries": result.retries,
+    })
+    if not result.ok:
+        warnings.append({
+            "code": "WILD_COMBO_FAILED",
+            "message": (
+                f"LLM call #2.5 (wild-combo discovery) failed: "
+                f"{result.error_code}: {result.error_message}. "
+                "Deck unchanged."
+            ),
+        })
+        return deck, warnings
+    parsed = result.parsed_json
+    if not isinstance(parsed, dict):
+        warnings.append({
+            "code": "WILD_COMBO_INVALID_JSON",
+            "message": (
+                "LLM call #2.5 returned non-JSON output; deck unchanged. "
+                f"Raw text head: {result.text[:200]!r}"
+            ),
+        })
+        return deck, warnings
+
+    suggestions = _as_list_of_dicts(parsed.get("suggestions"))
+    if not suggestions:
+        # Empty list is a valid outcome — bias was toward "interesting only".
+        return deck, warnings
+
+    pool_by_lower = {c["name"].strip().lower(): c for c in wide_candidates}
+    deck_names_lower = {c["card_name"].strip().lower() for c in deck}
+    user_pick_names_lower = {
+        c["card_name"].strip().lower() for c in deck if c.get("source") == "user_intent"
+    }
+    pair_index = _load_two_card_pair_index()
+    deck = list(deck)  # work on a copy
+
+    for sug in suggestions[:_WILD_COMBO_MAX_SUGGESTIONS]:
+        action = str(sug.get("action") or "").strip().lower()
+        outcome = str(sug.get("outcome") or "").strip()
+
+        if action == "flag_only":
+            cards = sug.get("combo_cards")
+            if not isinstance(cards, list) or len(cards) != 2:
+                continue
+            novel_combo_flags.append({
+                "cards": [str(cards[0]), str(cards[1])],
+                "outcome": outcome,
+                "in_spellbook": bool(sug.get("is_known_spellbook_combo", False)),
+                "source": "C2_2_wild_combo_discovery_flag",
+                "applied_swap": False,
+            })
+            continue
+
+        if action != "add_swap":
+            continue
+
+        add_name = str(sug.get("add_card") or "").strip()
+        remove_name = str(sug.get("remove_card") or "").strip()
+        if not add_name or not remove_name:
+            continue
+        add_lower = add_name.lower()
+        remove_lower = remove_name.lower()
+
+        cand = pool_by_lower.get(add_lower)
+        if not cand:
+            warnings.append({
+                "code": "WILD_COMBO_REJECTED_HALLUCINATION",
+                "message": (
+                    f"Wild-combo suggested adding {add_name!r} but it isn't "
+                    f"in the wide pool; dropped."
+                ),
+            })
+            continue
+        if add_lower in deck_names_lower:
+            warnings.append({
+                "code": "WILD_COMBO_REJECTED_DUPLICATE",
+                "message": f"Wild-combo suggested {add_name!r} already in deck; dropped.",
+            })
+            continue
+        ci = set(cand.get("color_identity") or [])
+        if ci and not ci.issubset(color_identity):
+            warnings.append({
+                "code": "WILD_COMBO_REJECTED_CI_ILLEGAL",
+                "message": (
+                    f"Wild-combo add {add_name!r} CI={sorted(ci)} not subset of "
+                    f"commander CI={sorted(color_identity)}; dropped."
+                ),
+            })
+            continue
+
+        # Remove target must exist and not be a user pick.
+        remove_idx = None
+        remove_is_user_pick = False
+        for idx, deck_card in enumerate(deck):
+            if deck_card["card_name"].strip().lower() == remove_lower:
+                if deck_card.get("source") == "user_intent":
+                    remove_is_user_pick = True
+                    break
+                remove_idx = idx
+                break
+        if remove_idx is None and not remove_is_user_pick:
+            warnings.append({
+                "code": "WILD_COMBO_REJECTED_REMOVE_MISSING",
+                "message": (
+                    f"Wild-combo suggested removing {remove_name!r} but it isn't "
+                    f"in the deck; dropped."
+                ),
+            })
+            continue
+        if remove_is_user_pick:
+            warnings.append({
+                "code": "WILD_COMBO_REJECTED_REMOVE_USER_PICK",
+                "message": (
+                    f"Wild-combo suggested removing {remove_name!r} but it's a "
+                    f"user must-include; dropped."
+                ),
+            })
+            continue
+
+        # Bracket combo policy on the post-swap deck.
+        deck_after = (deck_names_lower - {remove_lower}) | {add_lower}
+        pair_count_after = _count_existing_combo_pairs(
+            selected_names_lower=deck_after - {add_lower},
+            pair_index=pair_index,
+        )
+        violates, reason = _combo_violates_bracket(
+            candidate_name=add_name,
+            selected_names_lower=deck_after - {add_lower},
+            user_pick_names_lower=user_pick_names_lower,
+            bracket=bracket,
+            pair_index=pair_index,
+            current_pair_count=pair_count_after,
+        )
+        if violates:
+            warnings.append({
+                "code": "WILD_COMBO_REJECTED_BRACKET",
+                "message": f"Wild-combo add {add_name!r}: {reason}; dropped to flag instead.",
+            })
+            partner = str(sug.get("combo_partner") or "").strip() or remove_name
+            novel_combo_flags.append({
+                "cards": [add_name, partner],
+                "outcome": outcome,
+                "in_spellbook": bool(sug.get("is_known_spellbook_combo", False)),
+                "source": "C2_2_wild_combo_discovery_bracket_demoted",
+                "applied_swap": False,
+            })
+            continue
+
+        # Apply swap.
+        partner = str(sug.get("combo_partner") or "").strip()
+        is_outlier = bool(sug.get("is_creative_outlier", False))
+        new_reason = (
+            f"Wild-combo discovery: {outcome or 'synergy add'} "
+            f"(partners with {partner!r})." if partner else
+            f"Wild-combo discovery: {outcome or 'synergy add'}."
+        )
+        source = "llm_wild_combo_discovery"
+        if is_outlier:
+            source += "|creative_outlier"
+        deck[remove_idx] = {
+            "card_name": add_name,
+            "reason": new_reason,
+            "source": source,
+        }
+        deck_names_lower = (deck_names_lower - {remove_lower}) | {add_lower}
+        novel_combo_flags.append({
+            "cards": [add_name, partner] if partner else [add_name],
+            "outcome": outcome,
+            "in_spellbook": bool(sug.get("is_known_spellbook_combo", False)),
+            "source": "C2_2_wild_combo_discovery_added",
+            "applied_swap": True,
+            "removed_card": remove_name,
+        })
+
+    return deck, warnings
