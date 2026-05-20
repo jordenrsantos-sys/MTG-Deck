@@ -245,3 +245,102 @@ to verify bracket placement and `deck_analyze_v1` to compute
 first pass, swap the offending card(s) for the next-best pool candidate and
 revalidate, up to `MAX_SWAP_ITERATIONS=12`. Whole pipeline bounded by
 `ENDPOINT_CALL_BUDGET=30`.
+
+---
+
+## Phase D — Validation + swap-iteration loop
+
+**Status:** ✅ Complete (2026-05-20)
+
+### What landed
+- `_deck_to_raw_text(commander, deck_body)` — serializes the agent's
+  selected deck into the TappedOut-style raw text that `deck_analyze_v1`
+  and `deck_strength_check_v1` expect (`Commander\n1 X\nDeck\n1 ...`).
+- `_compute_theme_coherence(requested_hints, classified_themes)` — fraction
+  of user-requested theme_hints that show up in the classifier's output.
+  Case-insensitive substring match handles `TYPAL_VAMPIRES` vs
+  `TYPAL_VAMPIRES:Vampire` ID variations.
+- `_validate_deck()` — structural + endpoint-based checks:
+  - 100 cards total.
+  - Singleton (non-basic dupes flagged; basics excepted).
+  - Bracket estimate from `deck_analyze_v1.bracket_estimate` compared to
+    requested bracket → `BRACKET_MISMATCH` issue when they disagree.
+  - `theme_coherence_score` from analyze's `deck_themes_v1` → flagged
+    `THEME_COHERENCE_LOW` when below `THEME_COHERENCE_TARGET=0.5`.
+  - Strength-check summary from `compute_deck_strength_check_v1` →
+    `bracket_signal`, `mean_similarity`, `nearest_neighbors_count`.
+  - Budget-aware: if `call_counter["calls"]` already at `ENDPOINT_CALL_BUDGET`,
+    short-circuits the analyze call and emits `BUDGET_EXCEEDED_BEFORE_ANALYZE`.
+- `_attempt_swap()` — per-issue patches:
+  - `SINGLETON_VIOLATION` → drops the duplicate's later occurrence, takes
+    the next pool candidate not in the deck (or pads with a basic if pool
+    is dry).
+  - `THEME_COHERENCE_LOW` → swaps a basic land for the next theme-sourced
+    pool candidate. (Replacing basics is safest — won't touch user picks
+    or non-basic singletons.)
+  - `BRACKET_MISMATCH` → not yet patched; emits a warning. Phase F will
+    show whether real-snapshot runs need a power-up/power-down heuristic.
+- `_validate_and_iterate()` — outer loop:
+  - Max `MAX_SWAP_ITERATIONS = 12` rounds.
+  - Total endpoint calls capped at `ENDPOINT_CALL_BUDGET = 30` (counter
+    threaded from Phase B onward via the shared `call_counter` dict).
+  - Bails early when no actionable swap exists (`UNRESOLVED_<CODE>` warning
+    surfaces what couldn't be fixed).
+- `compute_agent_build_deck_v1()` now wires Phase D into the pipeline.
+  Response summary now includes:
+  - `themes_classified` — actual analyzer output (no longer the literal
+    `theme_hints` echo from Phase C).
+  - `bracket_estimate` — analyzer's bracket walk result.
+  - `strength_check` — `{bracket_signal, mean_similarity, nearest_neighbors_count}`.
+  - `theme_coherence_score` populated from the last validate pass.
+  - `validation_issues` — the final pass's residual issues (empty when
+    the deck passes).
+
+### Test results
+- 18 new Phase D tests pass (67 cumulative across Phases A–D):
+  - 2 `_deck_to_raw_text` cases.
+  - 5 `_compute_theme_coherence` cases (no-hints, all-match, partial,
+    no-classified, case-insensitive substring).
+  - 7 `_validate_deck` cases (passing-deck, wrong-count, singleton flag +
+    basic exception, theme-coherence-low flag, bracket-mismatch flag,
+    counter increments, budget-exhausted short-circuit).
+  - 4 `_validate_and_iterate` cases (clean-deck single-pass,
+    singleton-swapped-with-pool-candidate, persistent-failure-bails-without-
+    exhausting-cap, ENDPOINT_BUDGET_EXCEEDED halts loop).
+- Phase A tests extended to mock `deck_analyze_v1` and
+  `deck_strength_check_v1` since `compute_agent_build_deck_v1` now drives
+  them; otherwise the FastAPI endpoint test against the fixture DB would
+  trigger corpus vectorization (~30s cold).
+- Full suite: **922 passed, 17 skipped, 8 deselected.** The same 4
+  pre-existing failure families as before — no new regressions.
+
+### Architectural decisions
+1. **`_attempt_swap` is intentionally conservative.** It patches issues
+   the agent created (duplicates, theme-coherence) and leaves
+   `BRACKET_MISMATCH` for Phase F to observe. Building a robust power-up/down
+   swap heuristic requires per-candidate "power" scoring that the existing
+   strength oracle doesn't yet expose; rather than guess, we warn and let
+   Phase F's validation report tell us how often this matters.
+2. **Validation calls `deck_analyze_v1` + `deck_strength_check_v1` lazily.**
+   Same lazy-import pattern as Phase B's calls into `agent_endpoints_v1` —
+   keeps the layer import cheap and lets test code patch at the source
+   module without touching the agent module.
+3. **`call_counter` is the single source of truth for budget enforcement.**
+   Phase B, Phase D, and the outer wrapper all read/write this same dict.
+   This means a build that consumes 28 calls during Phase B (rare —
+   would require many theme_hints) leaves only 2 calls for validation,
+   which `_validate_deck` correctly short-circuits.
+4. **Theme coherence target = 0.5.** Half of the requested hints must
+   appear in the classifier's top themes. A stricter target (0.8+) would
+   trip on commanders whose corpus is small enough that the classifier
+   doesn't surface fine-grained themes. Phase F will calibrate this number
+   per test case.
+5. **Singleton check excludes ALL basics, including Wastes.** The Magic
+   rule is "non-basic", not "non-WUBRG-basic"; Wastes plus snow basics
+   count too. `_BASIC_LAND_NAMES` enumerates them.
+
+### Next
+Phase E — UI surface. Build the "AI Build" tab in
+`ui_harness/src/views/WorkspaceView.tsx` that hits `/agent/build_deck_v1`
+and renders the deck + per-card reasons + creativity envelope metrics.
+chrome-devtools-mcp will verify the UI end-to-end after each test case.

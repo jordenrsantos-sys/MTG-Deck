@@ -159,10 +159,20 @@ def compute_agent_build_deck_v1(
         "source": "user_intent",
     }] + body
 
+    # ---- Phase D: validation + swap iteration (≤12 iters, total ≤30 calls) ----
+    t_validate = perf_counter()
+    deck, last_findings, validate_warnings = _validate_and_iterate(
+        deck=deck, pool=pool,
+        commander=commander.strip(), bracket=bracket,
+        theme_hints=theme_hints, db_snapshot_id=db_snapshot_id,
+        call_counter=call_counter,
+    )
+    phase_timings_ms["validate"] = int((perf_counter() - t_validate) * 1000)
+    warnings.extend(validate_warnings)
+
     # ---- Summary ----
+    body = deck[1:]  # may have been swapped during Phase D
     user_picks_present = sum(1 for c in body if c.get("source") == "user_intent")
-    must_include_total = len(pool.get("must_includes_resolved", []) or []) + \
-                         len(pool.get("must_includes_dropped", []) or [])
     # Staples avoided: high-frequency staples (>=30% corpus) NOT in deck.
     deck_names_lower = {c["card_name"].strip().lower() for c in deck}
     archetype_brief = pool.get("archetype_brief", {}) or {}
@@ -177,20 +187,22 @@ def compute_agent_build_deck_v1(
             staples_avoided += 1
 
     summary = {
-        "themes_classified": theme_hints,  # Phase D replaces with classifier output
+        "themes_classified": last_findings.get("themes_classified") or [],
         "bracket_placement": bracket,
+        "bracket_estimate": last_findings.get("bracket_estimate"),
         "color_identity": pool.get("color_identity") or [],
-        "strength_check": None,  # Phase D populates
+        "strength_check": last_findings.get("strength_check_summary"),
         "creativity_envelope_metrics": {
             "user_picks_present": user_picks_present,
             "user_picks_total": len(must_include_cards),
             "must_includes_resolved": pool.get("must_includes_resolved", []),
             "must_includes_dropped": pool.get("must_includes_dropped", []),
             "staples_avoided_count": staples_avoided,
-            "theme_coherence_score": 0.0,  # Phase D populates from analyze
+            "theme_coherence_score": last_findings.get("theme_coherence_score", 0.0),
         },
         "endpoint_call_count": call_counter["calls"],
         "phase_timings_ms": phase_timings_ms,
+        "validation_issues": last_findings.get("issues") or [],
     }
 
     return {
@@ -882,3 +894,332 @@ def _select_deck(
         selected = selected[:target_size]
 
     return selected, warnings
+
+
+# ============================================================
+# Phase D — Validation + swap-iteration loop.
+# ============================================================
+
+# Theme coherence threshold below which a re-pick is attempted. Coherence is
+# the fraction of requested theme_hints that appear in the classified themes;
+# 1.0 = every hint matched, 0.0 = none matched.
+THEME_COHERENCE_TARGET = 0.5
+
+
+def _deck_to_raw_text(commander: str, deck_body: List[Dict[str, str]]) -> str:
+    """Serialize the agent's selected deck into the TappedOut-style raw text
+    that deck_analyze_v1 and deck_strength_check_v1 expect."""
+    lines = ["Commander", f"1 {commander}", "Deck"]
+    for c in deck_body:
+        lines.append(f"1 {c['card_name']}")
+    return "\n".join(lines)
+
+
+def _compute_theme_coherence(
+    requested_hints: List[str],
+    classified_themes: List[Dict[str, Any]],
+) -> float:
+    """Fraction of `requested_hints` that appear in `classified_themes`.
+
+    Matches on theme_id substring (case-insensitive) — the classifier may
+    return either `TYPAL_VAMPIRES` or `TYPAL_VAMPIRES:Vampire`, and the user
+    may have passed either form.
+    """
+    if not requested_hints:
+        return 1.0  # No themes requested → trivially coherent.
+    classified_ids = []
+    for t in classified_themes or []:
+        tid = t.get("theme_id") or t.get("id") or t.get("name") or ""
+        if isinstance(tid, str) and tid:
+            classified_ids.append(tid.lower())
+    if not classified_ids:
+        return 0.0
+    matched = 0
+    for hint in requested_hints:
+        h = (hint or "").lower()
+        if not h:
+            continue
+        # Match if the hint is a substring of any classified ID or vice-versa.
+        if any(h in cid or cid.startswith(h.split(":", 1)[0]) for cid in classified_ids):
+            matched += 1
+    return matched / max(1, len(requested_hints))
+
+
+def _validate_deck(
+    *,
+    deck: List[Dict[str, str]],
+    commander: str,
+    bracket: str,
+    theme_hints: List[str],
+    db_snapshot_id: str,
+    call_counter: Dict[str, int],
+) -> Dict[str, Any]:
+    """Run the validation suite and return structured findings.
+
+    `deck` is the full 100-card deck (commander first). Returns a dict with:
+      - `issues`: list of validation problem dicts (empty = deck passes).
+      - `themes_classified`, `theme_coherence_score`, `bracket_estimate`,
+        `strength_check_summary` — populated when the relevant call succeeded.
+      - `endpoint_calls_made`: how many calls this validate pass cost.
+    """
+    issues: List[Dict[str, Any]] = []
+    findings: Dict[str, Any] = {
+        "issues": issues,
+        "themes_classified": None,
+        "theme_coherence_score": 0.0,
+        "bracket_estimate": None,
+        "strength_check_summary": None,
+        "endpoint_calls_made": 0,
+    }
+
+    # ---- Structural checks (no endpoint calls) ----
+    if len(deck) != 100:
+        issues.append({
+            "code": "DECK_SIZE_WRONG",
+            "message": f"Deck has {len(deck)} cards; need exactly 100 (commander + 99).",
+        })
+
+    # Singleton: every non-basic name appears once.
+    from collections import Counter as _Counter
+    body = deck[1:]
+    counter: _Counter = _Counter(c["card_name"] for c in body)
+    for name, count in counter.items():
+        if count > 1 and name not in _BASIC_LAND_NAMES:
+            issues.append({
+                "code": "SINGLETON_VIOLATION",
+                "message": f"{name!r} appears {count} times; non-basics must be singleton.",
+                "offending_card": name,
+            })
+
+    # ---- Analyze (1 call): themes + bracket_estimate + color identity ----
+    if call_counter["calls"] >= ENDPOINT_CALL_BUDGET:
+        issues.append({
+            "code": "BUDGET_EXCEEDED_BEFORE_ANALYZE",
+            "message": f"Endpoint call budget ({ENDPOINT_CALL_BUDGET}) consumed before validate.",
+        })
+        return findings
+
+    raw_text = _deck_to_raw_text(commander, body)
+    try:
+        from api.engine.layers.deck_analyze_v1 import compute_deck_analyze_v1
+        analyze_result = compute_deck_analyze_v1(
+            db_snapshot_id=db_snapshot_id,
+            commander=commander,
+            raw_decklist_text=raw_text,
+            include_debug=False,
+        )
+        call_counter["calls"] += 1
+        findings["endpoint_calls_made"] += 1
+        themes_classified = analyze_result.get("deck_themes_v1") or []
+        findings["themes_classified"] = themes_classified
+        coherence = _compute_theme_coherence(theme_hints, themes_classified)
+        findings["theme_coherence_score"] = coherence
+        if theme_hints and coherence < THEME_COHERENCE_TARGET:
+            issues.append({
+                "code": "THEME_COHERENCE_LOW",
+                "message": (
+                    f"theme_coherence_score={coherence:.2f} below target {THEME_COHERENCE_TARGET}; "
+                    f"requested_hints={theme_hints}; classified_top="
+                    f"{[t.get('theme_id') for t in themes_classified[:3]]}"
+                ),
+            })
+        # Bracket estimate from analyze (cheap; doesn't need strength_check).
+        be = analyze_result.get("bracket_estimate")
+        findings["bracket_estimate"] = be
+        if isinstance(be, dict):
+            estimated = be.get("bracket") or be.get("bracket_id")
+            if estimated and estimated != bracket:
+                issues.append({
+                    "code": "BRACKET_MISMATCH",
+                    "message": (
+                        f"Requested bracket={bracket}, analyze estimated={estimated}. "
+                        f"Deck composition may need swap-iteration."
+                    ),
+                    "estimated_bracket": estimated,
+                    "requested_bracket": bracket,
+                })
+    except Exception as exc:
+        issues.append({
+            "code": "ANALYZE_FAILED",
+            "message": f"{exc.__class__.__name__}: {exc}",
+        })
+
+    # ---- Strength check (1 call): corpus-similarity bracket placement ----
+    if call_counter["calls"] >= ENDPOINT_CALL_BUDGET:
+        # Budget exhausted; skip strength check, deck stands.
+        return findings
+    try:
+        from api.engine.layers.deck_strength_check_v1 import compute_deck_strength_check_v1
+        sc = compute_deck_strength_check_v1(
+            db_snapshot_id=db_snapshot_id,
+            commander=commander,
+            raw_decklist_text=raw_text,
+            k_nearest=3,
+        )
+        call_counter["calls"] += 1
+        findings["endpoint_calls_made"] += 1
+        # Trim down to the summary fields we want to expose in the response.
+        ma = sc.get("measurement_a") or {}
+        findings["strength_check_summary"] = {
+            "bracket_signal": ma.get("bracket_signal"),
+            "mean_similarity": ma.get("mean_similarity"),
+            "nearest_neighbors_count": len(ma.get("nearest_neighbors") or []),
+        }
+    except Exception as exc:
+        issues.append({
+            "code": "STRENGTH_CHECK_FAILED",
+            "message": f"{exc.__class__.__name__}: {exc}",
+        })
+
+    return findings
+
+
+def _attempt_swap(
+    *,
+    deck: List[Dict[str, str]],
+    pool_candidates: List[Dict[str, Any]],
+    issue: Dict[str, Any],
+    color_identity: List[str],
+) -> Tuple[Optional[List[Dict[str, str]]], Optional[str]]:
+    """Given a deck and a validation issue, attempt a single swap.
+
+    Returns (new_deck, swap_description). Returns (None, None) if no swap was
+    possible (validation issue is structural / cannot be patched).
+    """
+    code = issue.get("code")
+
+    if code == "SINGLETON_VIOLATION":
+        # Drop the second-occurrence of the offending non-basic; replace with
+        # the next pool candidate not already in the deck.
+        name = issue.get("offending_card")
+        if not name:
+            return None, None
+        # Find the LAST occurrence (deck[0] is commander; keep first occurrence).
+        for idx in range(len(deck) - 1, 0, -1):
+            if deck[idx]["card_name"] == name:
+                # Pick a replacement.
+                deck_names_lower = {c["card_name"].strip().lower() for c in deck}
+                replacement: Optional[Dict[str, Any]] = None
+                for cand in pool_candidates:
+                    cname = cand["name"]
+                    if cname.strip().lower() in deck_names_lower:
+                        continue
+                    replacement = cand
+                    break
+                if replacement is None:
+                    # Pad with a basic instead.
+                    new_basic = _fill_mana_base(color_identity, 1)[0]
+                    deck[idx] = new_basic
+                    return deck, f"swap_singleton:{name}→basic"
+                deck[idx] = {
+                    "card_name": replacement["name"],
+                    "reason": " ".join(replacement.get("rationale_components") or [f"Swap-in for duplicate {name}."]),
+                    "source": replacement.get("source", "swap_iteration"),
+                }
+                return deck, f"swap_singleton:{name}→{replacement['name']}"
+
+    if code == "THEME_COHERENCE_LOW":
+        # Replace the lowest-priority non-land in the deck (flex/staple) with
+        # the next theme-source candidate not already present.
+        deck_names_lower = {c["card_name"].strip().lower() for c in deck}
+        replacement = None
+        for cand in pool_candidates:
+            if cand.get("is_user_pick"):
+                continue
+            if not isinstance(cand.get("source"), str) or "theme" not in cand["source"]:
+                continue
+            if cand["name"].strip().lower() in deck_names_lower:
+                continue
+            replacement = cand
+            break
+        if replacement is None:
+            return None, None
+        # Find a flex/basic to evict (don't touch user picks).
+        for idx in range(len(deck) - 1, 0, -1):
+            entry = deck[idx]
+            if entry.get("source") == "user_intent":
+                continue
+            if entry["card_name"] in _BASIC_LAND_NAMES:
+                # Replace one basic with the theme card.
+                deck[idx] = {
+                    "card_name": replacement["name"],
+                    "reason": " ".join(replacement.get("rationale_components") or ["Theme coherence swap."]) + " [slot=swap]",
+                    "source": replacement.get("source", "theme_swap"),
+                }
+                return deck, f"swap_theme:basic→{replacement['name']}"
+        return None, None
+
+    if code == "BRACKET_MISMATCH":
+        estimated = issue.get("estimated_bracket")
+        requested = issue.get("requested_bracket")
+        # We can't easily walk both directions; skip swap and leave a warning.
+        # Phase F observes whether this is common enough to warrant a proper
+        # power-up / power-down heuristic.
+        return None, None
+
+    return None, None
+
+
+def _validate_and_iterate(
+    *,
+    deck: List[Dict[str, str]],
+    pool: Dict[str, Any],
+    commander: str,
+    bracket: str,
+    theme_hints: List[str],
+    db_snapshot_id: str,
+    call_counter: Dict[str, int],
+) -> Tuple[List[Dict[str, str]], Dict[str, Any], List[Dict[str, str]]]:
+    """Run the validate→swap→revalidate loop, bounded by MAX_SWAP_ITERATIONS
+    and ENDPOINT_CALL_BUDGET.
+
+    Returns (final_deck, last_findings, warnings).
+    """
+    warnings: List[Dict[str, str]] = []
+    pool_candidates = pool.get("candidates") or []
+    color_identity = pool.get("color_identity") or []
+
+    last_findings: Dict[str, Any] = {"issues": []}
+    for iteration in range(MAX_SWAP_ITERATIONS):
+        if call_counter["calls"] >= ENDPOINT_CALL_BUDGET:
+            warnings.append({
+                "code": "ENDPOINT_BUDGET_EXCEEDED",
+                "message": (
+                    f"Halted validate-iterate at iteration {iteration}; "
+                    f"calls={call_counter['calls']}/{ENDPOINT_CALL_BUDGET}."
+                ),
+            })
+            break
+        last_findings = _validate_deck(
+            deck=deck, commander=commander, bracket=bracket,
+            theme_hints=theme_hints, db_snapshot_id=db_snapshot_id,
+            call_counter=call_counter,
+        )
+        issues = last_findings["issues"]
+        if not issues:
+            break
+        # Try to swap the first patchable issue.
+        swapped = False
+        for issue in issues:
+            new_deck, desc = _attempt_swap(
+                deck=deck, pool_candidates=pool_candidates,
+                issue=issue, color_identity=color_identity,
+            )
+            if new_deck is not None:
+                deck = new_deck
+                warnings.append({
+                    "code": "SWAP_ITERATION",
+                    "message": f"iter={iteration}: {desc} (issue={issue.get('code')})",
+                })
+                swapped = True
+                break
+        if not swapped:
+            # No actionable swap for the remaining issues; bail.
+            for issue in issues:
+                warnings.append({
+                    "code": f"UNRESOLVED_{issue.get('code', 'UNKNOWN')}",
+                    "message": issue.get("message", ""),
+                })
+            break
+
+    return deck, last_findings, warnings

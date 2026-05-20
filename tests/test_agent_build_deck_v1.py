@@ -82,6 +82,29 @@ def _find_card_stub(snapshot_id: str, name: str):
     return None  # No user must-includes in these tests; not exercised here.
 
 
+def _analyze_stub(**_kwargs) -> dict:
+    return {
+        "version": "analyze_v1.0",
+        "card_count": 100,
+        "color_identity": ["B", "R", "W"],
+        "deck_themes_v1": [{"theme_id": "TYPAL_VAMPIRES", "name": "Vampire Tribal"}],
+        "bracket_estimate": {"bracket": "B3"},
+        "warnings": [],
+    }
+
+
+def _strength_check_stub(**_kwargs) -> dict:
+    return {
+        "version": "strength_check_v1.3",
+        "measurement_a": {
+            "bracket_signal": "B3",
+            "mean_similarity": 0.62,
+            "nearest_neighbors": [],
+        },
+        "warnings": [],
+    }
+
+
 class AgentBuildDeckV1ContractTests(unittest.TestCase):
     _tmp_dir_ctx: tempfile.TemporaryDirectory | None = None
     _db_env_ctx = None
@@ -119,12 +142,16 @@ class AgentBuildDeckV1ContractTests(unittest.TestCase):
         payload.update(overrides)
 
         from api.engine.layers import agent_endpoints_v1 as ae
+        from api.engine.layers import deck_analyze_v1 as da
+        from api.engine.layers import deck_strength_check_v1 as sc
         from engine import db as engine_db
         if with_upstream_mocks:
             mocks = [
                 patch.object(ae, "compute_archetype_brief_v1", return_value=_archetype_brief_stub()),
                 patch.object(ae, "compute_theme_top_cards_v1", return_value=_theme_top_cards_stub()),
                 patch.object(engine_db, "find_card_by_name", side_effect=_find_card_stub),
+                patch.object(da, "compute_deck_analyze_v1", side_effect=_analyze_stub),
+                patch.object(sc, "compute_deck_strength_check_v1", side_effect=_strength_check_stub),
             ]
             for m in mocks:
                 m.start()
