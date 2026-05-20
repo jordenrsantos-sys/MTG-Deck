@@ -3,6 +3,8 @@ import type { MouseEvent } from "react";
 
 import CardSuggestInput from "../CardSuggestInput";
 import CardList, { type CardListItem } from "../cards/CardList";
+import Badge from "../../ui/primitives/Badge";
+import { GAME_CHANGER_TOOLTIP_TEXT } from "../stats/AddedCardRow";
 import type { CardSuggestRow, HoverCard, ParsedDecklistRow } from "../workspaceTypes";
 import { asArray, asRecord, cardNameSortKey, extractResolveNamesMissingNames, normalizeApiBase, safeParseJson } from "../workspaceUtils";
 
@@ -45,6 +47,11 @@ type DeckEditorPanelProps = {
   onLoadSavedDeck?: (deckName: string) => void;
   onRenameSavedDeck?: (deckName: string) => void;
   onDeleteSavedDeck?: (deckName: string) => void;
+  /** Game-Changer name set sourced from /deck/complete_v1's game_changers_v1.
+   *  When provided, deck-list rows whose card name appears in the set render
+   *  an amber "GC" badge next to the name. Defaults to no badges when
+   *  omitted (back-compat for direct callers in tests/other surfaces). */
+  gameChangers?: ReadonlySet<string>;
 };
 
 type WorkingDeckRow = {
@@ -231,6 +238,7 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
     onLoadSavedDeck,
     onRenameSavedDeck,
     onDeleteSavedDeck,
+    gameChangers,
   } = props;
 
   const [addCardInput, setAddCardInput] = useState("");
@@ -806,11 +814,24 @@ export default function DeckEditorPanel(props: DeckEditorPanelProps) {
 
   function buildDeckEditorRowItem(row: WorkingDeckRow): CardListItem {
     const displayCount = Math.max(1, Math.trunc(row.count));
+    const trimmedName = row.name.trim();
+    const isGameChanger =
+      gameChangers !== undefined && trimmedName !== "" && gameChangers.has(trimmedName);
 
     return {
       name: `${displayCount} ${row.name}`,
       oracleId: row.oracleId || null,
       className: "deck-editor-list-row",
+      nameBadge: isGameChanger ? (
+        <span
+          data-game-changer="true"
+          title={GAME_CHANGER_TOOLTIP_TEXT}
+          aria-label={GAME_CHANGER_TOOLTIP_TEXT}
+          className="inline-flex"
+        >
+          <Badge variant="warn">GC</Badge>
+        </span>
+      ) : null,
       rightMeta: (
         <div className="deck-editor-row-controls">
           <button

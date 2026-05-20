@@ -11,8 +11,19 @@ import AddedCardsPanel from "../components/stats/AddedCardsPanel";
 // v1.7.2 Stage 3 — engine's deck-combo insight payload
 // (detected_combos_v1 + missing_partners_v1) from /deck/complete_v1.
 // DeckCombosPanel is now wrapped by CombosDrawer (right-anchored drawer
+//
+// Pillar A.6 fix: import the typed entry shapes so the workspace can
+// materialize a single memoized arrays-of-typed-entries and feed both
+// the toolbar Combos badge AND the drawer from the same reference.
+// Previously the badge derived a count from completionResult and the
+// drawer read completionResult inline — same source, but two distinct
+// computations whose dependency wiring could drift (Bug 2/3).
 // toggled from the workspace toolbar) instead of rendered inline.
 import CombosDrawer from "../components/stats/CombosDrawer";
+import type {
+  DetectedComboEntry,
+  MissingPartnerEntry,
+} from "../components/stats/DeckCombosPanel";
 import DeckThemesPanel from "../components/stats/DeckThemesPanel";
 // v1.7.5 — bracket-combo violation warning. Renders red banner when the
 // engine response carries TWO_CARD_COMBOS_DISALLOWED_B* violations or
@@ -1373,6 +1384,11 @@ export default function WorkspaceView() {
   const [snapshotId, setSnapshotId] = useState(defaultSnapshotId);
   const [profileId, setProfileId] = useState(defaultProfileId);
   const [bracketId, setBracketId] = useState(defaultBracketId);
+  // v1.7.6 — bracket selector popover open/close state. Owned by
+  // WorkspaceView (not a child component) so the same trigger button can
+  // both display the current bracket pill AND toggle the menu without an
+  // extra ref/imperative handle.
+  const [bracketSelectorOpen, setBracketSelectorOpen] = useState(false);
   // Phase 4.13.2 architectural refactor: replace useState + useRef +
   // two-racing-useEffects with a useReducer-backed pure state machine.
   // The reducer (lib/workspaceDeckState) carries `source` as a first-class
@@ -1740,16 +1756,27 @@ export default function WorkspaceView() {
     if (!Array.isArray(raw)) return new Set<string>();
     return new Set<string>(raw.filter((n): n is string => typeof n === "string" && n.trim() !== ""));
   }, [completionResult]);
-  // Memoized combos count for the toolbar Combos button badge.
-  // Sums detected_combos_v1.length + missing_partners_v1.length so the
-  // user sees one glanceable count of combo-related entries.
-  const combosTotalCount = useMemo<number>(() => {
-    const det = completionResult?.detected_combos_v1;
-    const miss = completionResult?.missing_partners_v1;
-    const detLen = Array.isArray(det) ? det.length : 0;
-    const missLen = Array.isArray(miss) ? miss.length : 0;
-    return detLen + missLen;
+  // Memoized typed combo arrays — single source of truth feeding BOTH the
+  // toolbar Combos badge AND the right-anchored CombosDrawer. Re-derives
+  // whenever completionResult changes so re-Complete refreshes the drawer
+  // (Bug 3 — old combo data persisting after re-Complete). Materializing
+  // the typed entries here also guarantees the drawer no longer null-renders
+  // when the engine response shape is the legacy `unknown[]` (Bug 2 — drawer
+  // empty despite the toolbar count showing combos available).
+  const detectedCombosForDrawer = useMemo<ReadonlyArray<DetectedComboEntry>>(() => {
+    const raw = completionResult?.detected_combos_v1;
+    return Array.isArray(raw) ? (raw as ReadonlyArray<DetectedComboEntry>) : [];
   }, [completionResult]);
+  const missingPartnersForDrawer = useMemo<ReadonlyArray<MissingPartnerEntry>>(() => {
+    const raw = completionResult?.missing_partners_v1;
+    return Array.isArray(raw) ? (raw as ReadonlyArray<MissingPartnerEntry>) : [];
+  }, [completionResult]);
+  // Toolbar badge count derives from the SAME memos the drawer consumes,
+  // so the badge and the drawer body cannot diverge.
+  const combosTotalCount = useMemo<number>(
+    () => detectedCombosForDrawer.length + missingPartnersForDrawer.length,
+    [detectedCombosForDrawer, missingPartnersForDrawer],
+  );
   // v1.3 Stage 1: diff-based fallback for AddedCardsPanel. When the
   // engine returns empty added_cards_v1 but the completed_decklist_text_v1
   // is actually larger than what we sent in, derive the additions
@@ -4421,11 +4448,92 @@ export default function WorkspaceView() {
                     {/* v1.7.5 UX polish: gate Bracket pill + status pill on
                         hasRealDeck. With no deck loaded, neither metadata
                         is meaningful and the empty-state CTA card below
-                        already provides the "No deck loaded" status. */}
+                        already provides the "No deck loaded" status.
+                        v1.7.6: Bracket pill is now an interactive
+                        selector trigger — clicking opens a popover with
+                        the five canonical brackets (B1-B5). Selecting one
+                        invokes setBracketId AND triggers the local
+                        violations filter in BracketViolationsBanner so
+                        the banner self-hides when the user raises the
+                        bracket past B2, addressing the user-visible gap
+                        called out in the v1.7.5 release notes ("raise the
+                        bracket to B3+ to allow combo strategies" — the
+                        suggestion was previously unactionable). */}
                     {hasRealDeck && bracketId.trim() !== "" ? (
-                      <Badge variant="info" aria-label={`Bracket ${bracketId}`}>
-                        Bracket · {bracketId}
-                      </Badge>
+                      <div className="relative inline-flex">
+                        <button
+                          type="button"
+                          data-v176-stage="bracket-selector-trigger"
+                          aria-haspopup="menu"
+                          aria-expanded={bracketSelectorOpen}
+                          aria-label={`Bracket ${bracketId} — click to change`}
+                          onClick={() => setBracketSelectorOpen((v) => !v)}
+                          className={[
+                            "inline-flex items-center px-token-2 py-token-1",
+                            "text-xs font-medium rounded-token-sm border",
+                            "bg-accent/15 text-accent border-accent/40",
+                            "hover:bg-accent/25 focus:outline-none focus-visible:shadow-focus-ring",
+                            "transition-colors duration-fast cursor-pointer",
+                          ].join(" ")}
+                        >
+                          Bracket · {bracketId}
+                          <span aria-hidden="true" className="ml-token-1">▾</span>
+                        </button>
+                        {bracketSelectorOpen ? (
+                          <div
+                            data-v176-stage="bracket-selector-menu"
+                            role="menu"
+                            aria-label="Choose deck bracket"
+                            className={[
+                              "absolute top-full left-0 mt-token-1 z-50",
+                              "min-w-[260px] max-w-[320px]",
+                              "bg-bg-elev-2 border border-glass-border",
+                              "rounded-token-sm shadow-lg",
+                              "py-token-1",
+                            ].join(" ")}
+                          >
+                            {([
+                              ["B1", "Exhibition", "No 2-card infinite combos"],
+                              ["B2", "Core", "No infinite / game-winning combos"],
+                              ["B3", "Upgraded", "Combos allowed but limited"],
+                              ["B4", "Optimized", "Combos allowed — high power"],
+                              ["B5", "cEDH", "Competitive — anything goes"],
+                            ] as ReadonlyArray<readonly [string, string, string]>).map(
+                              ([id, name, desc]) => {
+                                const isActive = id === bracketId;
+                                return (
+                                  <button
+                                    key={id}
+                                    type="button"
+                                    role="menuitemradio"
+                                    aria-checked={isActive}
+                                    onClick={() => {
+                                      setBracketId(id);
+                                      setBracketSelectorOpen(false);
+                                    }}
+                                    className={[
+                                      "flex w-full items-baseline gap-token-2",
+                                      "px-token-3 py-token-2 text-left",
+                                      "hover:bg-bg-elev-3 focus:outline-none focus-visible:bg-bg-elev-3",
+                                      isActive ? "bg-accent/10" : "",
+                                    ].join(" ")}
+                                  >
+                                    <span className="font-mono text-sm font-bold text-text-primary">
+                                      {id}
+                                    </span>
+                                    <span className="text-sm text-text-primary">
+                                      {name}
+                                    </span>
+                                    <span className="ml-auto text-xs text-text-muted">
+                                      {desc}
+                                    </span>
+                                  </button>
+                                );
+                              },
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
                     ) : null}
                     {hasRealDeck ? (
                       <Badge
@@ -4615,6 +4723,7 @@ export default function WorkspaceView() {
                       ? (completionResult?.status as string)
                       : ""
                   }
+                  currentBracketId={bracketId}
                 />
 
                 {/* v1.1 Stage 1: AddedCardsPanel surfaces /deck/complete_v1's
@@ -4701,16 +4810,8 @@ export default function WorkspaceView() {
                 <CombosDrawer
                   open={combosDrawerOpen}
                   onOpenChange={setCombosDrawerOpen}
-                  detected_combos_v1={
-                    Array.isArray(completionResult?.detected_combos_v1)
-                      ? (completionResult?.detected_combos_v1 as never)
-                      : []
-                  }
-                  missing_partners_v1={
-                    Array.isArray(completionResult?.missing_partners_v1)
-                      ? (completionResult?.missing_partners_v1 as never)
-                      : []
-                  }
+                  detected_combos_v1={detectedCombosForDrawer}
+                  missing_partners_v1={missingPartnersForDrawer}
                 />
 
                 {/* Phase 2.1d — DeckThemesPanel surfaces deck_themes_v1
@@ -5017,6 +5118,7 @@ export default function WorkspaceView() {
                     deckLineCount={deckTextLineCount}
                     deckTextRevision={deckTextRevision}
                     cardHintsByName={deckEditorCardHints}
+                    gameChangers={gameChangerNameSet}
                     savedDeckNames={savedDeckNames}
                     selectedSavedDeckName={selectedSavedDeckName}
                     onSelectedSavedDeckNameChange={handleSelectedSavedDeckNameChange}

@@ -3037,6 +3037,12 @@ textarea {
   line-height: 1.35;
 }
 
+.workspace-card-row-name-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--space-2);
+}
+
 .workspace-card-row-right {
   margin-left: auto;
   display: inline-flex;

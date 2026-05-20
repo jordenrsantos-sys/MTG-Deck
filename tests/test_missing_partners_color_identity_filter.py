@@ -13,7 +13,7 @@ is unaffected (cards in the deck are presumed legal by being there).
 
 Three failing-first scenarios:
   (A) mono-R Krenko + Storm-Kiln Artist → only R-legal partners
-      (Fury Storm + Haze of Rage + colorless Aetherflux Reservoir);
+      (Fury Storm + Haze of Rage + colorless Chain of Smog);
       Black-color partners filtered.
   (B) mono-B commander + Storm-Kiln Artist → only B-legal partners
       (the lone Black partner; red ones filtered).
@@ -36,12 +36,15 @@ FIXTURE_SNAPSHOT_ID = "MP_COLOR_IDENTITY_FILTER_SNAPSHOT"
 STORM_KILN_ARTIST_ORACLE = "a145ff8c-5812-4bcb-bd16-9839dc25121d"
 
 # SKA partner mix for v1.7.4: deliberately CROSS-COLOR so the filter
-# has work to do. Real partner names from the Spellbook pack; colors
+# has work to do. Names are the four real Storm-Kiln Artist partners
+# in `combo_brackets_v1.json` (Pillar A.7 alignment); colors are
 # fabricated for filter-isolation purposes (the fixture DB is a test
-# harness, not an authoritative card source).
+# harness, not an authoritative card source — Chain of Smog is Black
+# in reality but is set colorless here so the "colorless partner
+# ALWAYS legal" branch has a representative entry).
 SKA_PARTNERS = [
     # (oracle_id, name, color_identity_json)
-    ("0b1a27bd-bb98-44f8-8357-666fabfeabf0", "Aetherflux Reservoir",   '[]'),       # colorless
+    ("0b1a27bd-bb98-44f8-8357-666fabfeabf0", "Chain of Smog",           '[]'),       # colorless override for the test
     ("371fa9e3-5432-4f2f-89d4-55061b0b4e57", "Fury Storm",              '["R"]'),    # red
     ("ea14c26b-bf2f-48b4-b879-6e63069ded1f", "Chain of Acid",           '["B"]'),    # black (illegal under Krenko)
     ("f17d0fb8-c157-43b8-be26-f5ba4c6aed14", "Haze of Rage",            '["R"]'),    # red
@@ -149,13 +152,13 @@ class MissingPartnersColorIdentityFilterTests(unittest.TestCase):
 
     def test_a_mono_red_krenko_filters_black_partners(self) -> None:
         names = self._ska_missing_names("Krenko, Mob Boss")
-        # Expected: Aetherflux Reservoir (colorless) + Fury Storm (R) +
+        # Expected: Chain of Smog (colorless) + Fury Storm (R) +
         # Haze of Rage (R) = 3 partners. Chain of Acid (B) filtered.
         self.assertIn("Fury Storm", names, f"Red partner Fury Storm should surface; got {names}")
         self.assertIn("Haze of Rage", names, f"Red partner Haze of Rage should surface; got {names}")
         self.assertIn(
-            "Aetherflux Reservoir", names,
-            f"Colorless partner Aetherflux Reservoir should be legal under any commander; got {names}",
+            "Chain of Smog", names,
+            f"Colorless partner Chain of Smog should be legal under any commander; got {names}",
         )
         self.assertNotIn(
             "Chain of Acid", names,
@@ -168,14 +171,14 @@ class MissingPartnersColorIdentityFilterTests(unittest.TestCase):
 
     def test_b_mono_black_commander_filters_red_partners(self) -> None:
         names = self._ska_missing_names("Test Black Commander")
-        # Expected: Aetherflux Reservoir (colorless) + Chain of Acid (B) = 2.
+        # Expected: Chain of Smog (colorless) + Chain of Acid (B) = 2.
         # Fury Storm + Haze of Rage (both R) filtered.
         self.assertIn(
             "Chain of Acid", names,
             f"Black partner Chain of Acid should surface under mono-Black commander; got {names}",
         )
         self.assertIn(
-            "Aetherflux Reservoir", names,
+            "Chain of Smog", names,
             f"Colorless partner should be legal; got {names}",
         )
         self.assertNotIn(
@@ -198,7 +201,7 @@ class MissingPartnersColorIdentityFilterTests(unittest.TestCase):
             len(names), 4,
             f"5-color commander should not filter any partner; got {len(names)}: {names}",
         )
-        for expected in ("Aetherflux Reservoir", "Chain of Acid", "Fury Storm", "Haze of Rage"):
+        for expected in ("Chain of Smog", "Chain of Acid", "Fury Storm", "Haze of Rage"):
             self.assertIn(expected, names, f"Partner {expected} missing under 5C commander; got {names}")
 
 

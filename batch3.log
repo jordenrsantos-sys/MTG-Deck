@@ -1,5 +1,52 @@
-[01:34:49Z] Engine version check (ping /corpus/batch_ingest_v1)...
-[01:34:52Z]   engine version OK: corpus_batch_ingest_v1.5_spellbook_brackets
-[01:34:53Z] Existing corpus has 1003 distinct commanders
-[01:34:53Z] Progress file has 992 prior commander attempts
-[01:34:53Z] Fetching top 2003 commanders from EDHREC (year.json + color-slice union, over-fetch for --count=500 net-new on top of 1003-commander corpus)...
+[10:32:31Z] Engine version check (ping /corpus/batch_ingest_v1)...
+[10:32:35Z]   network error URLError(ConnectionRefusedError(10061, 'No connection could be made because the target machine actively refused it', None, 10061, None)); retrying in 1s (attempt 1/5)
+[10:32:40Z]   network error URLError(ConnectionRefusedError(10061, 'No connection could be made because the target machine actively refused it', None, 10061, None)); retrying in 2s (attempt 2/5)
+[10:32:46Z]   network error URLError(ConnectionRefusedError(10061, 'No connection could be made because the target machine actively refused it', None, 10061, None)); retrying in 4s (attempt 3/5)
+[10:32:54Z]   network error URLError(ConnectionRefusedError(10061, 'No connection could be made because the target machine actively refused it', None, 10061, None)); retrying in 8s (attempt 4/5)
+Traceback (most recent call last):
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\urllib\request.py", line 1348, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\http\client.py", line 1283, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\http\client.py", line 1329, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\http\client.py", line 1278, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\http\client.py", line 1038, in _send_output
+    self.send(msg)
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\http\client.py", line 976, in send
+    self.connect()
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\http\client.py", line 942, in connect
+    self.sock = self._create_connection(
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\socket.py", line 845, in create_connection
+    raise err
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\socket.py", line 833, in create_connection
+    sock.connect(sa)
+ConnectionRefusedError: [WinError 10061] No connection could be made because the target machine actively refused it
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "E:\MTG Root\mtg-engine\repo\tools\bulk_corpus_ingest.py", line 1148, in <module>
+    raise SystemExit(main())
+  File "E:\MTG Root\mtg-engine\repo\tools\bulk_corpus_ingest.py", line 949, in main
+    version = _engine_version_check_via_ingest_ping()
+  File "E:\MTG Root\mtg-engine\repo\tools\bulk_corpus_ingest.py", line 688, in _engine_version_check_via_ingest_ping
+    resp = _engine_post("/corpus/batch_ingest_v1", body, idempotent=True)
+  File "E:\MTG Root\mtg-engine\repo\tools\bulk_corpus_ingest.py", line 167, in _engine_post
+    status, text = _http_request(
+  File "E:\MTG Root\mtg-engine\repo\tools\bulk_corpus_ingest.py", line 109, in _http_request
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\urllib\request.py", line 216, in urlopen
+    return opener.open(url, data, timeout)
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\urllib\request.py", line 519, in open
+    response = self._open(req, data)
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\urllib\request.py", line 536, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\urllib\request.py", line 496, in _call_chain
+    result = func(*args)
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\urllib\request.py", line 1377, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+  File "C:\Users\jorde\AppData\Local\Programs\Python\Python310\lib\urllib\request.py", line 1351, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>

@@ -32,6 +32,13 @@ export type BracketViolationRow = {
 export type BracketViolationsBannerProps = {
   violations?: ReadonlyArray<BracketViolationRow>;
   status?: string;
+  // v1.7.6: the user's currently-selected bracket. Violations carry the
+  // bracket they were emitted FOR in their code suffix (e.g.
+  // TWO_CARD_COMBOS_DISALLOWED_B2). When the user raises the bracket via
+  // the new selector, those stale violations no longer apply — filter them
+  // out client-side so the banner self-hides immediately instead of
+  // waiting for the next /deck/complete_v1 round-trip.
+  currentBracketId?: string;
 };
 
 const _BRACKET_COMBO_CODE_PREFIX = "TWO_CARD_COMBOS_DISALLOWED";
@@ -47,7 +54,16 @@ export default function BracketViolationsBanner(
   props: BracketViolationsBannerProps,
 ) {
   const violations = Array.isArray(props.violations) ? props.violations : [];
-  const bracketCombo = violations.filter(_isBracketComboViolation);
+  const currentBracketId =
+    typeof props.currentBracketId === "string"
+      ? props.currentBracketId.trim()
+      : "";
+  const bracketCombo = violations
+    .filter(_isBracketComboViolation)
+    .filter((row) => {
+      if (currentBracketId === "") return true;
+      return row.code.endsWith(`_${currentBracketId}`);
+    });
 
   if (bracketCombo.length === 0) {
     return null;

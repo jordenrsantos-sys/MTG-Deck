@@ -4,6 +4,7 @@ type CardRowProps = {
   name: string;
   oracleId?: string | null;
   rightMeta?: ReactNode;
+  nameBadge?: ReactNode;
   onOpen?: (oracleId: string) => void;
   tabIndex?: number;
   className?: string;
@@ -17,6 +18,7 @@ export default function CardRow(props: CardRowProps) {
     name,
     oracleId,
     rightMeta,
+    nameBadge,
     onOpen,
     tabIndex,
     className,
@@ -63,6 +65,9 @@ export default function CardRow(props: CardRowProps) {
     >
       <div className="workspace-card-row-main">
         <span className="workspace-card-row-name">{name}</span>
+        {nameBadge ? (
+          <span className="workspace-card-row-name-badge">{nameBadge}</span>
+        ) : null}
         <div className="workspace-card-row-right">
           {rightMeta ? <div className="workspace-card-row-meta">{rightMeta}</div> : null}
           {isOpenable ? (

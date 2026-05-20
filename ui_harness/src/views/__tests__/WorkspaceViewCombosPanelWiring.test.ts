@@ -31,19 +31,44 @@ describe("WorkspaceView source sentinels — CombosDrawer wire-up", () => {
     expect(WORKSPACE_VIEW_SRC).toMatch(/<CombosDrawer[\s\S]*?missing_partners_v1=/);
   });
 
-  test("Props sourced from completionResult (the /deck/complete_v1 response)", () => {
-    const drawerBlock = WORKSPACE_VIEW_SRC.match(/<CombosDrawer[\s\S]*?\/>/);
-    expect(drawerBlock).not.toBeNull();
-    const block = drawerBlock?.[0] ?? "";
-    expect(block).toMatch(/completionResult\?\.detected_combos_v1/);
-    expect(block).toMatch(/completionResult\?\.missing_partners_v1/);
+  test("Props sourced from the shared completionResult memos (Pillar A.6)", () => {
+    // Pillar A.6: the drawer used to inline two Array.isArray expressions
+    // reading completionResult, and the toolbar badge had its own memo —
+    // two distinct dependency paths off the same response object. The
+    // refactor hoists the typed arrays into shared useMemo hooks so the
+    // badge and the drawer literally cannot diverge. Both memos still
+    // derive from completionResult.
+    expect(WORKSPACE_VIEW_SRC).toMatch(
+      /const\s+detectedCombosForDrawer\s*=\s*useMemo<ReadonlyArray<DetectedComboEntry>>/,
+    );
+    expect(WORKSPACE_VIEW_SRC).toMatch(
+      /const\s+missingPartnersForDrawer\s*=\s*useMemo<ReadonlyArray<MissingPartnerEntry>>/,
+    );
+    expect(WORKSPACE_VIEW_SRC).toMatch(/completionResult\?\.detected_combos_v1/);
+    expect(WORKSPACE_VIEW_SRC).toMatch(/completionResult\?\.missing_partners_v1/);
   });
 
-  test("Legacy response shape — coerce undefined to [] (back-compat path)", () => {
+  test("Drawer props reference the shared memos (single source of truth)", () => {
     const drawerBlock = WORKSPACE_VIEW_SRC.match(/<CombosDrawer[\s\S]*?\/>/);
     const block = drawerBlock?.[0] ?? "";
-    const arrayIsArrayCount = (block.match(/Array\.isArray/g) || []).length;
-    expect(arrayIsArrayCount).toBe(2);
+    expect(block).toMatch(/detected_combos_v1=\{detectedCombosForDrawer\}/);
+    expect(block).toMatch(/missing_partners_v1=\{missingPartnersForDrawer\}/);
+  });
+
+  test("Legacy response shape — coerce undefined to [] inside the memos", () => {
+    // Array.isArray now lives in the two useMemo blocks, not in the
+    // drawer JSX. There should be exactly two such checks for the combo
+    // surfaces (one per memo).
+    const detectedMemo = WORKSPACE_VIEW_SRC.match(
+      /detectedCombosForDrawer\s*=\s*useMemo[\s\S]*?\},\s*\[completionResult\]\s*\)/,
+    );
+    const missingMemo = WORKSPACE_VIEW_SRC.match(
+      /missingPartnersForDrawer\s*=\s*useMemo[\s\S]*?\},\s*\[completionResult\]\s*\)/,
+    );
+    expect(detectedMemo).not.toBeNull();
+    expect(missingMemo).not.toBeNull();
+    expect((detectedMemo?.[0] ?? "")).toMatch(/Array\.isArray\(raw\)/);
+    expect((missingMemo?.[0] ?? "")).toMatch(/Array\.isArray\(raw\)/);
   });
 
   test("CombosDrawer receives open + onOpenChange wired to local useState", () => {

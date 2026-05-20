@@ -51,8 +51,13 @@ describe("v1.6 Stage 3 — metric pill row presence + structure", () => {
     expect(WS_SRC).toContain('{cardCount} card{cardCount === 1 ? "" : "s"}');
   });
 
-  test("Bracket pill renders with variant=info + bracketId value", () => {
-    expect(WS_SRC).toMatch(/<Badge variant="info" aria-label=\{`Bracket \$\{bracketId\}`\}/);
+  test("Bracket pill renders as an interactive selector trigger (v1.7.6)", () => {
+    // v1.7.6 upgraded the Bracket pill from a static <Badge> to an
+    // interactive button that opens the bracket-selector popover. The
+    // visible label format ("Bracket · {bracketId}") is preserved so the
+    // pill is visually indistinguishable, but it is now clickable. See
+    // bracketSelector.test.ts for the full contract assertions.
+    expect(WS_SRC).toMatch(/<button[^>]*data-v176-stage="bracket-selector-trigger"/);
     expect(WS_SRC).toContain("Bracket · {bracketId}");
   });
 

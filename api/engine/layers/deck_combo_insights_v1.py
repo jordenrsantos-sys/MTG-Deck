@@ -1,7 +1,7 @@
 """v1.7.2 Stage 1 — Deck-combo insight engine layer.
 
 Scans the FINAL completed deck (commander + initial deckText + engine
-adds) against the v2 pair index + outcome pack and surfaces TWO
+adds) against the Spellbook-derived combo dataset and surfaces TWO
 insight surfaces consumed by the UI's `DeckCombosPanel`:
 
   - `detected_combos_v1`  — pairs where BOTH halves are present.
@@ -9,15 +9,32 @@ insight surfaces consumed by the UI's `DeckCombosPanel`:
     AND the partner is NOT being added (and therefore would be a
     productive add the user could make).
 
-Pre-v1.7.2, the Stage 2 `combo_enabler_reasons_v1` layer covered
-the narrow "engine added a partner, flag it on that row" case. The
-v1.7 Cowork browser-walk (2026-05-16) confirmed near-zero production
-coverage from that layer — the engine's primitive-coverage-driven
-completion rarely picks combo partners on its own. v1.7.2's insights
-panel surfaces combos regardless of how cards entered the deck.
+Pillar A.7 alignment (combo dataset divergence fix):
+  Previously this layer loaded `two_card_combos_v2.json` (oracle_id-
+  keyed; 4423 pairs filtered to those with outcome labels) while the
+  bracket verifier in `corpus_batch_ingest_v1._compute_min_legal_bracket`
+  loaded the Spellbook-derived `combo_brackets_v1.json` (name-keyed;
+  3679 unique pairs after the 2-card + no-extra-prerequisite filter).
+  Same upstream data — different shapes, different detection rules,
+  different coverage. Repro: Old Gnawbone + Hellkite Charger
+  (variant_id 1800-3398, a known Spellbook O/core_plus combo) showed
+  up in the bracket verifier's auto-bump path but NOT in the UI's
+  `detected_combos_v1`. Root cause: the v2 oracle_id resolution path
+  was less robust than the bracket verifier's lowercase-name match
+  (different printings can produce different oracle_ids for the same
+  card name; the snapshot DB's `find_card_by_name` doesn't always
+  return the same oracle_id that v2's `a`/`b` fields carry).
 
-Engine-side contract (NEW, additive — does not modify v1.7
-combo_enabler / bracket_aware contracts):
+  Fix: load `combo_brackets_v1.json` here with the SAME filter the
+  bracket verifier uses (`combo_size == 2`, `has_extra_prerequisite ==
+  False`, non-empty `brackets_allowed`). Detect by lowercase NAME so
+  the UI matches the verifier semantics exactly. Outcome label is
+  taken from the existing outcomes pack when present (variant_id
+  keyed), falling back to the `results` array on the bracket entry
+  (joined with "; ") when the outcomes pack lacks a record.
+
+Engine-side contract (UNCHANGED, additive to combo_enabler /
+bracket_aware):
 
     {
       "detected_combos_v1": [
@@ -48,14 +65,14 @@ bounded for high-combo decks.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Set, Tuple
+import json
+from pathlib import Path
+from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 from api.engine.layers._combo_data_loader import (
     load_outcomes,
-    load_two_card_pair_index,
     normalize_card_name,
     resolve_name_to_oracle_id,
-    resolve_oracle_ids_to_names,
 )
 # v1.7.4: direct lookup for color_identity in addition to name. The
 # shared _combo_data_loader.resolve_oracle_ids_to_names is SHA-locked,
@@ -68,21 +85,131 @@ DECK_COMBO_INSIGHTS_V1_VERSION = "deck_combo_insights_v1"
 DECK_COMBO_INSIGHTS_MAX_ENTRIES = 25
 
 
-# Module-import-time load (frozen for the process lifetime), same
-# pattern as combo_enabler_reasons_v1 — keeps per-request work to
-# pure-Python index lookups.
-_PAIR_INDEX = load_two_card_pair_index()
-_OUTCOMES = load_outcomes()
+# Pillar A.7 — switched data source from `two_card_combos_v2.json`
+# (oracle_id-keyed) to `combo_brackets_v1.json` (name-keyed) so the
+# insights layer matches the corpus_batch_ingest bracket verifier
+# pair-for-pair. The file lives alongside the v2 file under
+# api/engine/data/combos/.
+_DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "combos"
+COMBO_BRACKETS_V1_PATH = _DATA_DIR / "combo_brackets_v1.json"
 
 
-def _select_variant_with_outcome(variant_ids: List[str]) -> Optional[str]:
-    """Take the first variant_id in `variant_ids` that has an outcome
-    record in the pack. Returns None if no variant has an outcome
-    (i.e. the pair predates the Stage 1.5 dump or was removed)."""
-    for vid in variant_ids:
-        if vid in _OUTCOMES:
-            return vid
-    return None
+def _normalize_name_lower(value: Any) -> Optional[str]:
+    """Lowercase + strip a card-name value (mirrors the bracket verifier's
+    `str(...).strip().lower()` invariant). Returns None on bad input."""
+    if not isinstance(value, str):
+        return None
+    token = value.strip().lower()
+    return token if token else None
+
+
+def _fallback_label_from_results(results: Any) -> Optional[str]:
+    """Join the `results` array on a combo_brackets entry into a single
+    display label. Returns None when the array is missing/empty so the
+    caller can chain to a category fallback."""
+    if not isinstance(results, list):
+        return None
+    cleaned: List[str] = []
+    for item in results:
+        if isinstance(item, str):
+            token = item.strip()
+            if token:
+                cleaned.append(token)
+    if not cleaned:
+        return None
+    return "; ".join(cleaned)
+
+
+def _load_combo_brackets_pair_index(
+    path: Path = COMBO_BRACKETS_V1_PATH,
+    outcomes: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Dict[FrozenSet[str], Dict[str, Any]]:
+    """Load `combo_brackets_v1.json` into a NAME-keyed pair index that
+    matches the bracket verifier's filter (2-card combos with no extra
+    non-card prerequisite and a non-empty `brackets_allowed`).
+
+    The returned mapping is keyed by `frozenset({name_a_lower, name_b_lower})`.
+    Each value carries everything the insights layer needs to surface a
+    pair: variant_id, the canonical Spellbook-cased names, and a display
+    label (sourced from the outcomes pack when the variant_id has an
+    outcome record; otherwise joined from the bracket entry's `results`
+    array; otherwise a generic "Combo (category)" placeholder).
+
+    Mirrors `corpus_batch_ingest_v1._load_combo_brackets()` in semantics
+    so the two layers see the SAME 3679-pair filtered subset.
+    """
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    by_variant_id = parsed.get("by_variant_id") if isinstance(parsed, dict) else None
+    if not isinstance(by_variant_id, dict):
+        return {}
+
+    outcomes_pack = outcomes or {}
+    index: Dict[FrozenSet[str], Dict[str, Any]] = {}
+    for variant_id, info in by_variant_id.items():
+        if not isinstance(variant_id, str) or not isinstance(info, dict):
+            continue
+        if info.get("combo_size") != 2:
+            continue
+        if info.get("has_extra_prerequisite"):
+            continue
+        brackets_allowed = info.get("brackets_allowed") or []
+        if not isinstance(brackets_allowed, list) or not brackets_allowed:
+            continue
+        names = info.get("card_names") or []
+        if not isinstance(names, list) or len(names) != 2:
+            continue
+        name_a, name_b = names[0], names[1]
+        if not isinstance(name_a, str) or not isinstance(name_b, str):
+            continue
+        a_lower = _normalize_name_lower(name_a)
+        b_lower = _normalize_name_lower(name_b)
+        if a_lower is None or b_lower is None or a_lower == b_lower:
+            continue
+        key = frozenset({a_lower, b_lower})
+
+        # Display label resolution — outcomes pack → results join → generic.
+        label: Optional[str] = None
+        outcome_rec = outcomes_pack.get(variant_id) if isinstance(outcomes_pack, dict) else None
+        if isinstance(outcome_rec, dict):
+            candidate = outcome_rec.get("label")
+            if isinstance(candidate, str) and candidate.strip():
+                label = candidate.strip()
+        if label is None:
+            label = _fallback_label_from_results(info.get("results"))
+        if label is None:
+            category = info.get("category") or "unclassified"
+            label = f"Combo ({category})"
+
+        # Dedup: if the same name-pair appears under multiple variant_ids
+        # (rare — confirmed zero collisions in the current dataset),
+        # prefer the lexicographically smallest variant_id for stability.
+        if key in index and variant_id >= index[key]["variant_id"]:
+            continue
+
+        index[key] = {
+            "variant_id": variant_id,
+            "name_a": name_a.strip(),
+            "name_b": name_b.strip(),
+            "name_a_lower": a_lower,
+            "name_b_lower": b_lower,
+            "label": label,
+            "category": info.get("category") or "",
+            "brackets_allowed": list(brackets_allowed),
+        }
+    return index
+
+
+# Module-import-time load (frozen for the process lifetime). The
+# outcomes pack is loaded once and threaded into the bracket loader
+# so labels are sourced from Spellbook's authoritative outcome text
+# when available.
+_OUTCOMES: Dict[str, Dict[str, Any]] = load_outcomes()
+_BRACKET_PAIR_INDEX: Dict[FrozenSet[str], Dict[str, Any]] = (
+    _load_combo_brackets_pair_index(outcomes=_OUTCOMES)
+)
 
 
 _COLOR_LETTERS: Set[str] = {"W", "U", "B", "R", "G"}
@@ -110,8 +237,7 @@ def _normalize_color_identity_field(value: Any) -> Set[str]:
         token = value.strip()
         if token.startswith("[") and token.endswith("]"):
             try:
-                import json as _json
-                parsed = _json.loads(token)
+                parsed = json.loads(token)
                 if isinstance(parsed, list):
                     return _normalize_color_identity_field(parsed)
             except (ValueError, TypeError):
@@ -158,7 +284,13 @@ def compute_deck_combo_insights_v1(
     with each list deterministically sorted by variant_id and capped at
     `DECK_COMBO_INSIGHTS_MAX_ENTRIES`. Returns empty arrays for either
     field when preconditions fail (empty snapshot id, no pair index,
-    no outcomes, no resolvable deck cards) — never raises.
+    no resolvable deck cards) — never raises.
+
+    Pillar A.7: detection runs against the SAME 3679-pair filtered
+    `combo_brackets_v1.json` subset that
+    `corpus_batch_ingest_v1._compute_min_legal_bracket` consumes, so a
+    pair that auto-bumps a bracket in ingest also shows up in the UI's
+    `detected_combos_v1` — no more divergence.
     """
     empty: Dict[str, List[Dict[str, Any]]] = {
         "detected_combos_v1": [],
@@ -166,131 +298,156 @@ def compute_deck_combo_insights_v1(
     }
 
     snapshot_id = db_snapshot_id if isinstance(db_snapshot_id, str) and db_snapshot_id.strip() else ""
-    if snapshot_id == "" or not _PAIR_INDEX or not _OUTCOMES:
+    if snapshot_id == "" or not _BRACKET_PAIR_INDEX:
         return empty
 
-    # Build the present-set as oracle_ids (commander + deck cards).
-    name_inputs: List[str] = []
+    # Build the present-set as lowercase canonical names (commander +
+    # deck cards). Matches the bracket verifier's `deck_lower` set so
+    # detection runs over the same surface as auto-bump.
+    commander_name_set: Set[str] = set()
     if isinstance(commander_names, list):
         for n in commander_names:
             norm = normalize_card_name(n)
             if norm is not None:
-                name_inputs.append(norm)
+                lowered = norm.lower()
+                if lowered:
+                    commander_name_set.add(lowered)
+    present_name_set: Set[str] = set(commander_name_set)
     if isinstance(deck_cards_after_completion, list):
         for n in deck_cards_after_completion:
             norm = normalize_card_name(n)
             if norm is not None:
-                name_inputs.append(norm)
-    if not name_inputs:
+                lowered = norm.lower()
+                if lowered:
+                    present_name_set.add(lowered)
+    if not present_name_set:
         return empty
 
-    present_oracle_to_name: Dict[str, str] = {}
-    for name in name_inputs:
-        oid = resolve_name_to_oracle_id(snapshot_id, name)
-        if oid is None or oid in present_oracle_to_name:
-            continue
-        present_oracle_to_name[oid] = name
+    # First pass — match pairs by name. Cheap pure-Python set lookups.
+    detected_raw: List[Tuple[str, str, str, str]] = []  # (vid, name_a_lower, name_b_lower, label)
+    missing_raw: List[Tuple[str, str, str, str]] = []   # (vid, present_lower, partner_lower, label)
 
-    if not present_oracle_to_name:
-        return empty
-
-    present_set: Set[str] = set(present_oracle_to_name.keys())
-
-    detected_raw: List[Tuple[str, str, str, str]] = []  # (variant_id, oid_lo, oid_hi, label)
-    missing_raw: List[Tuple[str, str, str, str]] = []   # (variant_id, present_oid, partner_oid, label)
-
-    for pair_key, variant_ids in _PAIR_INDEX.items():
-        oid_a, oid_b = sorted(pair_key)
-        a_present = oid_a in present_set
-        b_present = oid_b in present_set
+    for pair_key, pair_info in _BRACKET_PAIR_INDEX.items():
+        a_lower = pair_info["name_a_lower"]
+        b_lower = pair_info["name_b_lower"]
+        a_present = a_lower in present_name_set
+        b_present = b_lower in present_name_set
         if not (a_present or b_present):
             continue
 
-        vid = _select_variant_with_outcome(variant_ids)
-        if vid is None:
-            continue
-        outcome = _OUTCOMES.get(vid) or {}
-        label = outcome.get("label")
-        if not isinstance(label, str) or label.strip() == "":
-            continue
+        vid = pair_info["variant_id"]
+        label = pair_info["label"]
 
         if a_present and b_present:
-            detected_raw.append((vid, oid_a, oid_b, label))
+            detected_raw.append((vid, a_lower, b_lower, label))
         elif a_present:
-            missing_raw.append((vid, oid_a, oid_b, label))
+            missing_raw.append((vid, a_lower, b_lower, label))
         else:
-            missing_raw.append((vid, oid_b, oid_a, label))
+            missing_raw.append((vid, b_lower, a_lower, label))
 
     if not detected_raw and not missing_raw:
         return empty
 
+    # Second pass — resolve every name (lowercase) we'll surface in the
+    # response to its canonical-cased name + oracle_id from the
+    # snapshot. The bracket index already carries Spellbook-canonical
+    # casing, so we lean on that for `*_name` fields; oracle_id has to
+    # come from the snapshot.
+    name_pool_lower: Set[str] = set()
+    name_to_display: Dict[str, str] = {}
+    for pair_key, pair_info in _BRACKET_PAIR_INDEX.items():
+        if pair_info["name_a_lower"] in present_name_set or pair_info["name_b_lower"] in present_name_set:
+            name_to_display.setdefault(pair_info["name_a_lower"], pair_info["name_a"])
+            name_to_display.setdefault(pair_info["name_b_lower"], pair_info["name_b"])
+    # Commander names always go through resolution so the v1.7.4
+    # color-identity filter has its commander_ci even when the commander
+    # doesn't itself appear in any combo pair (most decks).
+    for cname in commander_name_set:
+        name_pool_lower.add(cname)
+        name_to_display.setdefault(cname, cname)
+    for _, a_lower, b_lower, _ in detected_raw:
+        name_pool_lower.add(a_lower)
+        name_pool_lower.add(b_lower)
+    for _, present_lower, partner_lower, _ in missing_raw:
+        name_pool_lower.add(present_lower)
+        name_pool_lower.add(partner_lower)
+
+    # Resolve each name → oracle_id (single-card lookups against the
+    # snapshot DB — same path the v1.7.2 layer used). Using the
+    # canonical-cased name from the bracket index gives us the best
+    # chance of hitting a row even when the user's deckText casing
+    # diverges slightly. find_card_by_name is case-insensitive on
+    # `name`, so either casing works.
+    name_lower_to_oracle: Dict[str, str] = {}
+    for name_lower in name_pool_lower:
+        display = name_to_display.get(name_lower) or name_lower
+        oid = resolve_name_to_oracle_id(snapshot_id, display)
+        if oid is None and display != name_lower:
+            # Fall back to the literal lowercase form (case-insensitive
+            # match still works) — covers names not in the bracket
+            # index's canonical casing.
+            oid = resolve_name_to_oracle_id(snapshot_id, name_lower)
+        if oid is not None:
+            name_lower_to_oracle[name_lower] = oid
+
     # v1.7.4 — apply color-identity filter to missing_partners ONLY.
-    # detected_combos is by definition already in the deck → presumed
-    # legal by being there. Filter: a candidate partner_oid is legal
-    # iff its color_identity ⊆ commander_color_identity (CR 903.4).
-    # The filter is SUBTRACTIVE — it can only REDUCE the missing
-    # count, never add (calibration sanity invariant from v1.7.4 spec).
+    # The commander color identity gates which partners are CR 903.4-
+    # legal for this deck. detected_combos is by definition already in
+    # the deck → presumed legal by being there.
     commander_oid_set: Set[str] = set()
-    for oid, name in present_oracle_to_name.items():
-        if isinstance(commander_names, list) and name in [
-            normalize_card_name(n) for n in commander_names if isinstance(n, str)
-        ]:
+    for name_lower in commander_name_set:
+        oid = name_lower_to_oracle.get(name_lower)
+        if oid is not None:
             commander_oid_set.add(oid)
     commander_ci = _resolve_commander_color_identity(snapshot_id, commander_oid_set)
 
-    # Resolve partner oracle_ids → {name, color_identity} in one batch
-    # DB lookup. Color identity is the v1.7.4 addition; name resolution
-    # is unchanged from v1.7.2.
+    # Resolve partner color_identity in one batch DB lookup for the
+    # color-filter step. Partner = any unresolved missing-side oracle_id
+    # plus the partner half of each missing_raw entry.
     partner_oid_pool: Set[str] = set()
-    for _, oid_a, oid_b, _ in detected_raw:
-        if oid_a not in present_oracle_to_name:
-            partner_oid_pool.add(oid_a)
-        if oid_b not in present_oracle_to_name:
-            partner_oid_pool.add(oid_b)
-    for _, _, partner_oid, _ in missing_raw:
-        partner_oid_pool.add(partner_oid)
+    for _, _, partner_lower, _ in missing_raw:
+        oid = name_lower_to_oracle.get(partner_lower)
+        if oid is not None:
+            partner_oid_pool.add(oid)
     partner_rows = lookup_cards_by_oracle_ids(
         conn=None,
         snapshot_id=snapshot_id,
         oracle_ids=partner_oid_pool,
         requested_fields=["oracle_id", "name", "color_identity"],
     )
-    extra_names: Dict[str, str] = {}
     partner_ci: Dict[str, Set[str]] = {}
     for oracle_id, row in partner_rows.items():
         if not isinstance(row, dict):
             continue
-        name = row.get("name")
-        if isinstance(name, str) and name.strip() != "":
-            extra_names[oracle_id.lower() if isinstance(oracle_id, str) else oracle_id] = name.strip()
-        partner_ci[oracle_id.lower() if isinstance(oracle_id, str) else oracle_id] = (
-            _normalize_color_identity_field(row.get("color_identity"))
-        )
+        key = oracle_id.lower() if isinstance(oracle_id, str) else oracle_id
+        partner_ci[key] = _normalize_color_identity_field(row.get("color_identity"))
 
-    # v1.7.4 — apply the filter to missing_raw ONLY. If the commander
-    # CI is empty (unresolvable / colorless), skip filtering rather
-    # than over-restricting (preserves v1.7.2 backward-compat for
-    # snapshots without commander color metadata).
     if commander_ci:
         missing_raw = [
-            entry for entry in missing_raw
-            if partner_ci.get(entry[2], set()).issubset(commander_ci)
+            entry
+            for entry in missing_raw
+            if (
+                (oid := name_lower_to_oracle.get(entry[2])) is not None
+                and partner_ci.get(oid, set()).issubset(commander_ci)
+            )
         ]
 
-    # Merge — present names take precedence (they came from the user's
-    # actual deck input, preserving casing).
-    oracle_to_name: Dict[str, str] = dict(extra_names)
-    oracle_to_name.update(present_oracle_to_name)
-
+    # Build the response entries. Entries are dropped when oracle_id
+    # resolution fails for either half — preserves the v1.7.2 contract
+    # of skipping un-resolvable rows rather than emitting partial data.
     detected_entries: List[Dict[str, Any]] = []
-    for vid, oid_a, oid_b, label in detected_raw:
-        name_a = oracle_to_name.get(oid_a)
-        name_b = oracle_to_name.get(oid_b)
-        if name_a is None or name_b is None:
+    for vid, a_lower, b_lower, label in detected_raw:
+        oid_a = name_lower_to_oracle.get(a_lower)
+        oid_b = name_lower_to_oracle.get(b_lower)
+        if oid_a is None or oid_b is None:
             continue
+        name_a = name_to_display.get(a_lower, a_lower)
+        name_b = name_to_display.get(b_lower, b_lower)
         # Stable ordering — sort the pair alphabetically by name so the
         # UI surface doesn't flip card_a/card_b across runs.
-        first, second = sorted([(name_a, oid_a), (name_b, oid_b)], key=lambda t: t[0])
+        first, second = sorted(
+            [(name_a, oid_a), (name_b, oid_b)], key=lambda t: t[0]
+        )
         detected_entries.append({
             "variant_id": vid,
             "card_a_name": first[0],
@@ -301,16 +458,16 @@ def compute_deck_combo_insights_v1(
         })
 
     missing_entries: List[Dict[str, Any]] = []
-    for vid, present_oid, partner_oid, label in missing_raw:
-        present_name = oracle_to_name.get(present_oid)
-        partner_name = oracle_to_name.get(partner_oid)
-        if present_name is None or partner_name is None:
+    for vid, present_lower, partner_lower, label in missing_raw:
+        present_oid = name_lower_to_oracle.get(present_lower)
+        partner_oid = name_lower_to_oracle.get(partner_lower)
+        if present_oid is None or partner_oid is None:
             continue
         missing_entries.append({
             "variant_id": vid,
-            "present_card_name": present_name,
+            "present_card_name": name_to_display.get(present_lower, present_lower),
             "present_card_oracle_id": present_oid,
-            "partner_card_name": partner_name,
+            "partner_card_name": name_to_display.get(partner_lower, partner_lower),
             "partner_card_oracle_id": partner_oid,
             "combo_outcome_label": label,
         })

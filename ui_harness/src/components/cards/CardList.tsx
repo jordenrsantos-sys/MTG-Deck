@@ -7,6 +7,9 @@ export type CardListItem = {
   name: string;
   oracleId?: string | null;
   rightMeta?: ReactNode;
+  /** Optional inline badge rendered next to the card name. Used by callers
+   *  that need to flag a row (e.g. Game-Changer chips on the deck list). */
+  nameBadge?: ReactNode;
   className?: string;
   tabIndex?: number;
 };
@@ -64,6 +67,7 @@ export default function CardList(props: CardListProps) {
           name={item.name}
           oracleId={item.oracleId}
           rightMeta={item.rightMeta}
+          nameBadge={item.nameBadge}
           className={item.className}
           tabIndex={item.tabIndex}
           onOpen={
