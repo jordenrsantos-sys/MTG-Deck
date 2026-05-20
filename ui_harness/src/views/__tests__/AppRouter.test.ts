@@ -85,6 +85,11 @@ describe("parseHash — Phase 4.12.1 regression", () => {
     expect(parseHash("#settings")).toBe("settings");
     expect(parseHash("#decks")).toBe("decks");
   });
+
+  test('"#ai-build" routes to ai-build (Pillar D Phase E)', () => {
+    expect(parseHash("#ai-build")).toBe("ai-build");
+    expect(parseHash("#AI-BUILD")).toBe("ai-build");  // case-insensitive
+  });
 });
 
 describe("staged-import slot round-trip (4.3/4.6 bridge contract)", () => {

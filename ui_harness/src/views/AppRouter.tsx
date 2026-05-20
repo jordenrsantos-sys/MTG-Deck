@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import AIBuildView from "./AIBuildView";
 import DiagnosticsView from "./DiagnosticsView";
 import ImportRoute from "./ImportRoute";
 import WorkspaceView from "./WorkspaceView";
@@ -24,7 +25,7 @@ import LeftRail from "../components/layout/LeftRail";
 // controlled-mode props (added Stage 1 to keep the lift additive).
 import HamburgerButton from "../components/layout/HamburgerButton";
 
-type ViewId = "workspace" | "diagnostics" | "import" | "playtest" | "landing" | "settings" | "decks";
+type ViewId = "workspace" | "diagnostics" | "import" | "playtest" | "landing" | "settings" | "decks" | "ai-build";
 
 const API_BASE_URL =
   ((import.meta as ImportMeta).env?.VITE_API_BASE_URL as string | undefined) ??
@@ -43,6 +44,7 @@ export function parseHash(hashValue: string): ViewId {
   if (token === "playtest") return "playtest";
   if (token === "settings") return "settings";
   if (token === "decks") return "decks";
+  if (token === "ai-build") return "ai-build";
   // Phase 4.12b: explicit landing route at `#/`. Existing workspace hashes
   // (`#workspace-decks` / `#workspace-runs`) continue to render WorkspaceView.
   if (token === "/" || token === "") return "landing";
@@ -100,6 +102,14 @@ function _renderViewBranch(view: ViewId, openWorkspace: () => void) {
     return (
       <ErrorBoundary panelLabel="SavedDecks">
         <SavedDecksView onBack={openWorkspace} />
+      </ErrorBoundary>
+    );
+  }
+
+  if (view === "ai-build") {
+    return (
+      <ErrorBoundary panelLabel="AIBuild">
+        <AIBuildView onBack={openWorkspace} />
       </ErrorBoundary>
     );
   }

@@ -30,6 +30,12 @@ const ENTRY_POINTS: ReadonlyArray<EntryPoint> = [
     cta: "Open workspace",
   },
   {
+    hash: "#ai-build",
+    title: "AI Build (Pillar D)",
+    description: "Let the agent build a 99-card deck from your commander + bracket + theme + must-include cards.",
+    cta: "Try AI Build",
+  },
+  {
     hash: "#import",
     title: "Import existing",
     description: "Bring in a deck from Archidekt, Arena, MTGO, or plain text.",

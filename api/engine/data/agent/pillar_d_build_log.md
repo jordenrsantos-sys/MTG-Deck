@@ -344,3 +344,81 @@ Phase E — UI surface. Build the "AI Build" tab in
 `ui_harness/src/views/WorkspaceView.tsx` that hits `/agent/build_deck_v1`
 and renders the deck + per-card reasons + creativity envelope metrics.
 chrome-devtools-mcp will verify the UI end-to-end after each test case.
+
+---
+
+## Phase E — UI "AI Build" view
+
+**Status:** ✅ Complete (2026-05-20)
+
+### What landed
+- `ui_harness/src/views/AIBuildView.tsx` — self-contained React view that
+  posts to `/agent/build_deck_v1` and renders the response. Avoids
+  threading through `WorkspaceView`'s 5862-line state machine; instead it
+  hands off via the existing `mtg-engine.active-deck` localStorage slot so
+  navigating to `#workspace-decks` after Build picks up the agent's deck.
+- Form fields:
+  - Commander (text input)
+  - Snapshot ID (text input — no autocomplete yet; placeholder hints at
+    where to find it in the workspace toolbar)
+  - Bracket dropdown (B1..B5 with full labels: "B1 — Exhibition", etc.)
+  - Theme hints (chip input, Enter to add, × to remove)
+  - Must-include cards (chip input)
+  - "Build deck" / "Apply to Workspace" buttons
+- Response panels:
+  - Summary card: badges for card count, bracket placement, estimated
+    bracket, endpoint calls, elapsed ms. Color identity chips. Creativity
+    envelope (user picks present, staples avoided, theme coherence as %).
+    Themes classified chips. Strength check (bracket_signal,
+    mean_similarity, nearest_neighbors_count). Phase timings (pool / select
+    / validate ms). Collapsible warnings list with code + message.
+  - Deck card: 8 slot-grouped sections (Commander, Lands, Ramp, Card Draw,
+    Removal, Win Conditions, Creatures, Flex/Other). Each entry shows
+    name + source code + reason (truncated, full on hover via `title`).
+- Routed via `AppRouter` as a new `ViewId = "ai-build"`. Hash `#ai-build`
+  is parseHash-mapped (case-insensitive). Landing page now has 5 entry
+  cards instead of 4 — "AI Build (Pillar D)" sits second in the grid.
+
+### Test results
+- 1 new vitest case in `AppRouter.test.ts` pins `parseHash("#ai-build") →
+  "ai-build"` (and case-insensitive `#AI-BUILD`). All 7 AppRouter tests
+  green.
+- UI vitest suite full run: **694 pass, 2 fail** — the 2 are in
+  `metricPillHeader.test.ts` and pre-date these changes (verified via
+  `git stash`; the test file checks WorkspaceView source for a
+  v1.6-Stage-3 comment marker that's no longer there).
+- `npx tsc --noEmit` produces only pre-existing errors (node:fs imports
+  without `@types/node` in test files, plus a few Drawer-children typos
+  elsewhere). No new type errors in `AIBuildView.tsx`, `AppRouter.tsx`,
+  or `LandingView.tsx`.
+
+### Architectural decisions
+1. **Standalone view, not a WorkspaceView tab.** The brief allows
+   "wherever it makes UX sense" and the alternative — adding a 5th
+   workspace mode in a 5862-line file with intricate deckState reducer
+   coupling — would have meant cargo-culting half the workspace state
+   machine for a feature that doesn't share its inputs. The localStorage
+   hand-off keeps the "Apply to Workspace" affordance intact.
+2. **No card-name autocomplete.** Plain text inputs for commander +
+   must-include cards. The agent's `MUST_INCLUDE_NOT_FOUND` warning
+   already surfaces typos; layering `cards/suggest_v1` autocomplete on
+   top would have doubled the UI scope. Easy to add in a follow-up if
+   misuse becomes common.
+3. **Slot grouping uses the `[slot=...]` token in the per-card reason.**
+   Phase C appends this token during `_format_reason`. The UI groups
+   on it instead of re-classifying cards client-side — single source of
+   truth.
+4. **`chrome-devtools-mcp` UI verification skipped.** The MCP server
+   isn't part of this agent's tool set. Phase F validation runs through
+   the API directly (via Python script in `tools/`) rather than the
+   browser, so the UI surface and the validation runner are independent
+   in this build.
+
+### Next
+Phase F — run the 5-test-case validation sweep against a real snapshot.
+Each case captures wall-clock, endpoint-call count, time per phase
+(pool/select/validate), and tests the success criteria: 100 cards,
+color-legal, singleton, must-includes present, bracket-correct,
+themes-correct, reasons substantive. Writes
+`pillar_d_validation_report.md` summarizing outcomes + creativity
+envelope metrics per case.
