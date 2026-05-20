@@ -322,6 +322,29 @@ def compute_agent_build_deck_v1(
     llm_total_input_tokens = sum(c.get("input_tokens", 0) for c in llm_metrics["calls"])
     llm_total_output_tokens = sum(c.get("output_tokens", 0) for c in llm_metrics["calls"])
     llm_total_latency_ms = sum(c.get("latency_ms", 0) for c in llm_metrics["calls"])
+
+    # Iteration 2 creativity_delta_count — count of non-commander, non-
+    # basic cards in the final deck that are NOT in the top-30 corpus
+    # staples for this commander cohort. Higher = more unique to this
+    # specific build. The plan's success criterion is mean ≥ 8 across
+    # 5 test cases.
+    archetype_brief = pool.get("archetype_brief", {}) or {}
+    staples_sorted = sorted(
+        archetype_brief.get("staple_cards") or [],
+        key=lambda s: float(s.get("usage_pct") or 0.0),
+        reverse=True,
+    )
+    top30_staple_names_lower = {
+        (s.get("name") or "").strip().lower() for s in staples_sorted[:30]
+    }
+    creativity_delta_count = 0
+    basic_names_lower = {n.lower() for n in _BASIC_LAND_NAMES}
+    for c in deck[1:]:  # skip commander
+        cname = (c.get("card_name") or "").strip().lower()
+        if not cname or cname in basic_names_lower:
+            continue
+        if cname not in top30_staple_names_lower:
+            creativity_delta_count += 1
     summary = {
         "themes_classified": last_findings.get("themes_classified") or [],
         "bracket_placement": bracket,
@@ -335,7 +358,7 @@ def compute_agent_build_deck_v1(
             "must_includes_dropped": pool.get("must_includes_dropped", []),
             "staples_avoided_count": staples_avoided,
             "theme_coherence_score": last_findings.get("theme_coherence_score", 0.0),
-            "creativity_delta_count": last_findings.get("creativity_delta_count", 0),
+            "creativity_delta_count": creativity_delta_count,
         },
         "endpoint_call_count": call_counter["calls"],
         "phase_timings_ms": phase_timings_ms,
