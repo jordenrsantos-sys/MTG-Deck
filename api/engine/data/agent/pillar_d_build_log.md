@@ -66,3 +66,81 @@ must-includes at score=∞, theme-matched cards next, archetype staples last
 user picks). Implementation will compose `compute_archetype_brief_v1`,
 `compute_theme_top_cards_v1`, and `compute_corpus_similar_decks_v1` via direct
 Python imports (Fix 3: in-process, not MCP roundtrip).
+
+---
+
+## Phase B — Candidate pool with user-intent anchoring
+
+**Status:** ✅ Complete (2026-05-20)
+
+### What landed
+- `_build_candidate_pool()` in `agent_build_deck_v1.py` composes:
+  1. `compute_archetype_brief_v1` → commander color identity + corpus staple
+     frequencies.
+  2. `_validate_must_includes` → resolves each user `must_include_cards` against
+     the snapshot DB, drops with `MUST_INCLUDE_NOT_FOUND` or `MUST_INCLUDE_COLOR_ILLEGAL`
+     warnings (Fix 4: warn-and-skip).
+  3. `compute_theme_top_cards_v1` per `theme_hint` → primitive-overlap scored cards.
+  4. Archetype staple list (descriptive baseline, heavily frequency-penalized).
+- Skipped `compute_corpus_similar_decks_v1` from the pool build: it triggers a
+  full corpus vectorization (~13K decks) on cold start, which exceeds the
+  endpoint-call budget for a single per-theme-hint pass. Deferred to Phase D
+  validation if needed.
+- Pure scoring helpers:
+  - `_score_theme_candidate(signal_count, freq)` — theme-bonus minus a halved
+    frequency penalty (theme-matched cards keep some merit even when common).
+  - `_score_archetype_staple(freq)` — baseline minus full frequency penalty.
+    Sol Ring profile (92% freq, no theme) scores ~-13: pool may contain it
+    at the bottom, but Phase C's top-N selection won't reach that far when
+    real theme matches are available.
+- Deterministic tie-break via `hashlib.sha1(name|seed)` rather than `random`
+  (the latter is banned by the `test_no_random_imports` guardrail). Fix 4's
+  `seed` semantic = stable ordering for equal-score candidates across runs.
+- `call_counter: Dict[str, int]` is a single-key mutable dict passed by reference
+  so the eventual Phase D outer build can enforce `ENDPOINT_CALL_BUDGET = 30`
+  across the whole pipeline without each layer keeping its own counter.
+
+### Test results
+- 16/16 new tests pass:
+  - 5 `_normalize_color_identity` cases (list, JSON string, comma-string, empty, dedupe).
+  - 4 scoring-helper unit tests (theme high/low freq, pure staple high/low freq).
+  - 7 `_build_candidate_pool` integration tests with mocked upstream layers:
+    - User must-includes locked at top (score=INF), preserved exact name.
+    - Theme-matched cards outscore Sol Ring / Command Tower (creativity envelope).
+    - Missing must-include surfaces `MUST_INCLUDE_NOT_FOUND` warning + drops.
+    - Color-illegal must-include (U for Edgar's BRW) surfaces `MUST_INCLUDE_COLOR_ILLEGAL`.
+    - `color_identity` flows from archetype_brief into pool output.
+    - `endpoint_calls` counter increments per upstream call (2 = 1 brief + 1 theme).
+    - Seed=42 produces identical ordering across runs (determinism).
+- Combined: 21 pass (5 from Phase A + 16 from Phase B). 0 new regressions.
+
+### Architectural decisions
+1. **`_build_candidate_pool` is private to the layer, not yet wired into
+   `compute_agent_build_deck_v1`.** The public entrypoint still returns the Phase A
+   stub. Phase C will wire the pool through `_select_deck` and replace the stub
+   body. This keeps each phase's commit atomic and reviewable.
+2. **Lazy upstream imports.** `_build_candidate_pool` imports
+   `compute_archetype_brief_v1` and `compute_theme_top_cards_v1` from
+   `api.engine.layers.agent_endpoints_v1` at call time. This matches the existing
+   pattern in `compute_agent_context_bundle_v1` and keeps module import cheap.
+3. **`find_card_by_name` is the source of truth for color-identity checks.**
+   It already handles DFC face-name fallback and JSON-string normalization
+   quirks in the cards table — re-deriving CI from raw scryfall data here
+   would duplicate that logic.
+4. **`_upsert` merges sources, takes max score.** A card that surfaces from
+   both `theme:Vampire Tribal` and `archetype_staple` ends up with a single
+   pool entry, the higher score, and both rationale components — so Phase C's
+   per-card `reason` can show why a card was picked from multiple angles.
+5. **`compute_corpus_similar_decks_v1` deferred from pool build.** The
+   `_ensure_vectors` call inside it can take 30+ seconds against a cold corpus
+   cache. The pool doesn't strictly need similar-deck signal; theme + archetype
+   are sufficient. If Phase F shows quality gaps for under-cornered commanders,
+   we can add it back as an optional path inside the 30-call budget.
+
+### Next
+Phase C — `_select_deck` greedy slot-filling with per-bracket combo policy and
+mana-base construction. Will consume the Phase B pool, derive target slot
+distributions from `archetype_brief.bracket_distribution`, fill greedy by
+score within slot categories, and reject combo completions per `BRACKET_COMBO_POLICY`
+(B1/B2 = no combos; B3 = late-only; B4 = cap 3; B5 = unrestricted; user picks
+always override).
