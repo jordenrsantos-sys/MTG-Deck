@@ -2145,7 +2145,12 @@ def _run_candidate_critic(
 #   FLAG only — the LLM noticed a combo already present (no swap
 #     needed); recorded in novel_combo_flags so the UI can render it.
 
-_WILD_COMBO_INPUT_TOKEN_BUDGET = 22000
+# C2.2 input budget — observed at 28-29k estimated tokens with a 350-
+# card pool + full oracle text. Bumped from 22k → 35k so the call lands
+# on the live test cases; cost rises by ~$0.04 per build, well within
+# the iteration-2 $0.50/build envelope. If iteration 3 prunes pool
+# size or oracle-text length, this can come back down.
+_WILD_COMBO_INPUT_TOKEN_BUDGET = 35000
 _WILD_COMBO_OUTPUT_TOKEN_BUDGET = 3500
 _WILD_COMBO_POOL_SIZE = 350  # smaller than the wide-pool max so token
                               # budget fits at the call_with_budget guard.

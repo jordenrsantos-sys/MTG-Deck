@@ -52,16 +52,67 @@ type StrengthSummary = {
   nearest_neighbors_count?: number;
 };
 
+type LlmCall = {
+  phase: string;
+  ok: boolean;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  latency_ms: number;
+  error_code?: string | null;
+  retries?: number;
+};
+
+type LlmMetrics = {
+  available: boolean;
+  model: string | null;
+  calls: LlmCall[];
+  total_cost_usd: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_latency_ms: number;
+};
+
+type NovelComboFlag = {
+  cards: string[];
+  outcome: string;
+  in_spellbook: boolean;
+  source: string;
+  applied_swap?: boolean;
+  removed_card?: string;
+};
+
+type ConsiderAdding = { card: string; why: string };
+
+type IntentAnalysis = {
+  must_include_analysis?: Array<{
+    card?: string;
+    type?: string;
+    key_abilities?: string[];
+    signals_archetype?: string;
+  }>;
+  implicit_themes?: string[];
+  suggested_extensions?: Array<{ card?: string; why?: string }>;
+  conflict_warnings?: string[];
+  likely_win_condition?: string;
+};
+
 type Summary = {
   themes_classified?: Array<{ theme_id?: string; name?: string; confidence?: number }>;
   bracket_placement?: string;
   bracket_estimate?: { bracket?: string } | null;
   color_identity?: string[];
   strength_check?: StrengthSummary | null;
-  creativity_envelope_metrics?: EnvelopeMetrics;
+  creativity_envelope_metrics?: EnvelopeMetrics & { creativity_delta_count?: number };
   endpoint_call_count?: number;
   phase_timings_ms?: { pool?: number; select?: number; validate?: number };
   validation_issues?: Array<{ code: string; message: string }>;
+  // Iteration 2 additions.
+  llm_metrics?: LlmMetrics;
+  summary_narrative?: string | null;
+  consider_adding?: ConsiderAdding[];
+  novel_combo_flags?: NovelComboFlag[];
+  intent_analysis?: IntentAnalysis | null;
 };
 
 type BuildResponse = {
@@ -228,6 +279,24 @@ export default function AIBuildView(props: AIBuildViewProps) {
           </Button>
         ) : null}
       </header>
+
+      {/* Iteration 2 — LLM layer unavailability banner. Appears between
+          the header and the inputs whenever the response carries a
+          LLM_LAYER_UNAVAILABLE warning. Lets the user know they're in
+          iteration-1 fallback mode without burying it in the warnings
+          drawer. */}
+      {response?.warnings?.some((w) => w.code === "LLM_LAYER_UNAVAILABLE") ? (
+        <div
+          className="mb-token-3 rounded border border-amber-500/40 bg-amber-500/10 p-token-3 text-sm text-amber-200"
+          role="alert"
+          data-testid="llm-unavailable-banner"
+        >
+          <strong>LLM reasoning unavailable</strong> — pure pattern-match mode.
+          Set <code>ANTHROPIC_API_KEY</code> in your server environment and restart
+          to enable iteration-2 semantic reasoning (creativity boosts, wild-combo
+          discovery, narrative summaries, per-card rationale rewrites).
+        </div>
+      ) : null}
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-token-3 mb-token-3">
         <Card>
@@ -475,6 +544,51 @@ export default function AIBuildView(props: AIBuildViewProps) {
                   </div>
                 ) : null}
 
+                {/* Iteration 2 — LLM cost / latency summary. Only shown when
+                    at least one call fired (i.e., LLM was available AND not
+                    all skipped). Format mirrors the kickoff brief:
+                    "Built in 23.4s · 4 LLM calls · $0.31" */}
+                {response.summary.llm_metrics &&
+                response.summary.llm_metrics.calls.length > 0 ? (
+                  <div data-testid="llm-metrics-block">
+                    <div className="text-text-muted mb-token-1">LLM reasoning layer</div>
+                    <div className="flex flex-wrap gap-token-2 mb-token-1">
+                      <Badge>
+                        Built in {(response.elapsed_ms / 1000).toFixed(1)}s
+                      </Badge>
+                      <Badge>
+                        {response.summary.llm_metrics.calls.length} LLM call
+                        {response.summary.llm_metrics.calls.length === 1 ? "" : "s"}
+                      </Badge>
+                      <Badge>
+                        ${response.summary.llm_metrics.total_cost_usd.toFixed(4)}
+                      </Badge>
+                      <Badge>
+                        {response.summary.llm_metrics.total_input_tokens.toLocaleString()} in /{" "}
+                        {response.summary.llm_metrics.total_output_tokens.toLocaleString()} out
+                      </Badge>
+                      <Badge>
+                        Model: {response.summary.llm_metrics.model ?? "?"}
+                      </Badge>
+                    </div>
+                    <details>
+                      <summary className="cursor-pointer text-text-muted text-xs">
+                        Per-call breakdown
+                      </summary>
+                      <ul className="mt-token-1 space-y-token-1 text-xs text-text-muted">
+                        {response.summary.llm_metrics.calls.map((c, i) => (
+                          <li key={i}>
+                            <code>{c.phase}</code>: {c.ok ? "ok" : `FAILED (${c.error_code ?? "?"})`} ·{" "}
+                            {c.input_tokens.toLocaleString()}→{c.output_tokens.toLocaleString()} tok ·{" "}
+                            ${c.cost_usd.toFixed(4)} · {(c.latency_ms / 1000).toFixed(1)}s
+                            {c.retries ? ` · retries=${c.retries}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  </div>
+                ) : null}
+
                 {response.warnings.length > 0 ? (
                   <details>
                     <summary className="cursor-pointer text-text-muted">
@@ -498,6 +612,122 @@ export default function AIBuildView(props: AIBuildViewProps) {
           </CardBody>
         </Card>
       </section>
+
+      {/* Iteration 2 — summary narrative + combo flags + consider-adding.
+          Sits between the Summary card and the Deck card so users get the
+          LLM's editorial take before scrolling through the cardlist. */}
+      {response?.status === "OK" &&
+      (response.summary.summary_narrative ||
+        (response.summary.novel_combo_flags && response.summary.novel_combo_flags.length > 0) ||
+        (response.summary.consider_adding && response.summary.consider_adding.length > 0) ||
+        response.summary.intent_analysis) ? (
+        <section className="mb-token-3 space-y-token-3" data-testid="iter2-narrative-section">
+          {response.summary.summary_narrative ? (
+            <Card>
+              <CardHeader>Deck narrative</CardHeader>
+              <CardBody>
+                <p className="text-sm leading-relaxed" data-testid="summary-narrative">
+                  {response.summary.summary_narrative}
+                </p>
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {response.summary.novel_combo_flags && response.summary.novel_combo_flags.length > 0 ? (
+            <Card>
+              <CardHeader>
+                Combos surfaced ({response.summary.novel_combo_flags.length})
+              </CardHeader>
+              <CardBody>
+                <ul className="space-y-token-2 text-sm" data-testid="novel-combo-flags-list">
+                  {response.summary.novel_combo_flags.map((f, i) => (
+                    <li key={i} className="border-b border-glass-border-subtle pb-token-2">
+                      <div className="flex items-baseline justify-between gap-token-2">
+                        <span className="font-medium">
+                          {f.cards.join(" + ")}
+                        </span>
+                        <span className="flex gap-token-1">
+                          {f.in_spellbook ? (
+                            <Badge>Spellbook combo</Badge>
+                          ) : (
+                            <Badge>Novel</Badge>
+                          )}
+                          {f.applied_swap ? <Badge>Applied as swap</Badge> : null}
+                        </span>
+                      </div>
+                      <div className="text-text-muted text-xs mt-token-1">
+                        {f.outcome}
+                      </div>
+                      {f.removed_card ? (
+                        <div className="text-text-muted text-xs mt-token-1">
+                          Replaced: {f.removed_card}
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {response.summary.consider_adding && response.summary.consider_adding.length > 0 ? (
+            <Card>
+              <CardHeader>Suggested additions to evaluate</CardHeader>
+              <CardBody>
+                <ul className="space-y-token-2 text-sm" data-testid="consider-adding-list">
+                  {response.summary.consider_adding.map((c, i) => (
+                    <li key={i} className="border-b border-glass-border-subtle pb-token-2">
+                      <div className="font-medium">{c.card}</div>
+                      <div className="text-text-muted text-xs mt-token-1">{c.why}</div>
+                    </li>
+                  ))}
+                </ul>
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {response.summary.intent_analysis ? (
+            <Card>
+              <CardHeader>Intent analysis</CardHeader>
+              <CardBody>
+                <div className="space-y-token-2 text-sm">
+                  {response.summary.intent_analysis.likely_win_condition ? (
+                    <div>
+                      <div className="text-text-muted mb-token-1">Likely win condition</div>
+                      <div>{response.summary.intent_analysis.likely_win_condition}</div>
+                    </div>
+                  ) : null}
+                  {response.summary.intent_analysis.implicit_themes &&
+                  response.summary.intent_analysis.implicit_themes.length > 0 ? (
+                    <div>
+                      <div className="text-text-muted mb-token-1">Implicit themes inferred</div>
+                      <div className="flex flex-wrap gap-token-1">
+                        {response.summary.intent_analysis.implicit_themes.map((t) => (
+                          <Chip key={t}>{t}</Chip>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {response.summary.intent_analysis.suggested_extensions &&
+                  response.summary.intent_analysis.suggested_extensions.length > 0 ? (
+                    <div>
+                      <div className="text-text-muted mb-token-1">Suggested extensions (boosted in pool)</div>
+                      <ul className="text-text-muted text-xs space-y-token-1">
+                        {response.summary.intent_analysis.suggested_extensions.map((e, i) => (
+                          <li key={i}>
+                            <strong className="text-text-primary">{e.card}</strong>
+                            {e.why ? ` — ${e.why}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              </CardBody>
+            </Card>
+          ) : null}
+        </section>
+      ) : null}
 
       {response?.status === "OK" ? (
         <Card>
