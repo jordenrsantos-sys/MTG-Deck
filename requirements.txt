@@ -6,3 +6,8 @@ uvicorn==0.41.0
 # MCP server. Install with: pip install mcp httpx
 mcp>=1.0.0
 httpx>=0.28.0
+# Pillar D iteration 2 — LLM-driven semantic reasoning layer
+# (agent_llm_client_v1). Optional at engine runtime: build_deck_v1
+# gracefully falls back to iteration-1 deterministic behavior if
+# ANTHROPIC_API_KEY is missing or `anthropic` cannot be imported.
+anthropic>=0.50.0

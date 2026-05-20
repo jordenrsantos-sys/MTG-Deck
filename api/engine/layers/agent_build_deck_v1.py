@@ -113,6 +113,30 @@ def compute_agent_build_deck_v1(
     call_counter: Dict[str, int] = {"calls": 0}
     phase_timings_ms: Dict[str, int] = {"pool": 0, "select": 0, "validate": 0}
 
+    # ---- Pillar D iteration 2: probe LLM client availability ----
+    # If the SDK isn't installed or ANTHROPIC_API_KEY isn't set, every
+    # iteration-2 LLM augmentation phase (B2 / C2.1 / C2.2 / D2) is a
+    # no-op and we fall back to iteration-1 deterministic behavior with
+    # a clear warning. Iteration 1's success criteria (5/5 test cases)
+    # are preserved end-to-end without the API key, so this is a clean
+    # development-mode path.
+    from api.engine.layers.agent_llm_client_v1 import get_default_client as _get_llm_client
+    llm_client = _get_llm_client()
+    llm_metrics: Dict[str, Any] = {
+        "available": llm_client.is_available(),
+        "model": llm_client.model,
+        "calls": [],   # one entry per LLM call: phase, ok, input_tokens, output_tokens, cost, latency_ms
+    }
+    if not llm_client.is_available():
+        warnings.append({
+            "code": "LLM_LAYER_UNAVAILABLE",
+            "message": (
+                "Pillar D iteration 2 LLM reasoning layer is unavailable; "
+                "falling back to iteration 1 deterministic behavior. "
+                + llm_client.unavailable_reason()
+            ),
+        })
+
     # ---- Phase B: build the candidate pool ----
     t_pool = perf_counter()
     try:
@@ -188,6 +212,11 @@ def compute_agent_build_deck_v1(
         if n.strip().lower() not in deck_names_lower:
             staples_avoided += 1
 
+    # Iteration 2: roll up LLM-layer metrics for the response.
+    llm_total_cost = sum(c.get("cost_usd", 0.0) for c in llm_metrics["calls"])
+    llm_total_input_tokens = sum(c.get("input_tokens", 0) for c in llm_metrics["calls"])
+    llm_total_output_tokens = sum(c.get("output_tokens", 0) for c in llm_metrics["calls"])
+    llm_total_latency_ms = sum(c.get("latency_ms", 0) for c in llm_metrics["calls"])
     summary = {
         "themes_classified": last_findings.get("themes_classified") or [],
         "bracket_placement": bracket,
@@ -201,10 +230,25 @@ def compute_agent_build_deck_v1(
             "must_includes_dropped": pool.get("must_includes_dropped", []),
             "staples_avoided_count": staples_avoided,
             "theme_coherence_score": last_findings.get("theme_coherence_score", 0.0),
+            "creativity_delta_count": last_findings.get("creativity_delta_count", 0),
         },
         "endpoint_call_count": call_counter["calls"],
         "phase_timings_ms": phase_timings_ms,
         "validation_issues": last_findings.get("issues") or [],
+        # Iteration 2 additions — empty/zero when the LLM layer is unavailable.
+        "llm_metrics": {
+            "available": llm_metrics["available"],
+            "model": llm_metrics["model"],
+            "calls": llm_metrics["calls"],
+            "total_cost_usd": round(llm_total_cost, 4),
+            "total_input_tokens": llm_total_input_tokens,
+            "total_output_tokens": llm_total_output_tokens,
+            "total_latency_ms": llm_total_latency_ms,
+        },
+        "summary_narrative": last_findings.get("summary_narrative"),
+        "consider_adding": last_findings.get("consider_adding") or [],
+        "novel_combo_flags": last_findings.get("novel_combo_flags") or [],
+        "intent_analysis": last_findings.get("intent_analysis"),
     }
 
     return {
@@ -228,9 +272,24 @@ def _empty_summary(bracket: str, must_include_cards: List[str]) -> Dict[str, Any
             "user_picks_total": len(must_include_cards),
             "staples_avoided_count": 0,
             "theme_coherence_score": 0.0,
+            "creativity_delta_count": 0,
         },
         "endpoint_call_count": 0,
         "phase_timings_ms": {"pool": 0, "select": 0, "validate": 0},
+        # Iteration 2 keys, always present for shape stability.
+        "llm_metrics": {
+            "available": False,
+            "model": None,
+            "calls": [],
+            "total_cost_usd": 0.0,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_latency_ms": 0,
+        },
+        "summary_narrative": None,
+        "consider_adding": [],
+        "novel_combo_flags": [],
+        "intent_analysis": None,
     }
 
 
