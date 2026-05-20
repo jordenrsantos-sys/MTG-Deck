@@ -78,6 +78,17 @@ Iterative upgrade pass starting from `mpa_policy_v0.3_wincon_recognition`.
 - **Decision:** N=10 showed marginal in-band → out-of-band move on B5_vs_B2 (drift 0.05). Verified at N=20: WR=0.90, back in band. The N=10 dip is within binomial noise (1 game out of 10 with σ≈0.11). Capability is architecturally correct and needed by downstream phases (color-aware mana revisit, removal, attack heuristic). Committed as neutral; logged the N=10 → N=20 disambiguation pattern for future reference.
 - **Aggregate state after Phase 3:** in band 2/6, draw rate 13.3% (under 30% threshold).
 
+### Phase 4: More wincon patterns (extra-combat) — landed; Phase 4b color-aware redux — REVERTED
+
+- **Phase 4 code:** `_EXTRA_COMBAT_ANCHORS` and `_EXTRA_COMBAT_ENABLERS` sets (mpa_policy.py:36-66), `_check_extra_combat_wincon` helper, wired into `check_win_conditions` after Thoracle pattern (mpa_policy.py:97-117). Anchors: Aggravated Assault, Hellkite Charger, Combat Celebrant. Enablers: Old Gnawbone, Savage Ventmaw, Ancient Copper Dragon, Bear Umbra, Sword of Feast and Famine, Nature's Will, Aurelia.
+- **Phase 4 tests:** 7 new in `test_mpa_more_wincons.py`; 27/27 green.
+- **Phase 4 alone:** identical to Phase 3 baseline. The combo wincon NEVER fires in real games because Ur-Dragon B4 cannot CAST Aggravated Assault ({3}{R}{R}) — its nonbasic-heavy manabase shows as colorless without Phase 2's color-aware mana. Code committed as architecturally correct dead weight; ready to use when color-aware mana lands.
+- **Phase 4b (color-aware mana re-introduction):** I re-applied Phase 2's _land_color tuple-return + nonbasic table to see if combo wincon could now fire. It DID fire — B4_vs_B2 went 0.0 → 0.5, B4_vs_B3 went 0.1 → 0.4. **But** the same dynamic regressed B5_vs_B2 (0.8 → 0.2) and B5_vs_B4 (0.9 → 0.1) because Ezio's policy started casting its "junk" big spells (Mnemonic Betrayal, Wheel of Fortune) once they became legal, bleeding mana that should have gone to combo assembly. Net in-band count went 2 → 1; total drift sum went 1.55 → 1.70.
+- **Reverted Phase 4b per methodology.** The capability is correct but exposes a deeper issue: the policy needs to know *which* spells advance toward a wincon vs which are junk. Without that filter, color-aware mana harms B5 decks more than it helps B4 decks.
+- **Open question for end-of-loop report:** can the "wincon-relevant cast filter" be implemented as a Phase 7 capability that re-enables Phase 4b? Out of scope for this loop's listed capabilities.
+- **Aggregate state after Phase 4:** 1/6 in band (B3_vs_B2), draw rate ~13% — unchanged from Phase 3 (B5_vs_B2 is 0.8 at N=10 today, was 0.9 at N=20 last run; within noise).
+
+
 
 
 

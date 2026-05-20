@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .mpa_game_state import GameState, Phase, Step
 from .mpa_actions import Action, ActionType, FAST_MANA_PRODUCERS
 
-POLICY_VERSION = "mpa_policy_v0.5_fast_mana"
+POLICY_VERSION = "mpa_policy_v0.6_extra_combat_wincon"
 
 
 def _untapped_mana_sources_count(state, seat_index):
@@ -39,6 +39,32 @@ def _untapped_mana_sources_count(state, seat_index):
 _THORACLE_NAME = "Thassa's Oracle"
 _CONSULT_NAMES = ("Demonic Consultation", "Tainted Pact")
 
+# Phase 4 — Pattern B: infinite combat phases via extra-combat anchor +
+# enabler. Each (anchor, enabler) pair on battlefield produces unbounded
+# combat steps, terminal for the defender. The MPA can't model the
+# activation loop, so we collapse to WIN_THE_GAME the same way the
+# Thoracle combo does.
+#
+# Anchors are cards that grant an extra combat (or repeatable combat).
+# Enablers either produce enough mana per attack to fund the next
+# activation OR untap the lands/creatures needed.
+_EXTRA_COMBAT_ANCHORS = frozenset({
+    "Aggravated Assault",   # {5}: extra combat (sorcery)
+    "Hellkite Charger",     # {5}{R}{R}: untap attackers + extra combat
+    "Combat Celebrant",     # exert: extra combat (once per turn — combos w/ blink)
+})
+_EXTRA_COMBAT_ENABLERS = frozenset({
+    # Mana per attack — fully fund the next anchor activation
+    "Old Gnawbone",            # 8 treasure per attack
+    "Savage Ventmaw",          # 6 mana on attack ({R}{R}{R}{G}{G}{G})
+    "Ancient Copper Dragon",   # treasures = damage dealt (~6-12)
+    # Untap effects that recycle the attacker / lands for re-activation
+    "Bear Umbra",              # untap all lands when enchanted attacker triggers
+    "Sword of Feast and Famine",  # untap all lands when combat damage dealt
+    "Nature's Will",           # untap lands when creature attacks
+    "Aurelia, the Warleader",  # this is a different anchor — untap creatures on attack
+})
+
 
 def check_win_conditions(state, seat_index):
     """v0.3 — recognize assembled win conditions. Returns a WIN_THE_GAME
@@ -61,28 +87,41 @@ def check_win_conditions(state, seat_index):
     """
     me = state.players[seat_index]
 
+    # Pattern A: Thassa's Oracle + Demonic Consultation / Tainted Pact (Phase 1)
     thoracle_in_play = any(c.name == _THORACLE_NAME for c in me.battlefield)
     thoracle_in_hand = any(c.name == _THORACLE_NAME for c in me.hand)
-    if not (thoracle_in_play or thoracle_in_hand):
-        return None
-
     consult_in_hand = any(c.name in _CONSULT_NAMES for c in me.hand)
-    if not consult_in_hand:
-        return None
+    if (thoracle_in_play or thoracle_in_hand) and consult_in_hand:
+        available_mana = _untapped_mana_sources_count(state, seat_index)
+        needed = 1 if thoracle_in_play else 3
+        if available_mana >= needed:
+            return Action(
+                type=ActionType.WIN_THE_GAME,
+                seat_index=seat_index,
+                notes="thoracle_consult_combo",
+            )
 
-    # Rough mana sufficiency (any color): need ~1 mana if Thoracle is in
-    # play (just cast the consult), ~3 if both still in hand (Thoracle UU +
-    # Consult B = 3 generic-equivalent). Phase 3: counts both untapped
-    # lands AND untapped fast-mana artifacts (Sol Ring = +2, Mox = +1, etc.).
-    available_mana = _untapped_mana_sources_count(state, seat_index)
-    needed = 1 if thoracle_in_play else 3
-    if available_mana < needed:
-        return None
+    # Pattern B: extra-combat anchor + enabler in play (Phase 4)
+    combat = _check_extra_combat_wincon(state, seat_index)
+    if combat is not None:
+        return combat
 
+    return None
+
+
+def _check_extra_combat_wincon(state, seat_index):
+    """Pattern B (Phase 4): anchor + enabler on battlefield → infinite combats."""
+    me = state.players[seat_index]
+    anchors_in_play = [c for c in me.battlefield if c.name in _EXTRA_COMBAT_ANCHORS]
+    enablers_in_play = [c for c in me.battlefield if c.name in _EXTRA_COMBAT_ENABLERS]
+    if not anchors_in_play or not enablers_in_play:
+        return None
+    anchor_name = anchors_in_play[0].name
+    enabler_name = enablers_in_play[0].name
     return Action(
         type=ActionType.WIN_THE_GAME,
         seat_index=seat_index,
-        notes="thoracle_consult_combo",
+        notes=f"infinite_combat_combo:{anchor_name}+{enabler_name}",
     )
 
 
@@ -184,10 +223,14 @@ def choose_action(state, seat_index, legal_actions):
         return Action(type=ActionType.PASS_PRIORITY, seat_index=seat_index), 1.0, "no_legal_actions"
     if state.game_over:
         return Action(type=ActionType.PASS_PRIORITY, seat_index=seat_index), 1.0, "game_over"
-    # v0.3: scan for assembled win conditions before any other action consideration.
+    # v0.3: scan for Thoracle wincon before any other action consideration.
     wincon = check_win_conditions(state, seat_index)
     if wincon is not None:
         return wincon, 1.0, f"wincon_{wincon.notes}"
+    # v0.6 / Phase 4: extra-combat anchor + enabler on battlefield → infinite combats.
+    combat_wincon = _check_extra_combat_wincon(state, seat_index)
+    if combat_wincon is not None:
+        return combat_wincon, 1.0, f"wincon_{combat_wincon.notes}"
     # v0.4: if we have a tutor and are missing a wincon piece, search for it.
     tutor = check_tutor_actions(state, seat_index)
     if tutor is not None:
