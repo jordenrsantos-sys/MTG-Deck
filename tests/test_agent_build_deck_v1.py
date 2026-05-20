@@ -1,14 +1,21 @@
-"""Phase A smoke tests for /agent/build_deck_v1.
+"""Endpoint contract tests for /agent/build_deck_v1.
 
-The endpoint stub returns commander + 99 Wastes regardless of inputs (beyond
-basic validation). These tests pin the request/response contract so Phases B-D
-can swap in the real selection algorithm without breaking the wire shape.
+Validates the request/response contract end-to-end through the FastAPI route,
+mocking upstream agent_endpoints_v1 functions so tests don't pay the cost of
+loading and vectorizing the 13K-deck corpus against the small fixture DB.
+
+Phase B/C live-layer behavior is covered by:
+  - tests/test_agent_build_deck_v1_phase_b.py — `_build_candidate_pool` w/ mocks
+  - tests/test_agent_build_deck_v1_phase_c.py — `_select_deck` slot + combo logic
+
+The 5-test-case live validation sweep against a real snapshot lands in Phase F.
 """
 from __future__ import annotations
 
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tests.decklist_fixture_harness import (
     DECKLIST_FIXTURE_SNAPSHOT_ID,
@@ -30,7 +37,52 @@ except Exception as exc:  # pragma: no cover - environment-dependent
 COMMANDER = "Edgar Markov"
 
 
-class AgentBuildDeckV1PhaseATests(unittest.TestCase):
+def _archetype_brief_stub() -> dict:
+    return {
+        "version": "archetype_brief_v1.0",
+        "commander": COMMANDER,
+        "commander_oracle_id": "edgar-oracle-id",
+        "color_identity": ["B", "R", "W"],
+        "corpus_deck_count": 25,
+        "common_archetypes": [{"name": "Vampire Tribal Aristocrats", "frequency": 0.6, "deck_count": 15}],
+        "bracket_distribution": {"B3": 0.5, "B4": 0.3},
+        "staple_cards": [
+            {"name": "Sol Ring", "usage_pct": 0.92},
+            {"name": "Command Tower", "usage_pct": 0.88},
+        ],
+        "warnings": [],
+    }
+
+
+def _theme_top_cards_stub() -> dict:
+    # Enough candidates (~50) to satisfy non-land slot targets.
+    results = []
+    for i in range(60):
+        results.append({
+            "oracle_id": f"vampire-{i}",
+            "name": f"Mock Vampire {i:02d}",
+            "type_line": "Creature — Vampire",
+            "cmc": (i % 5) + 1,
+            "primitives": ["TRIBAL_PAYOFFS"],
+            "theme_signal_count": 1 + (i % 3),
+        })
+    return {
+        "version": "theme_top_cards_v1.0",
+        "theme_id": "TYPAL_VAMPIRES",
+        "subtype": "Vampire",
+        "primitives_used_for_match": ["TRIBAL_PAYOFFS"],
+        "matched_count": 60,
+        "returned_count": len(results),
+        "results": results,
+        "warnings": [],
+    }
+
+
+def _find_card_stub(snapshot_id: str, name: str):
+    return None  # No user must-includes in these tests; not exercised here.
+
+
+class AgentBuildDeckV1ContractTests(unittest.TestCase):
     _tmp_dir_ctx: tempfile.TemporaryDirectory | None = None
     _db_env_ctx = None
 
@@ -56,19 +108,37 @@ class AgentBuildDeckV1PhaseATests(unittest.TestCase):
                 cls._tmp_dir_ctx = None
             super().tearDownClass()
 
-    def _post(self, **overrides):
+    def _post(self, *, with_upstream_mocks: bool = True, **overrides):
         payload = {
             "db_snapshot_id": DECKLIST_FIXTURE_SNAPSHOT_ID,
             "commander": COMMANDER,
             "bracket": "B3",
-            "theme_hints": [],
+            "theme_hints": ["TYPAL_VAMPIRES"],
             "must_include_cards": [],
         }
         payload.update(overrides)
-        with TestClient(app, raise_server_exceptions=False) as client:
-            return client.post("/agent/build_deck_v1", json=payload)
 
-    def test_smoke_returns_100_cards_with_commander_and_99_basics(self) -> None:
+        from api.engine.layers import agent_endpoints_v1 as ae
+        from engine import db as engine_db
+        if with_upstream_mocks:
+            mocks = [
+                patch.object(ae, "compute_archetype_brief_v1", return_value=_archetype_brief_stub()),
+                patch.object(ae, "compute_theme_top_cards_v1", return_value=_theme_top_cards_stub()),
+                patch.object(engine_db, "find_card_by_name", side_effect=_find_card_stub),
+            ]
+            for m in mocks:
+                m.start()
+            try:
+                with TestClient(app, raise_server_exceptions=False) as client:
+                    return client.post("/agent/build_deck_v1", json=payload)
+            finally:
+                for m in mocks:
+                    m.stop()
+        else:
+            with TestClient(app, raise_server_exceptions=False) as client:
+                return client.post("/agent/build_deck_v1", json=payload)
+
+    def test_smoke_returns_100_cards_with_commander_first(self) -> None:
         if _IMPORT_ERROR is not None:
             self.skipTest(f"FastAPI integration unavailable: {_IMPORT_ERROR}")
         response = self._post()
@@ -77,35 +147,31 @@ class AgentBuildDeckV1PhaseATests(unittest.TestCase):
 
         self.assertEqual(body["version"], "agent_build_deck_v1.0")
         self.assertEqual(body["status"], "OK")
-        self.assertEqual(len(body["deck"]), 100, "must be commander + 99")
+        self.assertEqual(len(body["deck"]), 100, f"want 100, got {len(body['deck'])}")
         self.assertEqual(body["deck"][0]["card_name"], COMMANDER)
         self.assertEqual(body["deck"][0]["source"], "user_intent")
-        # Phase A stub fills with Wastes.
-        basic_count = sum(1 for c in body["deck"][1:] if c["card_name"] == "Wastes")
-        self.assertEqual(basic_count, 99)
         # Every card has a non-empty reason (rule 1.3 audit).
         for card in body["deck"]:
             self.assertTrue(isinstance(card.get("reason"), str) and card["reason"].strip())
 
-    def test_summary_reports_bracket_and_must_include_total(self) -> None:
+    def test_summary_contains_creativity_envelope_metrics(self) -> None:
         if _IMPORT_ERROR is not None:
             self.skipTest(f"FastAPI integration unavailable: {_IMPORT_ERROR}")
-        must_include = ["Vito, Thorn of the Dusk Rose", "Bloodthirsty Conqueror"]
-        response = self._post(must_include_cards=must_include, bracket="B3")
+        response = self._post(must_include_cards=["Vito, Thorn of the Dusk Rose"], bracket="B3")
         self.assertEqual(response.status_code, 200, response.text)
         body = response.json()
         summary = body["summary"]
         self.assertEqual(summary["bracket_placement"], "B3")
         metrics = summary["creativity_envelope_metrics"]
-        self.assertEqual(metrics["user_picks_total"], 2)
-        # Phase A stub doesn't yet include the picks; metric reports the
-        # ratio honestly (0/2). Phases C-D will lift user_picks_present to 2.
-        self.assertEqual(metrics["user_picks_present"], 0)
+        self.assertEqual(metrics["user_picks_total"], 1)
+        # find_card returns None for everything in stub → must_includes_dropped
+        self.assertIn("Vito, Thorn of the Dusk Rose", metrics.get("must_includes_dropped", []) +
+                      metrics.get("must_includes_resolved", []))
 
     def test_invalid_bracket_returns_failed_with_warning(self) -> None:
         if _IMPORT_ERROR is not None:
             self.skipTest(f"FastAPI integration unavailable: {_IMPORT_ERROR}")
-        response = self._post(bracket="B9")
+        response = self._post(with_upstream_mocks=False, bracket="B9")
         self.assertEqual(response.status_code, 200, response.text)
         body = response.json()
         self.assertEqual(body["status"], "FAILED")
@@ -116,24 +182,26 @@ class AgentBuildDeckV1PhaseATests(unittest.TestCase):
     def test_missing_commander_returns_failed(self) -> None:
         if _IMPORT_ERROR is not None:
             self.skipTest(f"FastAPI integration unavailable: {_IMPORT_ERROR}")
-        response = self._post(commander="   ")
+        response = self._post(with_upstream_mocks=False, commander="   ")
         self.assertEqual(response.status_code, 200, response.text)
         body = response.json()
         self.assertEqual(body["status"], "FAILED")
         codes = {w["code"] for w in body["warnings"]}
         self.assertIn("MISSING_COMMANDER", codes)
 
-    def test_warnings_contain_phase_a_stub_marker(self) -> None:
-        """Until Phases B-D land, every successful build should announce
-        itself as a stub so downstream consumers don't mistake it for the
-        real selection algorithm."""
+    def test_summary_reports_endpoint_call_count_and_timings(self) -> None:
         if _IMPORT_ERROR is not None:
             self.skipTest(f"FastAPI integration unavailable: {_IMPORT_ERROR}")
         response = self._post()
         self.assertEqual(response.status_code, 200, response.text)
         body = response.json()
-        codes = {w["code"] for w in body["warnings"]}
-        self.assertIn("PHASE_A_STUB", codes)
+        summary = body["summary"]
+        self.assertGreaterEqual(summary["endpoint_call_count"], 2,
+                                "expected at least 1 brief + 1 theme call")
+        self.assertIn("phase_timings_ms", summary)
+        timings = summary["phase_timings_ms"]
+        self.assertIn("pool", timings)
+        self.assertIn("select", timings)
 
 
 if __name__ == "__main__":

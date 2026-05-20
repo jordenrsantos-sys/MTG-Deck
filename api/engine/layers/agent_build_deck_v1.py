@@ -109,26 +109,89 @@ def compute_agent_build_deck_v1(
             "elapsed_ms": int((perf_counter() - t_start) * 1000),
         }
 
+    call_counter: Dict[str, int] = {"calls": 0}
+    phase_timings_ms: Dict[str, int] = {"pool": 0, "select": 0, "validate": 0}
+
+    # ---- Phase B: build the candidate pool ----
+    t_pool = perf_counter()
+    try:
+        pool = _build_candidate_pool(
+            db_snapshot_id=db_snapshot_id,
+            commander=commander.strip(),
+            bracket=bracket,
+            theme_hints=theme_hints,
+            must_include_cards=must_include_cards,
+            seed=seed,
+            call_counter=call_counter,
+        )
+    except Exception as exc:
+        return {
+            "version": AGENT_BUILD_DECK_VERSION,
+            "status": "FAILED",
+            "deck": [],
+            "summary": _empty_summary(bracket, must_include_cards),
+            "warnings": warnings + [{
+                "code": "POOL_BUILD_FAILED",
+                "message": f"{exc.__class__.__name__}: {exc}",
+            }],
+            "elapsed_ms": int((perf_counter() - t_start) * 1000),
+        }
+    phase_timings_ms["pool"] = int((perf_counter() - t_pool) * 1000)
+    warnings.extend(pool.get("warnings", []))
+
+    if call_counter["calls"] >= ENDPOINT_CALL_BUDGET:
+        warnings.append({
+            "code": "ENDPOINT_BUDGET_EXCEEDED_DURING_POOL",
+            "message": f"Pool build consumed {call_counter['calls']} of {ENDPOINT_CALL_BUDGET} calls; selection may be impaired.",
+        })
+
+    # ---- Phase C: greedy slot-filling selection ----
+    t_select = perf_counter()
+    body, select_warnings = _select_deck(
+        pool=pool, bracket=bracket, commander=commander.strip(),
+    )
+    phase_timings_ms["select"] = int((perf_counter() - t_select) * 1000)
+    warnings.extend(select_warnings)
+
     deck: List[Dict[str, str]] = [{
         "card_name": commander.strip(),
         "reason": "Commander (locked by user intent).",
         "source": "user_intent",
-    }]
-    for _ in range(99):
-        deck.append({
-            "card_name": "Wastes",
-            "reason": "Phase A stub filler (basic land, always color-identity-legal).",
-            "source": "phase_a_stub",
-        })
+    }] + body
 
-    summary = _empty_summary(bracket, must_include_cards)
-    warnings.append({
-        "code": "PHASE_A_STUB",
-        "message": (
-            "Phase A scaffold returns commander + 99 Wastes. Real candidate-pool / "
-            "selection / validation logic lands in Phases B-D."
-        ),
-    })
+    # ---- Summary ----
+    user_picks_present = sum(1 for c in body if c.get("source") == "user_intent")
+    must_include_total = len(pool.get("must_includes_resolved", []) or []) + \
+                         len(pool.get("must_includes_dropped", []) or [])
+    # Staples avoided: high-frequency staples (>=30% corpus) NOT in deck.
+    deck_names_lower = {c["card_name"].strip().lower() for c in deck}
+    archetype_brief = pool.get("archetype_brief", {}) or {}
+    staples_avoided = 0
+    for s in archetype_brief.get("staple_cards", []) or []:
+        n = (s.get("name") or "")
+        if not n:
+            continue
+        if float(s.get("usage_pct") or 0.0) < FREQUENCY_PENALTY_THRESHOLD:
+            continue
+        if n.strip().lower() not in deck_names_lower:
+            staples_avoided += 1
+
+    summary = {
+        "themes_classified": theme_hints,  # Phase D replaces with classifier output
+        "bracket_placement": bracket,
+        "color_identity": pool.get("color_identity") or [],
+        "strength_check": None,  # Phase D populates
+        "creativity_envelope_metrics": {
+            "user_picks_present": user_picks_present,
+            "user_picks_total": len(must_include_cards),
+            "must_includes_resolved": pool.get("must_includes_resolved", []),
+            "must_includes_dropped": pool.get("must_includes_dropped", []),
+            "staples_avoided_count": staples_avoided,
+            "theme_coherence_score": 0.0,  # Phase D populates from analyze
+        },
+        "endpoint_call_count": call_counter["calls"],
+        "phase_timings_ms": phase_timings_ms,
+    }
 
     return {
         "version": AGENT_BUILD_DECK_VERSION,
@@ -448,3 +511,374 @@ def _build_candidate_pool(
         "warnings": warnings,
         "endpoint_calls": call_counter["calls"],
     }
+
+
+# ============================================================
+# Phase C — Selection with slot balancing + per-bracket combo policy.
+# ============================================================
+
+# Color → its basic land name (Wastes is the colorless basic).
+_COLOR_TO_BASIC: Dict[str, str] = {
+    "W": "Plains", "U": "Island", "B": "Swamp", "R": "Mountain", "G": "Forest",
+}
+_BASIC_LAND_NAMES: set = {"Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes"}
+
+# Slot category → (default target count). Adjusted per archetype downstream.
+# Targets sum to ~99: 28 + 36 + 10 + 10 + 7 + 3 + 5 = 99.
+_DEFAULT_SLOT_TARGETS: Dict[str, int] = {
+    "creature": 28,
+    "land": 36,
+    "ramp": 10,
+    "card_draw": 10,
+    "removal": 7,
+    "win_condition": 3,
+    "flex": 5,
+}
+
+# Primitive markers per category. Type-line wins over primitives ("Land" beats
+# "MANA_RAMP_LAND_SEARCH"), and primitives are checked in priority order.
+_RAMP_PRIMITIVES: set = {"MANA_ROCK", "MANA_RAMP_LAND_SEARCH", "MANA_RAMP_CREATURE_DORK", "MANA_RAMP_SPELL"}
+_DRAW_PRIMITIVES: set = {"CARD_DRAW_BURST", "CARD_DRAW_REPEATABLE", "DRAW_REPLACEMENT", "CARD_DRAW"}
+_REMOVAL_PRIMITIVES: set = {"TARGETED_REMOVAL_CREATURE", "TARGETED_REMOVAL_ARTIFACT",
+                            "TARGETED_REMOVAL_ENCHANTMENT", "TARGETED_REMOVAL_PLANESWALKER",
+                            "BOARDWIPE_CREATURES", "COUNTERSPELL_GENERIC", "COUNTERSPELL_CREATURE"}
+_WIN_CONDITION_PRIMITIVES: set = {"WINCON_COMBAT", "WINCON_COMBO", "WINCON_ALT", "INFINITE_COMBO"}
+
+
+def _classify_card(*, name: str, type_line: Optional[str], primitives: Optional[List[str]]) -> str:
+    """Map a candidate to a slot category. Type-line takes priority (land /
+    creature are unambiguous from the type); other categories are derived
+    from primitives."""
+    type_line = (type_line or "").lower()
+    primitives_set: set = set(primitives or [])
+
+    if "land" in type_line:
+        return "land"
+    if any(p in primitives_set for p in _RAMP_PRIMITIVES):
+        return "ramp"
+    if any(p in primitives_set for p in _DRAW_PRIMITIVES):
+        return "card_draw"
+    if any(p in primitives_set for p in _REMOVAL_PRIMITIVES):
+        return "removal"
+    if any(p in primitives_set for p in _WIN_CONDITION_PRIMITIVES):
+        return "win_condition"
+    if "creature" in type_line:
+        return "creature"
+    # Default bucket — instants, sorceries, enchantments, artifacts that
+    # don't ramp/draw/remove. Used for utility / flex slots.
+    return "flex"
+
+
+def _adjust_slot_targets(archetype_brief: Dict[str, Any]) -> Dict[str, int]:
+    """Adjust default slot targets based on archetype signal. Tribal archetypes
+    increase creature count at the cost of flex slots."""
+    targets = dict(_DEFAULT_SLOT_TARGETS)
+    archetypes = archetype_brief.get("common_archetypes") or []
+    if not archetypes:
+        return targets
+    top = (archetypes[0].get("name") or "").lower()
+    if "tribal" in top or "typal" in top:
+        # Tribal decks want more creatures; pull from flex.
+        delta = 4
+        targets["creature"] += delta
+        targets["flex"] = max(0, targets["flex"] - delta)
+    if "combo" in top:
+        # Combo decks lean heavier on tutors / win conditions; pull from creature.
+        targets["win_condition"] += 2
+        targets["card_draw"] += 2
+        targets["creature"] = max(0, targets["creature"] - 4)
+    return targets
+
+
+def _load_two_card_pair_index() -> Dict[frozenset, set]:
+    """Build {frozenset({a_name_lower, b_name_lower}): set_of_brackets_allowed}
+    from combo_brackets_v1.json. Returns empty dict on any load error — the
+    agent then falls through to bracket-policy defaults from BRACKET_COMBO_POLICY.
+    """
+    import json as _j
+    from pathlib import Path as _P
+    path = _P(__file__).resolve().parents[1] / "data" / "combos" / "combo_brackets_v1.json"
+    try:
+        raw = _j.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    bv = raw.get("by_variant_id") if isinstance(raw, dict) else None
+    if not isinstance(bv, dict):
+        return {}
+    index: Dict[frozenset, set] = {}
+    for _vid, variant in bv.items():
+        if not isinstance(variant, dict):
+            continue
+        if variant.get("combo_size") != 2:
+            continue
+        names = variant.get("card_names")
+        if not isinstance(names, list) or len(names) != 2:
+            continue
+        a = (names[0] or "").strip().lower()
+        b = (names[1] or "").strip().lower()
+        if not a or not b or a == b:
+            continue
+        brackets = variant.get("brackets_allowed")
+        if not isinstance(brackets, list):
+            continue
+        key = frozenset({a, b})
+        existing = index.get(key, set())
+        existing.update(brackets)
+        index[key] = existing
+    return index
+
+
+def _combo_violates_bracket(
+    *,
+    candidate_name: str,
+    selected_names_lower: set,
+    user_pick_names_lower: set,
+    bracket: str,
+    pair_index: Dict[frozenset, set],
+    current_pair_count: int,
+) -> Tuple[bool, Optional[str]]:
+    """Return (violates, reason). Used per-candidate during selection.
+
+    Policy (Fix 1 from kickoff patch):
+      - If both halves of a pair are user picks: ALWAYS allowed (user override).
+      - Else if the pair's brackets_allowed includes the request bracket:
+          * For B4: still check the per-build cap on distinct pairs.
+          * Otherwise: allowed.
+      - Else: rejected.
+    """
+    cand_lower = candidate_name.strip().lower()
+    for other in selected_names_lower:
+        if other == cand_lower:
+            continue
+        key = frozenset({cand_lower, other})
+        brackets_allowed = pair_index.get(key)
+        if brackets_allowed is None:
+            continue
+        # Both halves are user-locked → always allowed.
+        if cand_lower in user_pick_names_lower and other in user_pick_names_lower:
+            continue
+        if bracket not in brackets_allowed:
+            return True, (
+                f"would form 2-card combo with {other!r}; pair allowed in "
+                f"{sorted(brackets_allowed)}, requested bracket={bracket}"
+            )
+        # Bracket-allowed pair. For B4, check pair cap.
+        if bracket == "B4":
+            cap = BRACKET_COMBO_POLICY["B4"].get("pair_cap")
+            if isinstance(cap, int) and current_pair_count >= cap:
+                return True, (
+                    f"would exceed B4 combo pair cap of {cap} (pair with {other!r})"
+                )
+    return False, None
+
+
+def _count_existing_combo_pairs(
+    *,
+    selected_names_lower: set,
+    pair_index: Dict[frozenset, set],
+) -> int:
+    """Count distinct 2-card combo pairs already present in the selected set.
+    Used to enforce B4's pair cap during selection."""
+    seen: set = set()
+    names_list = list(selected_names_lower)
+    for i, a in enumerate(names_list):
+        for b in names_list[i + 1:]:
+            key = frozenset({a, b})
+            if key in pair_index:
+                seen.add(key)
+    return len(seen)
+
+
+def _fill_mana_base(color_identity: List[str], count: int) -> List[Dict[str, str]]:
+    """Generate `count` basic lands, evenly distributed across the commander's
+    color identity. Wastes covers the colorless case.
+
+    Singleton rule does not apply to basics, so a fully-W deck gets `count` Plains.
+    """
+    cards: List[Dict[str, str]] = []
+    if not color_identity:
+        for _ in range(count):
+            cards.append({
+                "card_name": "Wastes",
+                "reason": "Mana base: colorless commander, filling with Wastes.",
+                "source": "mana_base",
+            })
+        return cards
+    basics = [_COLOR_TO_BASIC[c] for c in color_identity if c in _COLOR_TO_BASIC]
+    if not basics:
+        # Color identity contained no W/U/B/R/G — fall back to Wastes.
+        for _ in range(count):
+            cards.append({
+                "card_name": "Wastes",
+                "reason": "Mana base: non-WUBRG color identity, filling with Wastes.",
+                "source": "mana_base",
+            })
+        return cards
+    for i in range(count):
+        basic = basics[i % len(basics)]
+        cards.append({
+            "card_name": basic,
+            "reason": f"Mana base: basic land for color identity {sorted(color_identity)}.",
+            "source": "mana_base",
+        })
+    return cards
+
+
+def _format_reason(candidate: Dict[str, Any], slot: str) -> str:
+    """Compose a human-readable per-card reason from rationale_components."""
+    parts = list(candidate.get("rationale_components") or [])
+    if not parts:
+        parts.append(f"Slot fill: {slot}.")
+    if slot:
+        parts.append(f"[slot={slot}]")
+    return " ".join(parts)
+
+
+def _select_deck(
+    *,
+    pool: Dict[str, Any],
+    bracket: str,
+    commander: str,
+    target_size: int = 99,
+) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+    """Greedy slot-filling selection. Consumes Phase B's `pool` and returns
+    a tuple (deck_99, warnings). User picks are placed first regardless of slot
+    overflow (locked); remaining slots fill greedy-by-score per category."""
+    warnings: List[Dict[str, str]] = []
+    candidates = list(pool.get("candidates") or [])
+    color_identity = pool.get("color_identity") or []
+    archetype_brief = pool.get("archetype_brief") or {}
+
+    slot_targets = _adjust_slot_targets(archetype_brief)
+    pair_index = _load_two_card_pair_index()
+    if not pair_index:
+        warnings.append({
+            "code": "COMBO_INDEX_EMPTY",
+            "message": "combo_brackets_v1.json unavailable; combo policy will fall back to BRACKET_COMBO_POLICY defaults.",
+        })
+
+    # Buckets per slot category.
+    slot_counts: Dict[str, int] = {k: 0 for k in slot_targets}
+    selected: List[Dict[str, str]] = []
+    selected_names_lower: set = set()
+    user_pick_names_lower: set = {
+        c["name"].strip().lower() for c in candidates if c.get("is_user_pick")
+    }
+
+    # ---- Pass 1: lock in user must-includes (score=INF) ----
+    user_picks = [c for c in candidates if c.get("is_user_pick")]
+    for c in user_picks:
+        slot = _classify_card(
+            name=c["name"], type_line=c.get("type_line"), primitives=c.get("primitives"),
+        )
+        selected.append({
+            "card_name": c["name"],
+            "reason": _format_reason(c, slot),
+            "source": c.get("source", "user_intent"),
+        })
+        selected_names_lower.add(c["name"].strip().lower())
+        # User picks bypass the slot cap — they always go in.
+        if slot in slot_counts:
+            slot_counts[slot] += 1
+
+    # ---- Pass 2: greedy fill non-land slots from pool ----
+    # Iterate pool top-to-bottom. For each non-land card, place it in its
+    # slot if that slot still has capacity AND it doesn't violate bracket
+    # combo policy. Lands are deferred to Pass 3.
+    pair_count = _count_existing_combo_pairs(
+        selected_names_lower=selected_names_lower, pair_index=pair_index,
+    )
+    non_land_target = sum(v for k, v in slot_targets.items() if k != "land")
+    for c in candidates:
+        if c.get("is_user_pick"):
+            continue
+        name = c["name"]
+        name_lower = name.strip().lower()
+        if name_lower in selected_names_lower:
+            continue
+        slot = _classify_card(
+            name=name, type_line=c.get("type_line"), primitives=c.get("primitives"),
+        )
+        if slot == "land":
+            continue  # Pass 3 handles lands.
+        if slot_counts.get(slot, 0) >= slot_targets.get(slot, 0):
+            continue
+        violates, reason = _combo_violates_bracket(
+            candidate_name=name,
+            selected_names_lower=selected_names_lower,
+            user_pick_names_lower=user_pick_names_lower,
+            bracket=bracket,
+            pair_index=pair_index,
+            current_pair_count=pair_count,
+        )
+        if violates:
+            # Don't warn-spam; only emit once per rejected name.
+            warnings.append({
+                "code": "COMBO_POLICY_REJECT",
+                "message": f"Rejected {name!r}: {reason}",
+            })
+            continue
+        selected.append({
+            "card_name": name,
+            "reason": _format_reason(c, slot),
+            "source": c.get("source", "agent_select"),
+        })
+        selected_names_lower.add(name_lower)
+        slot_counts[slot] += 1
+        # Pair count may have ticked up if we just completed an allowed pair.
+        if bracket == "B4":
+            pair_count = _count_existing_combo_pairs(
+                selected_names_lower=selected_names_lower, pair_index=pair_index,
+            )
+
+        # Stop once non-land slots are full to leave room for the land base.
+        non_land_used = sum(slot_counts[k] for k in slot_counts if k != "land")
+        if non_land_used >= non_land_target:
+            break
+
+    # ---- Pass 3: fill lands ----
+    # First take any land candidates from the pool (dual lands surfaced by
+    # theme/staple data), then top up with basics.
+    land_cap = slot_targets["land"]
+    for c in candidates:
+        if slot_counts["land"] >= land_cap:
+            break
+        if c.get("is_user_pick"):
+            continue
+        name = c["name"]
+        name_lower = name.strip().lower()
+        if name_lower in selected_names_lower:
+            continue
+        slot = _classify_card(
+            name=name, type_line=c.get("type_line"), primitives=c.get("primitives"),
+        )
+        if slot != "land":
+            continue
+        selected.append({
+            "card_name": name,
+            "reason": _format_reason(c, "land"),
+            "source": c.get("source", "agent_select"),
+        })
+        selected_names_lower.add(name_lower)
+        slot_counts["land"] += 1
+
+    # Top up with basics to reach land target.
+    needed_basics = max(0, slot_targets["land"] - slot_counts["land"])
+    selected.extend(_fill_mana_base(color_identity, needed_basics))
+    slot_counts["land"] += needed_basics
+
+    # ---- Pass 4: pad up to target_size with basics if anything is short ----
+    deficit = target_size - len(selected)
+    if deficit > 0:
+        selected.extend(_fill_mana_base(color_identity, deficit))
+        warnings.append({
+            "code": "POOL_UNDER_FILL_PADDED_WITH_BASICS",
+            "message": f"Pool yielded fewer than {target_size} non-commander cards; padded {deficit} basics.",
+        })
+
+    # ---- Pass 5: truncate any overflow (shouldn't happen given caps) ----
+    if len(selected) > target_size:
+        # Drop from the tail (lowest-priority basics).
+        selected = selected[:target_size]
+
+    return selected, warnings

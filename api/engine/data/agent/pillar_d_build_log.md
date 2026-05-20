@@ -144,3 +144,104 @@ distributions from `archetype_brief.bracket_distribution`, fill greedy by
 score within slot categories, and reject combo completions per `BRACKET_COMBO_POLICY`
 (B1/B2 = no combos; B3 = late-only; B4 = cap 3; B5 = unrestricted; user picks
 always override).
+
+---
+
+## Phase C — Selection with slot balancing + per-bracket combo policy
+
+**Status:** ✅ Complete (2026-05-20)
+
+### What landed
+- `_classify_card(name, type_line, primitives)` — pure mapping into one of
+  seven slot categories (land, creature, ramp, card_draw, removal,
+  win_condition, flex). Type_line wins over primitives (a land is a land
+  even if it carries MANA_ROCK).
+- `_adjust_slot_targets(archetype_brief)` — tribal archetypes (any name
+  containing "tribal" or "typal") bump creature count by 4 (pulled from flex);
+  combo archetypes bump win_condition and card_draw at the cost of creatures.
+  Default targets sum to 99 (28 creatures + 36 lands + 10 ramp + 10 draw + 7
+  removal + 3 wincons + 5 flex).
+- `_load_two_card_pair_index()` — loads `combo_brackets_v1.json` (the
+  Commander Spellbook scrape) into `{frozenset({a_name_lower, b_name_lower}):
+  set_of_brackets_allowed}`. 4,415 distinct 2-card pairs indexed. Falls back
+  to `{}` on any load error (warned but non-fatal — bracket policy then uses
+  the `BRACKET_COMBO_POLICY` defaults from Phase A).
+- `_combo_violates_bracket()` — per-candidate policy check:
+  - Both halves are user picks → always allowed (user override per Fix 1).
+  - Bracket in pair's `brackets_allowed` → allowed (with B4 pair-cap check).
+  - Otherwise → reject with descriptive reason.
+  - **Important Fix 2 behavior**: user picking ONE half of a B5-only combo
+    at B1 does NOT let the agent auto-add the other half. Agent stays out
+    of combo expansion from a single user-pick anchor.
+- `_count_existing_combo_pairs()` — used by Phase C to enforce B4's
+  `pair_cap=3` during selection.
+- `_select_deck()` — five-pass greedy selection:
+  1. Lock in user must-includes (regardless of slot overflow).
+  2. Fill non-land slots greedy by score from pool, applying combo policy.
+  3. Add any land candidates from the pool (dual lands surfaced by themes).
+  4. Top up lands with color-identity-matched basics (round-robin across
+     `color_identity`).
+  5. Pad with basics if pool under-filled (emits `POOL_UNDER_FILL_PADDED_WITH_BASICS`).
+- `compute_agent_build_deck_v1()` now wires Phase B + Phase C end-to-end:
+  builds pool → selects deck → assembles 100-card response. The Phase A
+  stub is gone; every successful response now reflects real selection.
+- Per-card `reason` strings derive from `rationale_components` accumulated
+  in Phase B plus the slot tag (`[slot=creature]`, etc.) for auditability.
+- Creativity envelope metrics filled in: `user_picks_present`,
+  `must_includes_resolved`, `must_includes_dropped`, `staples_avoided_count`.
+  `theme_coherence_score` deferred to Phase D (needs `deck_analyze_v1`).
+
+### Test results
+- 28 new Phase C tests pass (49 cumulative across Phases A-C):
+  - 6 `_classify_card` cases (land-precedence, ramp/draw/removal/wincon
+    primitives, default flex, creature default).
+  - 3 `_adjust_slot_targets` cases (tribal, combo, empty-archetypes).
+  - 3 `_fill_mana_base` cases (mono, multi round-robin, colorless→Wastes).
+  - 7 `_combo_violates_bracket` cases covering B1 reject, B3 late allow,
+    B3 R-tier reject, B4 pair cap, B5 unrestricted, user-override (both halves),
+    user-pick-one-half NOT overriding (Fix 2).
+  - 3 `_count_existing_combo_pairs` cases.
+  - 6 `_select_deck` end-to-end cases (99-card output, user picks present,
+    basic lands fill, colorless→Wastes, every-card-has-reason, singleton).
+- Phase A endpoint contract tests rewritten to mock upstream layers
+  (the old "99 Wastes stub" assertion no longer applies). 5 tests still
+  green: 100-card smoke, creativity envelope summary, INVALID_BRACKET,
+  MISSING_COMMANDER, endpoint_call_count + phase_timings.
+- Full suite: **904 passed, 17 skipped, 8 deselected** (the 4 pre-existing
+  failure families are still the same; no new regressions from Phase A or
+  Phase B's commits either).
+
+### Architectural decisions
+1. **Spellbook data IS the bracket policy.** The brief's
+   `BRACKET_COMBO_POLICY` table (B1/B2 = reject all; B3 = late-only; etc.)
+   is mechanically equivalent to looking up `brackets_allowed` in
+   `combo_brackets_v1.json`. The agent uses the data file; `BRACKET_COMBO_POLICY`
+   is only consulted for B4's pair_cap and as a fallback when the file is
+   unloadable. This keeps the agent in sync with whatever Spellbook scrape
+   refresh ships.
+2. **Combo-completion-with-user-pick is REJECTED, not auto-promoted.**
+   Worth restating because it's the load-bearing rule for test case 5
+   (Ur-Dragon + Tiamat → agent must NOT add Old Gnawbone + Hellkite Charger).
+   The "user pick override" branch in `_combo_violates_bracket` requires
+   BOTH halves to be in `user_pick_names_lower`; otherwise the candidate
+   is rejected.
+3. **deck_complete_engine_v1 is NOT used as a backstop here.** Pass 5's
+   "pad with basics" is cheaper and gives us deterministic output. We can
+   revisit in Phase F if real-snapshot runs reveal structural gaps the
+   pool can't fill (e.g. ramp slot under-served for an obscure commander).
+4. **Slot caps use type_line + primitives, not the existing engine's
+   `axis_targets` from `candidate_pool_v1`.** The agent-side targets differ
+   from the deck-complete-engine's heuristic targets because agent builds
+   from a theme-anchored intent, while deck_complete_engine fills toward
+   commander-archetype defaults. Different inputs, different sweet spots.
+5. **No deck_complete_engine_v1 import inside the layer.** Keeps the agent
+   layer free of pipeline-build dependencies; the entire Phase B+C codepath
+   touches only `agent_endpoints_v1` and `engine.db` (and the combo data file).
+
+### Next
+Phase D — validation + swap-iteration loop. Will call `deck_strength_check_v1`
+to verify bracket placement and `deck_analyze_v1` to compute
+`themes_classified` + `theme_coherence_score`. If validation fails on the
+first pass, swap the offending card(s) for the next-best pool candidate and
+revalidate, up to `MAX_SWAP_ITERATIONS=12`. Whole pipeline bounded by
+`ENDPOINT_CALL_BUDGET=30`.
