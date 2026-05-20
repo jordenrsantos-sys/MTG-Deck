@@ -224,6 +224,27 @@ def compute_agent_build_deck_v1(
         "source": "user_intent",
     }] + body
 
+    # ---- Iteration 2 Phase C2.1: LLM candidate critic (swap flex slots) ----
+    # Iteration 1 produced a structurally-correct 99-card deck. Now the
+    # LLM looks at the BOTTOM-priority N cards (basics first, then lowest-
+    # scored non-essentials) and proposes swaps from the remaining pool.
+    # Color identity + bracket policy are re-checked on every proposed
+    # swap, and hallucinated card names (not in the pool) are dropped.
+    novel_combo_flags: List[Dict[str, Any]] = []
+    if llm_client.is_available():
+        deck, critic_warnings = _run_candidate_critic(
+            llm_client=llm_client,
+            deck=deck,
+            pool=pool,
+            commander=commander.strip(),
+            bracket=bracket,
+            theme_hints=theme_hints,
+            intent_analysis=intent_analysis,
+            llm_metrics=llm_metrics,
+            novel_combo_flags=novel_combo_flags,
+        )
+        warnings.extend(critic_warnings)
+
     # ---- Phase D: validation + swap iteration (≤12 iters, total ≤30 calls) ----
     # Note: we validate against the USER-STATED theme_hints, not the
     # LLM-augmented ones. Theme coherence is a "did we honor what the
@@ -291,7 +312,7 @@ def compute_agent_build_deck_v1(
         },
         "summary_narrative": last_findings.get("summary_narrative"),
         "consider_adding": last_findings.get("consider_adding") or [],
-        "novel_combo_flags": last_findings.get("novel_combo_flags") or [],
+        "novel_combo_flags": novel_combo_flags,
         "intent_analysis": intent_analysis,
     }
 
@@ -666,6 +687,9 @@ def _build_candidate_pool(
         "must_includes_dropped": [w["message"].split("'")[1] for w in mi_warnings if "'" in w.get("message", "")],
         "warnings": warnings,
         "endpoint_calls": call_counter["calls"],
+        # Iteration 2 — needed by Phase C2.1 candidate critic so it can
+        # hydrate oracle text for the LLM via find_card_by_name.
+        "db_snapshot_id": db_snapshot_id,
     }
 
 
@@ -1561,3 +1585,502 @@ def _as_list_of_dicts(v: Any) -> List[Dict[str, Any]]:
     if not isinstance(v, list):
         return []
     return [item for item in v if isinstance(item, dict)]
+
+
+# ============================================================
+# Iteration 2 Phase C2.1 — LLM call #2 (candidate critic).
+# ============================================================
+#
+# Runs AFTER the deterministic _select_deck has produced a structurally-
+# correct 99-card body. The LLM critic looks at the lowest-priority
+# ~25-30 slots (basics first, then lowest-scored non-essentials) and
+# proposes replacement cards from the broader candidate pool.
+#
+# Validation on every proposed swap:
+#   1. Replacement is in the candidate pool (no hallucinated names).
+#   2. Replacement passes color-identity (CI ⊆ commander CI).
+#   3. Bracket combo policy (Fix 1) — replacement that would form a 2-
+#      card pair with another card in the deck must be bracket-legal.
+#   4. Singleton — replacement not already in the deck.
+#
+# Cards that fail validation are dropped with a warning, NOT
+# substituted from a deterministic fallback list. Iteration 1's deck
+# was already valid; the worst case is we keep iteration-1's pick.
+
+# Budget targets (Sonnet 4.6 pricing): ~15k input × $3/MT + ~5k output ×
+# $15/MT = $0.045 + $0.075 = $0.12 per call. We pad the input budget
+# to 16k to accommodate full card text for ~80-120 candidates.
+_CANDIDATE_CRITIC_INPUT_TOKEN_BUDGET = 16000
+_CANDIDATE_CRITIC_OUTPUT_TOKEN_BUDGET = 5000
+
+# How many flex/low-priority slots the LLM gets to re-pick. Iteration 1
+# fills 99 slots; we want the LLM to influence the bottom 25-30. The
+# actual number swapped may be lower if the LLM chooses to keep some
+# deterministic picks.
+_CANDIDATE_CRITIC_SWAPPABLE_SLOTS = 28
+
+# How many candidates we surface to the LLM. Trade-off: more = more
+# room for creativity but more tokens; fewer = tighter pool but less
+# semantic exploration. 100 is a balanced default.
+_CANDIDATE_CRITIC_POOL_SIZE = 100
+
+
+_CANDIDATE_CRITIC_SYSTEM_PROMPT = (
+    "You are an expert MTG Commander deck-builder. Iteration 1 of the "
+    "deck-building agent has produced a structurally-correct 99-card "
+    "deck (lands, ramp, draw, removal, must-includes are in place). Your "
+    "job is to re-pick the {n_swappable} lowest-priority FLEX slots by "
+    "choosing the most synergistic cards from a pre-filtered candidate "
+    "pool. You are biased toward INTERESTING over SAFE — pick cards that "
+    "reinforce the deck's stated direction in non-obvious ways.\n\n"
+    "RULES — these are hard:\n"
+    "1. Your replacement cards MUST come from the supplied candidate "
+    "pool. Do NOT propose cards outside the pool (they'll be dropped).\n"
+    "2. Color identity is enforced — every pick's CI must be a subset of "
+    "the commander's CI (already filtered in the pool, just don't reverse "
+    "that).\n"
+    "3. Bracket constraint policy — your picks must NOT form 2-card combo "
+    "pairs that violate the deck's target bracket. The combo policy will "
+    "be applied after your output, but you should already avoid known "
+    "early-game 2-card kills if the bracket is B1/B2/B3.\n"
+    "4. Substantive rationale — each pick gets a one-sentence reason "
+    "that references specific OTHER cards in the deck or specific play "
+    "patterns. NO generic 'great fit for X tribal' fillers.\n"
+    "5. is_creative_outlier=true is reserved for cards that are NOT top "
+    "corpus staples but fit the deck's direction. Use sparingly (0-3 per "
+    "deck).\n"
+    "6. combo_lines_noted: 0-5 entries. Each entry is a 2-card combo the "
+    "deck composition would enable. in_spellbook=true if it's a well-"
+    "documented combo from MTG resources; false if you noticed a novel "
+    "interaction. Honest assessment only.\n"
+    "7. Output VALID JSON ONLY. No prose around it. Card names must be "
+    "EXACT printed names."
+)
+
+
+def _build_candidate_critic_user_prompt(
+    *,
+    commander: str,
+    bracket: str,
+    theme_hints: List[str],
+    intent_analysis: Optional[Dict[str, Any]],
+    current_deck_summary: List[Dict[str, str]],
+    swappable_slots: List[Dict[str, str]],
+    candidate_pool: List[Dict[str, Any]],
+    bracket_policy_summary: str,
+) -> str:
+    """Compose the user prompt. Card text is included for candidates so
+    the model can reason semantically (which is the whole point of
+    iteration 2 — corpus frequency alone misses non-obvious synergies)."""
+    import json as _j
+    deck_summary_lines = [
+        f"  - {c['card_name']} ({c.get('source', 'agent')})"
+        for c in current_deck_summary
+    ]
+    swappable_lines = [
+        f"  - {c['card_name']} ({c.get('source', 'agent')})"
+        for c in swappable_slots
+    ]
+    pool_lines = []
+    for cand in candidate_pool:
+        # Build a compact one-line summary per candidate.
+        cname = cand.get("name", "?")
+        ctype = cand.get("type_line") or ""
+        ccmc = cand.get("cmc")
+        cprim = ", ".join((cand.get("primitives") or [])[:4])
+        rc = " | ".join((cand.get("rationale_components") or [])[:2])
+        oracle_text = cand.get("oracle_text") or ""
+        # Trim oracle text to keep tokens in budget; the first ~150 chars
+        # carry the essential mechanic in 95% of cases.
+        if oracle_text and len(oracle_text) > 180:
+            oracle_text = oracle_text[:177] + "..."
+        line = f"  - {cname} | {ctype} | CMC={ccmc} | primitives=[{cprim}] | {rc}"
+        if oracle_text:
+            line += f"\n      text: {oracle_text}"
+        pool_lines.append(line)
+
+    intent_block = ""
+    if intent_analysis:
+        wc = intent_analysis.get("likely_win_condition") or ""
+        themes = intent_analysis.get("implicit_themes") or []
+        intent_block = (
+            f"\nLLM-inferred intent (from call #1):\n"
+            f"  likely_win_condition: {wc}\n"
+            f"  implicit_themes: {themes}\n"
+        )
+
+    return (
+        f"Commander: {commander}\n"
+        f"Bracket: {bracket}\n"
+        f"User-stated themes: {theme_hints}\n"
+        f"{intent_block}"
+        f"\nBracket combo policy: {bracket_policy_summary}\n"
+        f"\nCURRENT DECK ({len(current_deck_summary)} cards, locked):\n"
+        + "\n".join(deck_summary_lines)
+        + f"\n\nSWAPPABLE SLOTS ({len(swappable_slots)} cards, you can replace any):\n"
+        + "\n".join(swappable_lines)
+        + f"\n\nCANDIDATE POOL ({len(candidate_pool)} cards available for picks):\n"
+        + "\n".join(pool_lines)
+        + "\n\nOutput JSON exactly:\n"
+        + "{\n"
+        + '  "selected_cards": [\n'
+        + '    {"name": "Exact Card Name", "category": "creature|removal|draw|ramp|flex|win_condition",\n'
+        + '     "reason": "one substantive sentence referencing the deck",\n'
+        + '     "is_creative_outlier": false}\n'
+        + "  ],\n"
+        + '  "combo_lines_noted": [\n'
+        + '    {"cards": ["Card A", "Card B"], "outcome": "what happens", "in_spellbook": true}\n'
+        + "  ]\n"
+        + "}\n"
+        + f"\nReturn AT MOST {len(swappable_slots)} selected_cards. You may "
+        + "return fewer if you genuinely think iteration 1's picks for "
+        + "some swappable slots are already optimal — that's a valid signal.\n"
+    )
+
+
+def _summarize_bracket_policy(bracket: str) -> str:
+    """One-line policy summary for the prompt."""
+    policy = BRACKET_COMBO_POLICY.get(bracket, {})
+    if not policy.get("allow_early") and not policy.get("allow_late"):
+        return f"Bracket {bracket}: 2-card combos rejected entirely (except when both halves are user must-includes)."
+    if policy.get("allow_late") and not policy.get("allow_early"):
+        return f"Bracket {bracket}: only late-game combos (Spellbook tags S, P) allowed. Early combos (tag R) forbidden."
+    cap = policy.get("pair_cap")
+    if cap is not None:
+        return f"Bracket {bracket}: early + late combos allowed, max {cap} distinct 2-card pairs."
+    return f"Bracket {bracket}: unrestricted; all combo pairs allowed."
+
+
+def _select_swappable_slots(
+    deck: List[Dict[str, str]], n: int,
+) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+    """Pick the N lowest-priority cards in deck (commander + body) as the
+    swap candidates. Returns (locked, swappable). Locked = the N highest-
+    priority + commander + user picks; swappable = the rest (up to n).
+
+    Priority order (lowest first = first to be swappable):
+      1. Wastes / basic lands (deterministic padding)
+      2. Cards sourced from `archetype_staple` only (no theme signal)
+      3. Cards with only one rationale_component
+      4. All other agent_select picks
+
+    Never swap commander or user_intent picks.
+    """
+    locked: List[Dict[str, str]] = []
+    candidates_for_swap: List[Dict[str, str]] = []
+    for c in deck:
+        src = c.get("source", "")
+        name = c.get("card_name", "")
+        if src == "user_intent" or name == deck[0]["card_name"]:
+            locked.append(c)
+            continue
+        candidates_for_swap.append(c)
+
+    # Order swappable candidates by priority: basics first, then staples,
+    # then mana_base, then plain agent_select. Stable sort.
+    def _swap_priority(c: Dict[str, str]) -> int:
+        name = c.get("card_name", "")
+        src = c.get("source", "")
+        if name in _BASIC_LAND_NAMES or src == "mana_base":
+            return 0
+        if src == "archetype_staple":
+            return 1
+        if "theme" not in src and "user_intent" not in src and "llm_intent_extension" not in src:
+            return 2
+        return 3
+
+    candidates_for_swap.sort(key=_swap_priority)
+    swappable = candidates_for_swap[:n]
+    locked.extend(candidates_for_swap[n:])
+    return locked, swappable
+
+
+def _candidate_pool_for_critic(pool: Dict[str, Any], db_snapshot_id: str,
+                               exclude_names: set, size: int) -> List[Dict[str, Any]]:
+    """Build the candidate-pool slice we pass to the LLM, with oracle
+    text included. Excludes cards already in the deck. We lazy-load
+    oracle text from the snapshot DB so the candidate pool can stay
+    text-free for iteration-1 paths.
+
+    Note: failure to fetch oracle text is non-fatal — the candidate
+    line just omits the text field. The LLM still gets primitives +
+    type_line which is enough for most decisions.
+    """
+    from engine.db import find_card_by_name
+
+    out: List[Dict[str, Any]] = []
+    for cand in pool.get("candidates", []) or []:
+        if len(out) >= size:
+            break
+        name = cand.get("name") or ""
+        if not name or name.strip().lower() in exclude_names:
+            continue
+        # User picks are already in the deck (locked); skip them in the
+        # critic pool.
+        if cand.get("is_user_pick"):
+            continue
+        # Hydrate oracle text if not already present.
+        oracle_text = cand.get("oracle_text")
+        if oracle_text is None:
+            try:
+                card = find_card_by_name(db_snapshot_id, name)
+            except Exception:
+                card = None
+            if card and isinstance(card, dict):
+                oracle_text = card.get("oracle_text") or card.get("text") or ""
+        out.append({
+            "name": name,
+            "type_line": cand.get("type_line"),
+            "cmc": cand.get("cmc"),
+            "primitives": cand.get("primitives") or [],
+            "color_identity": cand.get("color_identity") or [],
+            "rationale_components": cand.get("rationale_components") or [],
+            "score": cand.get("score"),
+            "oracle_text": oracle_text or "",
+        })
+    return out
+
+
+def _run_candidate_critic(
+    *,
+    llm_client: Any,
+    deck: List[Dict[str, str]],
+    pool: Dict[str, Any],
+    commander: str,
+    bracket: str,
+    theme_hints: List[str],
+    intent_analysis: Optional[Dict[str, Any]],
+    llm_metrics: Dict[str, Any],
+    novel_combo_flags: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+    """Run the candidate critic. Returns (new_deck, warnings).
+
+    new_deck contains the 100-card deck (commander + 99) with LLM-picked
+    swaps applied where valid. novel_combo_flags is mutated in place
+    with the LLM's noted combo_lines.
+
+    Failure path: any LLM error → return deck unchanged, emit warning.
+    Partial success path: hallucinated/invalid swaps are dropped, valid
+    swaps are applied.
+    """
+    warnings: List[Dict[str, str]] = []
+
+    color_identity = set(pool.get("color_identity") or [])
+    if not color_identity:
+        # Edge case: empty CI. Critic can't validate without it; bail.
+        warnings.append({
+            "code": "CRITIC_SKIPPED_NO_CI",
+            "message": "Skipped candidate critic — empty commander color_identity in pool.",
+        })
+        return deck, warnings
+
+    locked, swappable = _select_swappable_slots(deck, _CANDIDATE_CRITIC_SWAPPABLE_SLOTS)
+    if not swappable:
+        warnings.append({
+            "code": "CRITIC_SKIPPED_NO_SWAPPABLE",
+            "message": "Skipped candidate critic — no swappable slots identified.",
+        })
+        return deck, warnings
+
+    # Build candidate pool excluding cards already in the LOCKED portion.
+    # Swappable cards themselves stay eligible — the critic can choose to
+    # re-pick the same card.
+    locked_names_lower = {c["card_name"].strip().lower() for c in locked}
+    db_snapshot_id = pool.get("db_snapshot_id") or ""
+    # Phase B's pool doesn't currently expose db_snapshot_id — pull it
+    # from build_deck's stack via the pool dict if available, else
+    # accept that oracle text will be empty (LLM still has primitives).
+    critic_pool = _candidate_pool_for_critic(
+        pool, db_snapshot_id, locked_names_lower, _CANDIDATE_CRITIC_POOL_SIZE,
+    )
+    if not critic_pool:
+        warnings.append({
+            "code": "CRITIC_SKIPPED_EMPTY_POOL",
+            "message": "Skipped candidate critic — no eligible candidates in pool.",
+        })
+        return deck, warnings
+
+    # Make the call.
+    system = _CANDIDATE_CRITIC_SYSTEM_PROMPT.format(n_swappable=len(swappable))
+    user = _build_candidate_critic_user_prompt(
+        commander=commander, bracket=bracket, theme_hints=theme_hints,
+        intent_analysis=intent_analysis,
+        current_deck_summary=locked,
+        swappable_slots=swappable,
+        candidate_pool=critic_pool,
+        bracket_policy_summary=_summarize_bracket_policy(bracket),
+    )
+
+    result = llm_client.call_with_budget(
+        system=system, user=user,
+        max_input_tokens=_CANDIDATE_CRITIC_INPUT_TOKEN_BUDGET,
+        max_output_tokens=_CANDIDATE_CRITIC_OUTPUT_TOKEN_BUDGET,
+    )
+    llm_metrics["calls"].append({
+        "phase": "C2_1_candidate_critic",
+        "ok": result.ok,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "cost_usd": result.cost_usd,
+        "latency_ms": result.latency_ms,
+        "error_code": result.error_code,
+        "retries": result.retries,
+    })
+    if not result.ok:
+        warnings.append({
+            "code": "CANDIDATE_CRITIC_FAILED",
+            "message": (
+                f"LLM call #2 (candidate critic) failed: {result.error_code}: "
+                f"{result.error_message}. Deck unchanged from iteration-1 select."
+            ),
+        })
+        return deck, warnings
+
+    parsed = result.parsed_json
+    if not isinstance(parsed, dict):
+        warnings.append({
+            "code": "CANDIDATE_CRITIC_INVALID_JSON",
+            "message": (
+                "LLM call #2 returned non-JSON output; deck unchanged. "
+                f"Raw text head: {result.text[:200]!r}"
+            ),
+        })
+        return deck, warnings
+
+    # Record combo_lines_noted even when we can't apply any swaps —
+    # these are useful to surface in the UI.
+    for cl in _as_list_of_dicts(parsed.get("combo_lines_noted")):
+        cards = cl.get("cards")
+        if isinstance(cards, list) and len(cards) == 2:
+            novel_combo_flags.append({
+                "cards": [str(cards[0]), str(cards[1])],
+                "outcome": str(cl.get("outcome") or "").strip(),
+                "in_spellbook": bool(cl.get("in_spellbook", False)),
+                "source": "C2_1_candidate_critic",
+            })
+
+    # Apply swaps. Build name → candidate map for O(1) lookup.
+    pool_by_lower = {c["name"].strip().lower(): c for c in critic_pool}
+    pair_index = _load_two_card_pair_index()
+    selected = _as_list_of_dicts(parsed.get("selected_cards"))
+    if not selected:
+        warnings.append({
+            "code": "CRITIC_NO_SELECTIONS",
+            "message": "LLM critic chose to keep iteration-1's picks for all swappable slots.",
+        })
+        return deck, warnings
+
+    # We need to know what's in the deck for color-identity + combo
+    # checks; rebuild a set from the locked portion.
+    deck_names_lower = {c["card_name"].strip().lower() for c in locked}
+    swappable_idx = list(range(len(swappable)))  # available slots to fill
+    new_swappable: List[Dict[str, str]] = []
+
+    user_pick_names_lower: set = {
+        c["card_name"].strip().lower() for c in locked if c.get("source") == "user_intent"
+    }
+
+    for entry in selected:
+        if not swappable_idx:
+            warnings.append({
+                "code": "CRITIC_OVERFILL",
+                "message": "LLM returned more selections than swappable slots; truncating.",
+            })
+            break
+        name = str(entry.get("name") or "").strip()
+        if not name:
+            continue
+        name_lower = name.lower()
+        # Reject duplicates of locked-or-already-picked.
+        if name_lower in deck_names_lower:
+            warnings.append({
+                "code": "CRITIC_REJECTED_DUPLICATE",
+                "message": f"Critic suggested {name!r} but it's already in the deck; dropped.",
+            })
+            continue
+        # Reject hallucinated names.
+        cand = pool_by_lower.get(name_lower)
+        if not cand:
+            warnings.append({
+                "code": "CRITIC_REJECTED_HALLUCINATION",
+                "message": (
+                    f"Critic suggested {name!r} but it isn't in the supplied "
+                    f"candidate pool; dropped."
+                ),
+            })
+            continue
+        # Reject color-identity violations.
+        ci = set(cand.get("color_identity") or [])
+        if ci and not ci.issubset(color_identity):
+            warnings.append({
+                "code": "CRITIC_REJECTED_CI_ILLEGAL",
+                "message": (
+                    f"Critic suggested {name!r} with CI={sorted(ci)} not subset "
+                    f"of commander CI={sorted(color_identity)}; dropped."
+                ),
+            })
+            continue
+        # Reject bracket-policy violations.
+        pair_count = _count_existing_combo_pairs(
+            selected_names_lower=deck_names_lower, pair_index=pair_index,
+        )
+        violates, reason = _combo_violates_bracket(
+            candidate_name=name,
+            selected_names_lower=deck_names_lower,
+            user_pick_names_lower=user_pick_names_lower,
+            bracket=bracket,
+            pair_index=pair_index,
+            current_pair_count=pair_count,
+        )
+        if violates:
+            warnings.append({
+                "code": "CRITIC_REJECTED_BRACKET",
+                "message": f"Critic suggested {name!r}: {reason}; dropped.",
+            })
+            continue
+
+        # Accept. Compose the reason from the LLM's rationale (verbatim
+        # so phase D2 can rewrite later; iteration-1 swap path is
+        # preserved).
+        reason = str(entry.get("reason") or "").strip() or "LLM candidate critic pick."
+        category = str(entry.get("category") or "").strip()
+        if category:
+            reason = f"{reason} [slot={category}]"
+        is_outlier = bool(entry.get("is_creative_outlier", False))
+        source = "llm_candidate_critic"
+        if is_outlier:
+            source += "|creative_outlier"
+        new_swappable.append({
+            "card_name": name,
+            "reason": reason,
+            "source": source,
+        })
+        deck_names_lower.add(name_lower)
+        swappable_idx.pop(0)
+
+    # Any unused swappable slots stay as iteration-1's picks (preserve
+    # the structurally-correct skeleton).
+    if swappable_idx:
+        kept = [swappable[i] for i in swappable_idx]
+        new_swappable.extend(kept)
+
+    # Reassemble deck: locked positions + the swapped flex slots.
+    new_deck = locked + new_swappable
+    # Defensive: keep exactly 100 cards.
+    if len(new_deck) > 100:
+        new_deck = new_deck[:100]
+    elif len(new_deck) < 100:
+        # Should not happen — locked + new_swappable preserves the
+        # original count — but if it does, pad to 100 with basics.
+        deficit = 100 - len(new_deck)
+        ci_list = sorted(color_identity) if color_identity else []
+        new_deck.extend(_fill_mana_base(ci_list, deficit))
+        warnings.append({
+            "code": "CRITIC_DECK_UNDERFILL_PADDED",
+            "message": (
+                f"After applying critic swaps the deck was {100 - deficit} "
+                f"cards; padded with {deficit} basics."
+            ),
+        })
+
+    return new_deck, warnings
