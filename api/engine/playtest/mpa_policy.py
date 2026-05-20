@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .mpa_game_state import GameState, Phase, Step
 from .mpa_actions import Action, ActionType, FAST_MANA_PRODUCERS
 
-POLICY_VERSION = "mpa_policy_v0.6_extra_combat_wincon"
+POLICY_VERSION = "mpa_policy_v0.7_attack_heuristic"
 
 
 def _untapped_mana_sources_count(state, seat_index):
@@ -287,16 +287,52 @@ def should_mulligan(state, seat_index, mulligans_taken):
 
 
 def _should_attack(state, seat_index):
+    """Phase 6 — attack heuristic with race-or-die + lethal-swing additions.
+
+    Returns True if attacking is the correct play. Triggers (in order):
+      1. Race-or-die: opponent's untapped, non-summoning-sick power ≥ my
+         life. They'll kill me next turn unless I kill them first.
+      2. Lethal swing: my untapped, non-summoning-sick power ≥ opponent
+         life. Swing for game now, regardless of board state.
+      3. Existing: opponent life ≤ mine.
+      4. Existing: opponent has no creatures (free hits).
+    """
     opps = state.opponent_seats(seat_index)
     if not opps:
         return False
-    my_life = state.players[seat_index].life
+    me = state.players[seat_index]
+    my_life = me.life
+
+    # 1. Race-or-die — opponent has lethal next turn
+    for o in opps:
+        opp_swing = sum(
+            (c.power or 0)
+            for c in state.players[o].battlefield
+            if c.is_creature() and not c.tapped and not c.summoning_sick
+        )
+        if opp_swing >= my_life:
+            return True
+
+    # 2. Lethal swing — I have lethal on board now
+    my_swing = sum(
+        (c.power or 0)
+        for c in me.battlefield
+        if c.is_creature() and not c.tapped and not c.summoning_sick
+    )
+    for o in opps:
+        if my_swing >= state.players[o].life:
+            return True
+
+    # 3. Existing: opponent at lower or equal life
     for o in opps:
         if state.players[o].life <= my_life:
             return True
+
+    # 4. Existing: opponent has no creatures
     for o in opps:
         if not any(c.is_creature() for c in state.players[o].battlefield):
             return True
+
     return False
 
 

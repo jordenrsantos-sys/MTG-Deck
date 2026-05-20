@@ -88,6 +88,33 @@ Iterative upgrade pass starting from `mpa_policy_v0.3_wincon_recognition`.
 - **Open question for end-of-loop report:** can the "wincon-relevant cast filter" be implemented as a Phase 7 capability that re-enables Phase 4b? Out of scope for this loop's listed capabilities.
 - **Aggregate state after Phase 4:** 1/6 in band (B3_vs_B2), draw rate ~13% — unchanged from Phase 3 (B5_vs_B2 is 0.8 at N=10 today, was 0.9 at N=20 last run; within noise).
 
+### Phase 5: Removal recognition — SKIPPED
+
+Phase 5's "detect opponent wincon piece + cast removal" requires removal spells to be CAST through the legal-action enumeration. The opposition decks' removal (Toxic Deluge {2}{B}{B}, Damnation {2}{B}{B}, Swords to Plowshares {W}, etc.) all have colored costs that don't resolve through the legal-action enumeration without color-aware manabase. Phase 4b confirmed color-aware mana is currently a net negative without an accompanying "wincon-relevant cast filter." Skipping Phase 5 as unhelpful in current configuration.
+
+### Phase 6: Better attack heuristic — landed (neutral)
+
+- **Code:** `_should_attack` extended with race-or-die (opp untapped non-summoning-sick power ≥ my life → attack) and lethal-swing (my untapped non-summoning-sick power ≥ opp life → attack) branches before existing heuristics. mpa_policy.py:407-445.
+- **Tests:** 6 new in `test_mpa_attack_heuristic.py`; 33/33 green.
+- **Full calibration:** identical to Phase 4 baseline at N=10. No matchup moved. The new attack triggers don't fire often in current matchups because: (a) most games end via Thoracle combo (Ezio wins → no attack phase reached), (b) B4 decks never get to swing because they can't cast their threats without color-aware mana.
+- **N=20 result, however, shows the calibration matrix in a different posture:**
+
+| Matchup | N=10 WR | N=20 WR | In band (N=20) |
+|---|---|---|---|
+| B5_vs_B2 | 0.800 | **0.900** | ✓ |
+| B4_vs_B2 | 0.000 | 0.000 | ✗ |
+| B4_vs_B3 | 0.100 | 0.050 | ✗ |
+| B3_vs_B2 | 0.600 | 0.500 | ✗ (drift 0.05) |
+| B5_vs_B4 | 0.900 | 0.800 | ✗ (drift 0.10) |
+| mirror_B3 | 0.700 | **0.550** | ✓ |
+
+  - In band at N=20: 2/6 (B5_vs_B2 + mirror_B3). Draw rate 20%.
+  - B3_vs_B2 drifted out of band at N=20 (0.5, 0.05 below). Could be inherent variance.
+  - **Anti-bias check (mirror at N=20):** seat 0 wins 9, seat 1 wins 10 of 19 decisive games. Seat 0 share 47.4% — anti-bias mirroring effectively working at N=20.
+
+- **Aggregate state after Phase 6:** N=10: 1/6 in band, draw rate 13%. N=20: 2/6 in band, draw rate 20%. Success criterion (N=10, ≥4/6) NOT met.
+
+
 
 
 
