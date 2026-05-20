@@ -56,6 +56,13 @@ class ActionType(str, Enum):
     # Not enumerated by enumerate_legal_actions — emitted only by the policy's
     # check_win_conditions when it recognizes an assembled pattern.
     WIN_THE_GAME = "win_the_game"
+    # v0.4 — synthetic action: cast a library tutor to fetch a specific card.
+    # Combines casting the tutor (moves to graveyard, taps mana) with the
+    # search-library-and-move-to-hand effect. Bypasses enumerate_legal_actions
+    # because cEDH manabases would prevent the tutor from being castable
+    # through the legal-action enumeration's strict color check. Tightens
+    # in Phase 2 (color-aware manabase).
+    TUTOR_FOR_TARGET = "tutor_for_target"
 
 
 @dataclass

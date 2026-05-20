@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .mpa_game_state import GameState, Phase, Step
 from .mpa_actions import Action, ActionType
 
-POLICY_VERSION = "mpa_policy_v0.3_wincon_recognition"
+POLICY_VERSION = "mpa_policy_v0.4_tutor_recognition"
 
 
 # ============================================================
@@ -69,6 +69,80 @@ def check_win_conditions(state, seat_index):
     )
 
 
+_TUTOR_NAMES = frozenset({
+    # Strict library tutors that put a card in hand (or top of library — we
+    # simplify to "into hand"). Approximations preserve PoC behavior: each
+    # of these in real MTG moves the searched card somewhere accessible
+    # within a turn or two; for the MPA's coarse simulation we collapse
+    # that to "into hand immediately."
+    "Demonic Tutor",       # {1}{B} sorcery, into hand
+    "Vampiric Tutor",      # {B} instant, top of library
+    "Imperial Seal",       # {B} sorcery, top of library
+    "Enlightened Tutor",   # {W} instant, top of library — artifacts/enchantments
+    "Mystical Tutor",      # {U} instant, top of library — instants/sorceries
+    "Gamble",              # {R} sorcery, into hand then random discard
+    "Beseech the Mirror",  # {2}{B}{B} sorcery with bargain — into hand
+    "Diabolic Tutor",      # {2}{B} sorcery, into hand
+    "Worldly Tutor",       # {G} instant, top of library — creatures
+    "Wishclaw Talisman",   # {2} artifact activation — opponent picks card (we waive)
+    "Grim Tutor",          # {1}{B}{B} sorcery
+    "Personal Tutor",      # {U} sorcery — sorceries
+    "Vampiric Tutor",      # duplicate-safe
+    "Mastermind's Acquisition",  # {3}{B}{B} sorcery
+    "Increasing Ambition", # {3}{B} sorcery — flashback
+})
+
+
+def check_tutor_actions(state, seat_index):
+    """v0.4 — recognize library tutors and fire them to fetch wincon pieces.
+
+    Conditions:
+      - Recognized tutor card is in hand
+      - At least one priority target (Thoracle, Consultation, Tainted Pact)
+        is in library AND not already in hand
+      - Untapped land count >= tutor.cmc (loose mana check — same simplification
+        as check_win_conditions; nonbasic manabases would block strict color
+        check at this stage)
+
+    Returns a TUTOR_FOR_TARGET Action or None.
+
+    Priority within wincon targets matches check_win_conditions:
+      1. Thassa's Oracle (the engine half)
+      2. Demonic Consultation (1-mana enabler)
+      3. Tainted Pact (2-mana enabler)
+    """
+    me = state.players[seat_index]
+
+    # Find a tutor in hand we can pay for.
+    untapped_lands = sum(1 for c in me.battlefield if c.is_land() and not c.tapped)
+    tutors_in_hand = [c for c in me.hand if c.name in _TUTOR_NAMES]
+    if not tutors_in_hand:
+        return None
+
+    targets_priority = (_THORACLE_NAME, _CONSULT_NAMES[0], _CONSULT_NAMES[1])
+
+    # For each tutor (cheapest first), try to find a missing target in library.
+    for tutor in sorted(tutors_in_hand, key=lambda c: c.cmc or 0):
+        if untapped_lands < (tutor.cmc or 0):
+            continue
+        for target_name in targets_priority:
+            if any(c.name == target_name for c in me.hand):
+                continue  # Already have it; no point tutoring
+            target_card = next(
+                (c for c in me.library if c.name == target_name), None
+            )
+            if target_card is None:
+                continue
+            return Action(
+                type=ActionType.TUTOR_FOR_TARGET,
+                seat_index=seat_index,
+                source_instance_id=tutor.instance_id,
+                target_instance_id=target_card.instance_id,
+                notes=f"tutor:{tutor.name}->target:{target_name}",
+            )
+    return None
+
+
 def choose_action(state, seat_index, legal_actions):
     if not legal_actions:
         return Action(type=ActionType.PASS_PRIORITY, seat_index=seat_index), 1.0, "no_legal_actions"
@@ -80,6 +154,11 @@ def choose_action(state, seat_index, legal_actions):
     wincon = check_win_conditions(state, seat_index)
     if wincon is not None:
         return wincon, 1.0, f"wincon_{wincon.notes}"
+    # v0.4: if we have a tutor and are missing a wincon piece, search for it.
+    # This lets cEDH decks assemble their combo rather than waiting on raw draws.
+    tutor = check_tutor_actions(state, seat_index)
+    if tutor is not None:
+        return tutor, 0.95, f"tutor_{tutor.notes}"
     me = state.players[seat_index]
     land_actions = [a for a in legal_actions if a.type == ActionType.PLAY_LAND]
     if land_actions:

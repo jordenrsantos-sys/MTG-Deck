@@ -9,7 +9,7 @@ from .mpa_actions import Action, ActionType, enumerate_legal_actions
 from .mpa_policy import choose_action, should_mulligan, choose_blocks
 
 
-RUNNER_VERSION = "mpa_runner_v0.3_wincon_apply"
+RUNNER_VERSION = "mpa_runner_v0.4_tutor_apply"
 MAX_TURNS = 50
 MAX_ACTIONS_PER_PRIORITY = 100
 
@@ -188,6 +188,33 @@ def _apply_action(state, action):
         state.game_over = True
         state.winner_seat = action.seat_index
         state.loss_reason = action.notes or "wincon_assembled"
+        return
+    elif action.type == ActionType.TUTOR_FOR_TARGET:
+        # v0.4 — composite "cast tutor + search library + move target to
+        # hand + shuffle." Loose mana payment (count-based, no color check)
+        # mirrors the assumption in policy.check_tutor_actions. Stack
+        # interaction is not modeled; the policy does not yet emit response
+        # actions for either player.
+        seat = action.seat_index
+        # Remove tutor from hand, pay cost (rough), move tutor to graveyard.
+        for i, c in enumerate(p.hand):
+            if c.instance_id == action.source_instance_id:
+                tutor_card = p.hand.pop(i)
+                _auto_tap_for_cost(
+                    state, seat, tutor_card.cmc or 0,
+                    mana_cost_string=tutor_card.mana_cost,
+                )
+                p.graveyard.append(tutor_card)
+                break
+        # Move target from library to hand.
+        for i, c in enumerate(p.library):
+            if c.instance_id == action.target_instance_id:
+                target_card = p.library.pop(i)
+                p.hand.append(target_card)
+                break
+        # CR 701.20a — when a tutor searches the library, shuffle it after.
+        if state.rng is not None:
+            state.rng.shuffle(p.library)
         return
 
 
