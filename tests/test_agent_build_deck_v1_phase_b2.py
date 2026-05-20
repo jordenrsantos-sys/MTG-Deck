@@ -360,8 +360,23 @@ class BuildDeckWithLlmTests(unittest.TestCase):
                     "strength_check_summary": None, "endpoint_calls_made": 0,
                 }
 
+            # Stub out C2.1 / C2.2 / D2 LLM calls so this test only
+            # exercises the B2 intent-interpreter path. Each phase
+            # downstream of B2 has its own dedicated test file.
+            def _critic_noop(*, deck, **_kwargs):
+                return deck, []
+
+            def _wild_noop(*, deck, **_kwargs):
+                return deck, []
+
+            def _final_noop(*, deck, **_kwargs):
+                return deck, []
+
             with patch.object(mod, "_build_candidate_pool", side_effect=_pool_stub), \
-                 patch.object(mod, "_validate_deck", side_effect=_validate_stub):
+                 patch.object(mod, "_validate_deck", side_effect=_validate_stub), \
+                 patch.object(mod, "_run_candidate_critic", side_effect=_critic_noop), \
+                 patch.object(mod, "_run_wild_combo_discovery", side_effect=_wild_noop), \
+                 patch.object(mod, "_run_final_critic", side_effect=_final_noop):
                 result = mod.compute_agent_build_deck_v1(
                     db_snapshot_id="snap",
                     commander="Yuriko, the Tiger's Shadow",
@@ -378,7 +393,7 @@ class BuildDeckWithLlmTests(unittest.TestCase):
         # Conflict warning surfaced in build warnings.
         codes = [w["code"] for w in result["warnings"]]
         self.assertIn("INTENT_CONFLICT_WARNING", codes)
-        # LLM metrics accrued.
+        # LLM metrics accrued — only B2 because we stubbed C2/D2.
         self.assertEqual(len(summary["llm_metrics"]["calls"]), 1)
         self.assertEqual(summary["llm_metrics"]["calls"][0]["phase"], "B2_intent_interpreter")
         self.assertGreater(summary["llm_metrics"]["total_cost_usd"], 0)

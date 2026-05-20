@@ -283,6 +283,24 @@ def compute_agent_build_deck_v1(
     phase_timings_ms["validate"] = int((perf_counter() - t_validate) * 1000)
     warnings.extend(validate_warnings)
 
+    # ---- Iteration 2 Phase D2: final critic + rationale rewrite ----
+    # Replace per-card `reason` fields with LLM-generated, deck-context-
+    # aware text. Generate a summary_narrative paragraph and 0-3
+    # consider_adding callouts. Skipped cleanly when LLM unavailable
+    # (per-card reasons fall back to iteration-1 template-fill text).
+    if llm_client.is_available():
+        deck, final_critic_warnings = _run_final_critic(
+            llm_client=llm_client,
+            deck=deck,
+            commander=commander.strip(),
+            bracket=bracket,
+            theme_hints=theme_hints,
+            intent_analysis=intent_analysis,
+            last_findings=last_findings,
+            llm_metrics=llm_metrics,
+        )
+        warnings.extend(final_critic_warnings)
+
     # ---- Summary ----
     body = deck[1:]  # may have been swapped during Phase D
     user_picks_present = sum(1 for c in body if c.get("source") == "user_intent")
@@ -2487,5 +2505,224 @@ def _run_wild_combo_discovery(
             "applied_swap": True,
             "removed_card": remove_name,
         })
+
+    return deck, warnings
+
+
+# ============================================================
+# Iteration 2 Phase D2 — LLM call #3 (final critic + rationale rewrite).
+# ============================================================
+#
+# After validation passes, the LLM does a final pass over the finished
+# deck. Three jobs:
+#   1. Rewrite each card's `reason` field so it's substantive and deck-
+#      context-aware — referencing specific other cards in THIS deck or
+#      specific play patterns. Iteration 1's template-fill reasons
+#      ("Theme 'TYPAL_VAMPIRES' signal_count=2") get replaced.
+#   2. Compose a 3-5 sentence summary_narrative for the deck.
+#   3. Suggest 0-3 "consider adding..." cards that the build pipeline
+#      ruled out (NOT added to the deck — surfaced only).
+
+_FINAL_CRITIC_INPUT_TOKEN_BUDGET = 12000
+_FINAL_CRITIC_OUTPUT_TOKEN_BUDGET = 5000
+
+_FINAL_CRITIC_SYSTEM_PROMPT = (
+    "You are reviewing a finalized 100-card MTG Commander deck. Your job "
+    "is to write per-card rationale and a deck-level summary that read "
+    "like the player's own deck notes — specific, opinionated, grounded "
+    "in the actual cards in this deck.\n\n"
+    "RULES — hard:\n"
+    "1. Per-card rationale: ONE sentence per card. Reference at least "
+    "one specific other card in the deck OR a specific play pattern this "
+    "deck enables. DO NOT use template phrases like 'fits the theme', "
+    "'great staple', 'strong curve' — be concrete. If two cards combo or "
+    "synergize, mention each other in their rationale.\n"
+    "2. Skip cards that don't need a rewrite (lands and basics — the "
+    "iteration-1 reason is fine). For every card you DO include, make it "
+    "count.\n"
+    "3. summary_narrative: 3-5 sentences. Describe the deck's primary "
+    "plan, secondary plan if any, and 1-2 notable tech choices. Avoid "
+    "generic 'this deck is a tribal vampire deck' — be specific.\n"
+    "4. consider_adding: 0-3 entries. These are cards NOT in the deck "
+    "that the player should evaluate. Don't list cards already in the "
+    "deck. Each entry must have a one-sentence reason.\n"
+    "5. Output VALID JSON ONLY. Card names must be EXACT printed names.\n"
+)
+
+
+def _build_final_critic_user_prompt(
+    *,
+    commander: str,
+    bracket: str,
+    theme_hints: List[str],
+    intent_analysis: Optional[Dict[str, Any]],
+    deck: List[Dict[str, str]],
+    classified_themes: List[Dict[str, Any]],
+    strength_check_summary: Optional[Dict[str, Any]],
+) -> str:
+    deck_lines = []
+    for c in deck:
+        name = c["card_name"]
+        src = c.get("source", "")
+        reason = (c.get("reason") or "")[:80]
+        deck_lines.append(f"  - {name} | source={src} | iter1_reason='{reason}'")
+
+    theme_block = ""
+    if classified_themes:
+        ids = [t.get("theme_id") or t.get("name") or "" for t in classified_themes[:5]]
+        theme_block = f"\nClassified themes (from deck_analyze_v1): {ids}"
+
+    sc_block = ""
+    if strength_check_summary:
+        sc_block = (
+            f"\nStrength check: bracket_signal={strength_check_summary.get('bracket_signal')!r}, "
+            f"mean_similarity={strength_check_summary.get('mean_similarity')}"
+        )
+
+    intent_block = ""
+    if intent_analysis:
+        wc = intent_analysis.get("likely_win_condition") or ""
+        themes = intent_analysis.get("implicit_themes") or []
+        if wc or themes:
+            intent_block = (
+                f"\nLLM-inferred intent: win_condition={wc!r}, "
+                f"implicit_themes={themes}"
+            )
+
+    return (
+        f"Commander: {commander}\n"
+        f"Bracket: {bracket}\n"
+        f"User themes: {theme_hints}{theme_block}{sc_block}{intent_block}\n"
+        f"\nFINAL 100-CARD DECK:\n"
+        + "\n".join(deck_lines)
+        + "\n\nOutput JSON exactly:\n"
+        + "{\n"
+        + '  "card_rationales": [\n'
+        + '    {"card": "Exact Card Name", "reason": "one specific deck-context sentence"}\n'
+        + "  ],\n"
+        + '  "summary_narrative": "3-5 sentences describing primary plan, secondary plan, notable tech",\n'
+        + '  "consider_adding": [\n'
+        + '    {"card": "Card not in deck", "why": "one sentence reason to consider"}\n'
+        + "  ]\n"
+        + "}\n"
+        + "\nNotes:\n"
+        + "- You don't need to rewrite every card — skip basics and any "
+        + "card whose iter1_reason is already specific.\n"
+        + "- consider_adding entries must NOT already be in the deck."
+    )
+
+
+def _run_final_critic(
+    *,
+    llm_client: Any,
+    deck: List[Dict[str, str]],
+    commander: str,
+    bracket: str,
+    theme_hints: List[str],
+    intent_analysis: Optional[Dict[str, Any]],
+    last_findings: Dict[str, Any],
+    llm_metrics: Dict[str, Any],
+) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+    """Run the final critic. Returns (deck_with_rewritten_reasons, warnings).
+    Mutates `last_findings` to add `summary_narrative` + `consider_adding`."""
+    warnings: List[Dict[str, str]] = []
+
+    classified_themes = last_findings.get("themes_classified") or []
+    strength_check_summary = last_findings.get("strength_check_summary")
+
+    system = _FINAL_CRITIC_SYSTEM_PROMPT
+    user = _build_final_critic_user_prompt(
+        commander=commander, bracket=bracket,
+        theme_hints=theme_hints, intent_analysis=intent_analysis,
+        deck=deck, classified_themes=classified_themes,
+        strength_check_summary=strength_check_summary,
+    )
+
+    result = llm_client.call_with_budget(
+        system=system, user=user,
+        max_input_tokens=_FINAL_CRITIC_INPUT_TOKEN_BUDGET,
+        max_output_tokens=_FINAL_CRITIC_OUTPUT_TOKEN_BUDGET,
+    )
+    llm_metrics["calls"].append({
+        "phase": "D2_final_critic",
+        "ok": result.ok,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "cost_usd": result.cost_usd,
+        "latency_ms": result.latency_ms,
+        "error_code": result.error_code,
+        "retries": result.retries,
+    })
+    if not result.ok:
+        warnings.append({
+            "code": "FINAL_CRITIC_FAILED",
+            "message": (
+                f"LLM call #3 (final critic + rationale rewrite) failed: "
+                f"{result.error_code}: {result.error_message}. "
+                "Per-card reasons remain from iteration 1; summary_narrative empty."
+            ),
+        })
+        return deck, warnings
+    parsed = result.parsed_json
+    if not isinstance(parsed, dict):
+        warnings.append({
+            "code": "FINAL_CRITIC_INVALID_JSON",
+            "message": (
+                "LLM call #3 returned non-JSON output; per-card reasons unchanged. "
+                f"Raw text head: {result.text[:200]!r}"
+            ),
+        })
+        return deck, warnings
+
+    # Apply per-card rationale rewrites. Match on card name (case-
+    # insensitive). Cards the LLM didn't address keep their iteration-1
+    # reason — that's intentional per the prompt.
+    rationales = _as_list_of_dicts(parsed.get("card_rationales"))
+    rewrites_by_name_lower: Dict[str, str] = {}
+    for entry in rationales:
+        name = str(entry.get("card") or "").strip()
+        reason = str(entry.get("reason") or "").strip()
+        if name and reason:
+            rewrites_by_name_lower[name.lower()] = reason
+
+    rewrite_count = 0
+    for card in deck:
+        cname_lower = card["card_name"].strip().lower()
+        new_reason = rewrites_by_name_lower.get(cname_lower)
+        if new_reason:
+            # Preserve original reason as a debug field; bump source.
+            card["reason"] = new_reason
+            existing_src = card.get("source") or ""
+            if "llm_rationale_rewrite" not in existing_src.split("|"):
+                card["source"] = (existing_src + "|llm_rationale_rewrite") if existing_src else "llm_rationale_rewrite"
+            rewrite_count += 1
+
+    if rewrite_count == 0:
+        warnings.append({
+            "code": "FINAL_CRITIC_NO_REWRITES",
+            "message": "LLM call #3 produced 0 applicable per-card rationale rewrites.",
+        })
+
+    # Stash narrative + consider_adding on last_findings — the summary
+    # block at the top of compute_agent_build_deck_v1 reads from there.
+    summary_narrative = str(parsed.get("summary_narrative") or "").strip()
+    if summary_narrative:
+        last_findings["summary_narrative"] = summary_narrative
+
+    consider_adding_raw = _as_list_of_dicts(parsed.get("consider_adding"))
+    deck_names_lower = {c["card_name"].strip().lower() for c in deck}
+    consider_adding: List[Dict[str, str]] = []
+    for entry in consider_adding_raw:
+        name = str(entry.get("card") or "").strip()
+        why = str(entry.get("why") or "").strip()
+        if not name or not why:
+            continue
+        # Suppress entries that turn out to already be in the deck.
+        if name.lower() in deck_names_lower:
+            continue
+        consider_adding.append({"card": name, "why": why})
+        if len(consider_adding) >= 3:
+            break
+    last_findings["consider_adding"] = consider_adding
 
     return deck, warnings
