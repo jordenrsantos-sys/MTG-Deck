@@ -4,7 +4,69 @@ from typing import Any, Dict, List, Optional, Tuple
 from .mpa_game_state import GameState, Phase, Step
 from .mpa_actions import Action, ActionType
 
-POLICY_VERSION = "mpa_policy_v0.2_with_blocking"
+POLICY_VERSION = "mpa_policy_v0.3_wincon_recognition"
+
+
+# ============================================================
+# v0.3 — assembled win-condition recognition
+# ============================================================
+
+# Pattern A: Thassa's Oracle + Demonic Consultation/Tainted Pact.
+# Canonical cEDH wincon. Cast Consultation (or Tainted Pact) naming a card
+# not in your deck → exile entire library → Thoracle's ETB / static ability
+# wins because library count < devotion-to-blue.
+#
+# MPA does not yet model triggered abilities or library exile, so the
+# detection returns a synthetic WIN_THE_GAME action that the runner applies
+# as terminal. The PoC question this targets: does the detection→decision→
+# execution architecture work, independent of full MTG rules modeling?
+_THORACLE_NAME = "Thassa's Oracle"
+_CONSULT_NAMES = ("Demonic Consultation", "Tainted Pact")
+
+
+def check_win_conditions(state, seat_index):
+    """v0.3 — recognize assembled win conditions. Returns a WIN_THE_GAME
+    Action if a known wincon is in place and executable this priority window,
+    else None.
+
+    Currently recognized:
+      Thassa's Oracle + Demonic Consultation/Tainted Pact (cEDH instant-win):
+        Conditions:
+          - Thoracle in battlefield OR in hand
+          - Consultation or Tainted Pact in hand
+          - Sufficient untapped lands to cast the remaining piece(s).
+            We approximate as a land count, not a strict color check —
+            cEDH manabases run nonbasics that current _land_color doesn't
+            recognize; gating on color would prevent the wincon from ever
+            firing despite the deck being capable of casting it.
+
+    Color-check looseness is a deliberate PoC simplification. If the
+    architecture validates here, the next pass tightens mana modeling.
+    """
+    me = state.players[seat_index]
+
+    thoracle_in_play = any(c.name == _THORACLE_NAME for c in me.battlefield)
+    thoracle_in_hand = any(c.name == _THORACLE_NAME for c in me.hand)
+    if not (thoracle_in_play or thoracle_in_hand):
+        return None
+
+    consult_in_hand = any(c.name in _CONSULT_NAMES for c in me.hand)
+    if not consult_in_hand:
+        return None
+
+    # Rough mana sufficiency (any color): need ~1 mana if Thoracle is in
+    # play (just cast the consult), ~3 if both still in hand (Thoracle UU +
+    # Consult B = 3 generic-equivalent). Untapped land count proxies mana.
+    untapped_lands = sum(1 for c in me.battlefield if c.is_land() and not c.tapped)
+    needed = 1 if thoracle_in_play else 3
+    if untapped_lands < needed:
+        return None
+
+    return Action(
+        type=ActionType.WIN_THE_GAME,
+        seat_index=seat_index,
+        notes="thoracle_consult_combo",
+    )
 
 
 def choose_action(state, seat_index, legal_actions):
@@ -12,6 +74,12 @@ def choose_action(state, seat_index, legal_actions):
         return Action(type=ActionType.PASS_PRIORITY, seat_index=seat_index), 1.0, "no_legal_actions"
     if state.game_over:
         return Action(type=ActionType.PASS_PRIORITY, seat_index=seat_index), 1.0, "game_over"
+    # v0.3: scan for assembled win conditions before any other action consideration.
+    # If we have a known wincon in hand/play and can execute it, do that instead
+    # of casting the highest-CMC creature or attacking.
+    wincon = check_win_conditions(state, seat_index)
+    if wincon is not None:
+        return wincon, 1.0, f"wincon_{wincon.notes}"
     me = state.players[seat_index]
     land_actions = [a for a in legal_actions if a.type == ActionType.PLAY_LAND]
     if land_actions:

@@ -2566,6 +2566,68 @@ async def playtest_benchmark_v1(req: PlaytestBenchmarkV1Request):
     )
 
 
+@app.get("/playtest/opposition_decks_v1")
+async def playtest_opposition_decks_v1(
+    bracket: Optional[str] = None,
+    role_tag: Optional[str] = None,
+):
+    """Phase 5b.5 — curated opposition deck registry.
+
+    Returns the canonical opposition decks the calibration suite uses as
+    standardized opponents per bracket. Each entry pins a corpus deck via
+    `corpus_id` + a stable `role_tag` that calibration runs reference.
+
+    Query params (optional):
+      - bracket=B1..B5 — filter to a single bracket
+      - role_tag=<tag> — return only the entry matching that role_tag
+        (returns 404 if not found). When `role_tag` is given, `bracket` is
+        ignored.
+    """
+    from api.engine.playtest.opposition_decks_v1 import (
+        load_registry, filter_by_bracket, get_by_role_tag, registry_summary,
+    )
+
+    if isinstance(role_tag, str) and role_tag.strip() != "":
+        entry = get_by_role_tag(role_tag.strip())
+        if entry is None:
+            return {
+                "version": "opposition_decks_v1",
+                "summary": registry_summary(),
+                "entries": [],
+                "warnings": [{"code": "ROLE_TAG_NOT_FOUND", "message": f"No entry with role_tag={role_tag!r}"}],
+            }
+        return {
+            "version": "opposition_decks_v1",
+            "summary": registry_summary(),
+            "entries": [entry],
+            "warnings": [],
+        }
+
+    if isinstance(bracket, str) and bracket.strip() != "":
+        norm = bracket.strip().upper()
+        if norm not in {"B1", "B2", "B3", "B4", "B5"}:
+            return {
+                "version": "opposition_decks_v1",
+                "summary": registry_summary(),
+                "entries": [],
+                "warnings": [{"code": "INVALID_BRACKET", "message": f"bracket must be one of B1..B5, got {bracket!r}"}],
+            }
+        return {
+            "version": "opposition_decks_v1",
+            "summary": registry_summary(),
+            "entries": filter_by_bracket(norm),
+            "warnings": [],
+        }
+
+    reg = load_registry()
+    return {
+        "version": reg.get("version", "opposition_decks_v1"),
+        "summary": registry_summary(),
+        "entries": reg.get("entries", []),
+        "warnings": [],
+    }
+
+
 @app.post("/deck/save_to_library_v1", response_model=DeckSaveToLibraryV1Response)
 async def deck_save_to_library_v1(req: DeckSaveToLibraryV1Request):
     """Pillar C.2 — save deck as Obsidian DECK_LIBRARY page.

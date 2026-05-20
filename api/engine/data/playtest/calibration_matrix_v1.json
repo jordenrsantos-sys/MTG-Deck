@@ -1,0 +1,69 @@
+{
+  "version": "calibration_matrix_v1",
+  "description": "Phase 5b.3 — calibration matrix defining matchup pairs + expected MPA win-rate bands. The calibration suite (tools/run_mpa_calibration.py) runs each matchup via /playtest/benchmark_v1, compares actual to expected, and flags drift. role_tag references resolve via opposition_decks_v1 registry.",
+  "created_utc": "2026-05-19T00:00:00Z",
+  "default_n_game_pairs": 5,
+  "default_max_turns_per_game": 25,
+  "matchups": [
+    {
+      "matchup_name": "B5_vs_B2",
+      "description": "Strong cEDH combo deck vs Wizards precon — should be a near-blowout for B5.",
+      "deck_a_role_tag": "B5-cedh-combo",
+      "deck_b_role_tag": "B2-precon-draconic-domination",
+      "expected_winrate_min": 0.85,
+      "expected_winrate_max": 0.95,
+      "confidence_band": "wide",
+      "rationale": "Largest power gap in the matrix. If B5 doesn't crush B2, either MPA can't pilot the combo (policy limitation) or B2 precons are stronger than the bracket assumes."
+    },
+    {
+      "matchup_name": "B4_vs_B2",
+      "description": "Optimized tribal-goodstuff vs Wizards precon — large but not maximal gap.",
+      "deck_a_role_tag": "B4-optimized-tribal-goodstuff",
+      "deck_b_role_tag": "B2-precon-breed-lethality",
+      "expected_winrate_min": 0.70,
+      "expected_winrate_max": 0.85,
+      "confidence_band": "wide",
+      "rationale": "B4 should win decisively but Atraxa-precon is one of the strongest precons (5-color, +1/+1 counters synergy)."
+    },
+    {
+      "matchup_name": "B4_vs_B3",
+      "description": "Optimized graveyard-combo vs upgraded vampire-tribal — adjacent brackets.",
+      "deck_a_role_tag": "B4-optimized-graveyard-combo",
+      "deck_b_role_tag": "B3-upgraded-vampire-tribal",
+      "expected_winrate_min": 0.55,
+      "expected_winrate_max": 0.70,
+      "confidence_band": "medium",
+      "rationale": "B4 advantage should be real but small. Muldrotha is heavy on engine-build turns; if MPA can't pilot the graveyard engine the advantage collapses."
+    },
+    {
+      "matchup_name": "B3_vs_B2",
+      "description": "Upgraded aristocrats-combo vs Wizards precon — adjacent brackets.",
+      "deck_a_role_tag": "B3-upgraded-aristocrats-combo",
+      "deck_b_role_tag": "B2-precon-elven-empire",
+      "expected_winrate_min": 0.55,
+      "expected_winrate_max": 0.70,
+      "confidence_band": "medium",
+      "rationale": "B3 upgrade-tier should beat B2 precon but not crush. Necrobloom's combo lines may require >25 turns; if so, expect more draws."
+    },
+    {
+      "matchup_name": "B5_vs_B4",
+      "description": "cEDH tempo vs optimized stax — adjacent top brackets.",
+      "deck_a_role_tag": "B5-cedh-tempo",
+      "deck_b_role_tag": "B4-optimized-stax",
+      "expected_winrate_min": 0.55,
+      "expected_winrate_max": 0.70,
+      "confidence_band": "medium",
+      "rationale": "Yuriko tempo should outpace Sauron stax, but stax can stall games long enough to favor draws on the MPA's heuristic policy."
+    },
+    {
+      "matchup_name": "mirror_B3_pillow_fort",
+      "description": "Anti-bias check — same deck on both sides. Win rate must be ~50%; drift indicates first-player seat bias.",
+      "deck_a_role_tag": "B3-upgraded-pillow-fort",
+      "deck_b_role_tag": "B3-upgraded-pillow-fort",
+      "expected_winrate_min": 0.45,
+      "expected_winrate_max": 0.55,
+      "confidence_band": "tight",
+      "rationale": "Pillow-fort variant chosen because it's defensive and unlikely to race; mirror match isolates seat bias from deck asymmetry. Tight band — anti-bias rule 1.4 violation if outside."
+    }
+  ]
+}

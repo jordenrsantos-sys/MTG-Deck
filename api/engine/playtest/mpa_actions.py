@@ -48,6 +48,14 @@ class ActionType(str, Enum):
     TAP_FOR_MANA = "tap_for_mana"
     DECLARE_ATTACKER = "declare_attacker"
     DECLARE_BLOCKER = "declare_blocker"
+    # v0.3 — synthetic action: an assembled win-condition is executed in one
+    # step. The MPA does not yet model triggered abilities or library exile
+    # (Thoracle's ETB + Consultation's "exile until you find X") so the policy
+    # signals "I have this wincon assembled and have decided to execute it" via
+    # this action, and the runner applies the terminal outcome directly.
+    # Not enumerated by enumerate_legal_actions — emitted only by the policy's
+    # check_win_conditions when it recognizes an assembled pattern.
+    WIN_THE_GAME = "win_the_game"
 
 
 @dataclass

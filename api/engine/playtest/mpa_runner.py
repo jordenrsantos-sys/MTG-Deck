@@ -9,7 +9,7 @@ from .mpa_actions import Action, ActionType, enumerate_legal_actions
 from .mpa_policy import choose_action, should_mulligan, choose_blocks
 
 
-RUNNER_VERSION = "mpa_runner_v0.2_blocking"
+RUNNER_VERSION = "mpa_runner_v0.3_wincon_apply"
 MAX_TURNS = 50
 MAX_ACTIONS_PER_PRIORITY = 100
 
@@ -177,6 +177,18 @@ def _apply_action(state, action):
                 p.battlefield.append(cmdr)
                 p.commander_tax_paid += 2
                 return
+    elif action.type == ActionType.WIN_THE_GAME:
+        # v0.3 — assembled wincon execution. The policy has determined a
+        # known wincon is in place; apply the terminal outcome. MPA does
+        # not yet model the triggers/library-exile that would resolve this
+        # naturally, so the synthetic action represents "you executed the
+        # combo." Opponents have no priority to interrupt at this resolution
+        # depth — that's a known PoC limitation (5b.x revisits with stack-
+        # aware response timing).
+        state.game_over = True
+        state.winner_seat = action.seat_index
+        state.loss_reason = action.notes or "wincon_assembled"
+        return
 
 
 def _auto_tap_for_cost(state, seat, total_cost, mana_cost_string=None):
