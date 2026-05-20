@@ -431,6 +431,35 @@ class CorpusSimilarDecksV1Response(BaseModel):
     warnings: List[Dict[str, str]] = Field(default_factory=list)
 
 
+class AgentBuildDeckV1Request(BaseModel):
+    """Pillar D — AI deck-building agent. Builds a 99-card deck honoring
+    user intent (commander + bracket + theme hints + must-include cards),
+    respecting the creativity envelope (user picks dominate, no forced
+    staples that don't match user intent)."""
+    model_config = ConfigDict(extra="forbid")
+
+    db_snapshot_id: str = Field(..., description="Required snapshot ID")
+    commander: str = Field(..., description="Commander card name (exact match)")
+    bracket: str = Field(..., description="B1..B5")
+    theme_hints: List[str] = Field(default_factory=list, description="Theme IDs or labels")
+    must_include_cards: List[str] = Field(
+        default_factory=list, description="Card names that MUST appear in output deck"
+    )
+    max_iterations: int = Field(default=5, description="Outer build retries (Phase D inner cap is 12)")
+    seed: Optional[int] = Field(default=None, description="Deterministic tie-break seed")
+
+
+class AgentBuildDeckV1Response(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str
+    status: str
+    deck: List[Dict[str, str]] = Field(default_factory=list)
+    summary: Dict[str, Any] = Field(default_factory=dict)
+    warnings: List[Dict[str, str]] = Field(default_factory=list)
+    elapsed_ms: int = 0
+
+
 class CorpusBatchIngestEntry(BaseModel):
     """One external deck for batch corpus ingest."""
     model_config = ConfigDict(extra="forbid")
@@ -2424,6 +2453,32 @@ async def theme_top_cards_v1(
         limit=limit,
     )
     return ThemeTopCardsV1Response(**result)
+
+
+@app.post("/agent/build_deck_v1", response_model=AgentBuildDeckV1Response)
+async def agent_build_deck_v1(req: AgentBuildDeckV1Request):
+    """Pillar D — AI deck-building agent.
+
+    Builds a 99-card deck for `req.commander` honoring user intent (bracket,
+    theme hints, must-include cards), respecting the creativity envelope.
+    Phase A is a contract-stub (commander + 99 Wastes); Phases B-D add the
+    candidate-pool / selection / validation algorithm.
+
+    Speed budget: <15s end-to-end (Phase F target). Endpoint-call budget: <=30
+    inter-layer calls per build, enforced by the layer.
+    """
+    from api.engine.layers.agent_build_deck_v1 import compute_agent_build_deck_v1
+
+    result = compute_agent_build_deck_v1(
+        db_snapshot_id=req.db_snapshot_id,
+        commander=req.commander,
+        bracket=req.bracket,
+        theme_hints=req.theme_hints,
+        must_include_cards=req.must_include_cards,
+        max_iterations=req.max_iterations,
+        seed=req.seed,
+    )
+    return AgentBuildDeckV1Response(**result)
 
 
 @app.post("/corpus/batch_ingest_v1", response_model=CorpusBatchIngestV1Response)
