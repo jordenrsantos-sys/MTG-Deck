@@ -157,8 +157,18 @@ def compute_archetype_brief_v1(
     card_usage: Counter = Counter()
     total_decks = len(matching)
 
-    # Vectorize matching decks to extract theme + card data
-    vectors = _sc._ensure_vectors(db_snapshot_id) if matching else []
+    # NOTE: previous revisions called `_sc._ensure_vectors(db_snapshot_id)` here,
+    # binding the result to a `vectors` variable that was never read by any
+    # subsequent code in this function. The aggregation below iterates
+    # `matching` directly from `_CORPUS_RAW`. The vectorize pass is a side
+    # effect (it populates `_CORPUS_VECTORS` for downstream strength_check
+    # callers) but executing it eagerly here cost ~10 minutes per cold call
+    # against the full 13K-deck corpus + 30K-card snapshot — which made
+    # Pillar D Phase F's validation sweep unable to run end-to-end. The
+    # vectorize cache is still warmed on demand by deck_strength_check_v1
+    # itself when its cosine-similarity computation needs it, so removing
+    # the eager call here is observably equivalent to "archetype_brief is
+    # the same; first strength_check is slower; subsequent calls hit cache."
 
     for entry in matching:
         ar = entry.get("archetype") or "Unknown"

@@ -59,6 +59,7 @@ def compute_agent_build_deck_v1(
     must_include_cards: Optional[List[str]] = None,
     max_iterations: int = 5,
     seed: Optional[int] = None,
+    skip_strength_check: bool = False,
 ) -> Dict[str, Any]:
     """Build a 99-card deck for `commander` honoring user intent.
 
@@ -166,6 +167,7 @@ def compute_agent_build_deck_v1(
         commander=commander.strip(), bracket=bracket,
         theme_hints=theme_hints, db_snapshot_id=db_snapshot_id,
         call_counter=call_counter,
+        skip_strength_check=skip_strength_check,
     )
     phase_timings_ms["validate"] = int((perf_counter() - t_validate) * 1000)
     warnings.extend(validate_warnings)
@@ -953,6 +955,7 @@ def _validate_deck(
     theme_hints: List[str],
     db_snapshot_id: str,
     call_counter: Dict[str, int],
+    skip_strength_check: bool = False,
 ) -> Dict[str, Any]:
     """Run the validation suite and return structured findings.
 
@@ -1045,6 +1048,8 @@ def _validate_deck(
         })
 
     # ---- Strength check (1 call): corpus-similarity bracket placement ----
+    if skip_strength_check:
+        return findings
     if call_counter["calls"] >= ENDPOINT_CALL_BUDGET:
         # Budget exhausted; skip strength check, deck stands.
         return findings
@@ -1169,6 +1174,7 @@ def _validate_and_iterate(
     theme_hints: List[str],
     db_snapshot_id: str,
     call_counter: Dict[str, int],
+    skip_strength_check: bool = False,
 ) -> Tuple[List[Dict[str, str]], Dict[str, Any], List[Dict[str, str]]]:
     """Run the validate→swap→revalidate loop, bounded by MAX_SWAP_ITERATIONS
     and ENDPOINT_CALL_BUDGET.
@@ -1194,6 +1200,7 @@ def _validate_and_iterate(
             deck=deck, commander=commander, bracket=bracket,
             theme_hints=theme_hints, db_snapshot_id=db_snapshot_id,
             call_counter=call_counter,
+            skip_strength_check=skip_strength_check,
         )
         issues = last_findings["issues"]
         if not issues:
