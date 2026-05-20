@@ -9,7 +9,7 @@ from .mpa_actions import Action, ActionType, enumerate_legal_actions
 from .mpa_policy import choose_action, should_mulligan, choose_blocks
 
 
-RUNNER_VERSION = "mpa_runner_v0.4_tutor_apply"
+RUNNER_VERSION = "mpa_runner_v0.5_fast_mana_tap"
 MAX_TURNS = 50
 MAX_ACTIONS_PER_PRIORITY = 100
 
@@ -219,7 +219,15 @@ def _apply_action(state, action):
 
 
 def _auto_tap_for_cost(state, seat, total_cost, mana_cost_string=None):
-    """Tap lands to cover a cost. Uses mana_cost parser when string given."""
+    """Tap lands + fast-mana producers to cover a cost.
+
+    Phase 3: extended to also tap untapped fast-mana producers (Sol Ring,
+    Mox cycle, Lotus Petal, etc.) as part of the payment. Fast mana is
+    preferred over lands when paying generic-only costs because a single
+    Sol Ring covers 2 generic for one tap; this keeps more lands available
+    for subsequent colored-cost spells in the same turn.
+    """
+    from .mpa_actions import FAST_MANA_PRODUCERS
     if mana_cost_string:
         try:
             from .mpa_mana_cost import parse_mana_cost, select_lands_to_tap
@@ -230,6 +238,10 @@ def _auto_tap_for_cost(state, seat, total_cost, mana_cost_string=None):
                 if c.is_land() and not c.tapped:
                     color = _land_color(c) or "C"
                     lands_by_color.setdefault(color, []).append(c)
+                elif not c.tapped and c.name in FAST_MANA_PRODUCERS:
+                    # Fast mana goes into colorless bucket; select_lands_to_tap
+                    # will use it for generic before consuming colored lands.
+                    lands_by_color["C"].append(c)
             picks = select_lands_to_tap(parsed, lands_by_color)
             if picks:
                 for land in picks:
@@ -237,13 +249,21 @@ def _auto_tap_for_cost(state, seat, total_cost, mana_cost_string=None):
                 return
         except Exception:
             pass
-    tapped = 0
+    # Fallback: tap fast mana first (more mana per tap), then lands.
+    # Total cost is in "tap units"; each fast mana = its produced count.
+    remaining = total_cost
     for c in state.players[seat].battlefield:
-        if tapped >= total_cost:
+        if remaining <= 0:
+            return
+        if not c.tapped and c.name in FAST_MANA_PRODUCERS:
+            c.tapped = True
+            remaining -= FAST_MANA_PRODUCERS[c.name]
+    for c in state.players[seat].battlefield:
+        if remaining <= 0:
             return
         if c.is_land() and not c.tapped:
             c.tapped = True
-            tapped += 1
+            remaining -= 1
 
 
 def _untap_all(state, seat):

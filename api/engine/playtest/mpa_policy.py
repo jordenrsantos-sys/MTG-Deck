@@ -2,9 +2,25 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 from .mpa_game_state import GameState, Phase, Step
-from .mpa_actions import Action, ActionType
+from .mpa_actions import Action, ActionType, FAST_MANA_PRODUCERS
 
-POLICY_VERSION = "mpa_policy_v0.4_tutor_recognition"
+POLICY_VERSION = "mpa_policy_v0.5_fast_mana"
+
+
+def _untapped_mana_sources_count(state, seat_index):
+    """Phase 3 — count untapped lands AND fast-mana artifacts, weighting
+    each by mana produced. Used by tutor/wincon checks where we want a
+    coarse "do I have enough mana" gate, not a strict color check."""
+    me = state.players[seat_index]
+    total = 0
+    for c in me.battlefield:
+        if c.tapped:
+            continue
+        if c.is_land():
+            total += 1
+        elif c.name in FAST_MANA_PRODUCERS:
+            total += FAST_MANA_PRODUCERS[c.name]
+    return total
 
 
 # ============================================================
@@ -56,10 +72,11 @@ def check_win_conditions(state, seat_index):
 
     # Rough mana sufficiency (any color): need ~1 mana if Thoracle is in
     # play (just cast the consult), ~3 if both still in hand (Thoracle UU +
-    # Consult B = 3 generic-equivalent). Untapped land count proxies mana.
-    untapped_lands = sum(1 for c in me.battlefield if c.is_land() and not c.tapped)
+    # Consult B = 3 generic-equivalent). Phase 3: counts both untapped
+    # lands AND untapped fast-mana artifacts (Sol Ring = +2, Mox = +1, etc.).
+    available_mana = _untapped_mana_sources_count(state, seat_index)
     needed = 1 if thoracle_in_play else 3
-    if untapped_lands < needed:
+    if available_mana < needed:
         return None
 
     return Action(
@@ -113,8 +130,9 @@ def check_tutor_actions(state, seat_index):
     """
     me = state.players[seat_index]
 
-    # Find a tutor in hand we can pay for.
-    untapped_lands = sum(1 for c in me.battlefield if c.is_land() and not c.tapped)
+    # Find a tutor in hand we can pay for. Phase 3: include fast-mana
+    # artifacts in the mana count so cEDH decks can tutor on turn 1-2.
+    available_mana = _untapped_mana_sources_count(state, seat_index)
     tutors_in_hand = [c for c in me.hand if c.name in _TUTOR_NAMES]
     if not tutors_in_hand:
         return None
@@ -123,7 +141,7 @@ def check_tutor_actions(state, seat_index):
 
     # For each tutor (cheapest first), try to find a missing target in library.
     for tutor in sorted(tutors_in_hand, key=lambda c: c.cmc or 0):
-        if untapped_lands < (tutor.cmc or 0):
+        if available_mana < (tutor.cmc or 0):
             continue
         for target_name in targets_priority:
             if any(c.name == target_name for c in me.hand):
@@ -143,26 +161,52 @@ def check_tutor_actions(state, seat_index):
     return None
 
 
+def _pick_fast_mana_cast(legal_actions, hand):
+    """Phase 3 — prefer casting fast-mana producers (Sol Ring, Mox cycle,
+    Lotus Petal, etc.) over higher-CMC spells. Cheap rocks should ramp the
+    combo even when bigger creatures are also legal. Returns a CAST_FROM_HAND
+    Action or None.
+    """
+    hand_by_id = {c.instance_id: c for c in hand}
+    for a in legal_actions:
+        if a.type != ActionType.CAST_FROM_HAND:
+            continue
+        c = hand_by_id.get(a.source_instance_id)
+        if c is None:
+            continue
+        if c.name in FAST_MANA_PRODUCERS:
+            return a
+    return None
+
+
 def choose_action(state, seat_index, legal_actions):
     if not legal_actions:
         return Action(type=ActionType.PASS_PRIORITY, seat_index=seat_index), 1.0, "no_legal_actions"
     if state.game_over:
         return Action(type=ActionType.PASS_PRIORITY, seat_index=seat_index), 1.0, "game_over"
     # v0.3: scan for assembled win conditions before any other action consideration.
-    # If we have a known wincon in hand/play and can execute it, do that instead
-    # of casting the highest-CMC creature or attacking.
     wincon = check_win_conditions(state, seat_index)
     if wincon is not None:
         return wincon, 1.0, f"wincon_{wincon.notes}"
     # v0.4: if we have a tutor and are missing a wincon piece, search for it.
-    # This lets cEDH decks assemble their combo rather than waiting on raw draws.
     tutor = check_tutor_actions(state, seat_index)
     if tutor is not None:
         return tutor, 0.95, f"tutor_{tutor.notes}"
     me = state.players[seat_index]
+    # Land drop always before fast mana — lands enable everything else.
     land_actions = [a for a in legal_actions if a.type == ActionType.PLAY_LAND]
     if land_actions:
         return land_actions[0], 0.95, "always_play_land_t1"
+    # Phase 3: cast fast mana before any other spell. This is the difference
+    # between assembling combo on turn 3 vs turn 6.
+    fast_mana_cast = _pick_fast_mana_cast(legal_actions, me.hand)
+    if fast_mana_cast is not None:
+        # Resolve the name from the action's source_instance_id for the rationale.
+        fm_name = next(
+            (c.name for c in me.hand if c.instance_id == fast_mana_cast.source_instance_id),
+            "fast_mana",
+        )
+        return fast_mana_cast, 0.9, f"cast_fast_mana:{fm_name}"
     commander_actions = [a for a in legal_actions if a.type == ActionType.CAST_COMMANDER]
     if commander_actions:
         return commander_actions[0], 0.85, "cast_commander_on_curve"

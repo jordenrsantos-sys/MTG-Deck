@@ -183,16 +183,54 @@ def enumerate_legal_actions(state: GameState, seat_index: int) -> List[Action]:
 # ============================================================
 
 
+# Phase 3 — fast-mana producers. Treated as additional colorless mana sources
+# while untapped. Keeps the policy's race-to-combo viable on cEDH timelines.
+# Each value is the colorless mana produced when tapped. Moxes that produce
+# specific colors are simplified to colorless (acceptable PoC tradeoff since
+# tutors/wincon checks are color-loose; tightens when color-aware manabase
+# ships in a later phase).
+FAST_MANA_PRODUCERS: Dict[str, int] = {
+    "Sol Ring": 2,
+    "Mana Crypt": 2,
+    "Mana Vault": 3,
+    "Lotus Petal": 1,
+    "Chrome Mox": 1,
+    "Mox Diamond": 1,
+    "Mox Amber": 1,
+    "Mox Opal": 1,
+    "Jeweled Lotus": 3,
+    "Springleaf Drum": 1,
+    "Paradise Mantle": 1,
+    "Fellwar Stone": 1,
+    "Arcane Signet": 1,
+    "Mind Stone": 1,
+    "Talisman of Hierarchy": 1,
+    "Talisman of Indulgence": 1,
+    "Talisman of Resilience": 1,
+    "Talisman of Curiosity": 1,
+    "Talisman of Creativity": 1,
+    "Talisman of Conviction": 1,
+    "Talisman of Dominance": 1,
+    "Talisman of Progress": 1,
+    "Talisman of Impulse": 1,
+    "Talisman of Unity": 1,
+}
+
+
 def _available_mana(state: GameState, seat_index: int) -> Dict[str, int]:
-    """Total mana available to this seat — pool + untapped basic lands.
+    """Total mana available to this seat — pool + untapped lands +
+    untapped fast-mana artifacts.
 
     Returns a dict {color: count} where color is one of W/U/B/R/G/C.
     Generic mana is handled separately (any of the above counts as generic).
+
+    Phase 3: fast-mana artifacts (Sol Ring, Mana Crypt, Lotus Petal, mox
+    cycle, signets) contribute their produced amount as colorless mana
+    while untapped. Tapped via `_auto_tap_for_cost` alongside lands.
     """
     pool = dict(state.mana_pool_by_seat.get(seat_index, {}))
     for k in ("W", "U", "B", "R", "G", "C"):
         pool.setdefault(k, 0)
-    # Add untapped lands (assumes basic-land mana — Mountain → R, etc.)
     for c in state.players[seat_index].battlefield:
         if c.is_land() and not c.tapped:
             color = _land_color(c)
@@ -200,6 +238,8 @@ def _available_mana(state: GameState, seat_index: int) -> Dict[str, int]:
                 pool[color] = pool.get(color, 0) + 1
             else:
                 pool["C"] = pool.get("C", 0) + 1
+        elif not c.tapped and c.name in FAST_MANA_PRODUCERS:
+            pool["C"] = pool.get("C", 0) + FAST_MANA_PRODUCERS[c.name]
     return pool
 
 

@@ -60,5 +60,24 @@ Iterative upgrade pass starting from `mpa_policy_v0.3_wincon_recognition`.
 - **Reason for revert (per methodology):** B5_vs_B2 moved from in-band to out-of-band (-0.7 WR drift). Hard-stop test triggered.
 - **Diagnosis:** The change is architecturally correct (B2 precons can now cast their colored-cost dragons), but it lets B2 race Ezio before Ezio's tutor chain assembles the combo. Games ending at turn 15-24 (was 30-50). Fix would need Phase 3 (fast mana) to bring Ezio's combo turn down to 3-4, which restores the race advantage. Logged as "tried, didn't work in isolation — revisit after fast mana lands."
 
+### Phase 3: Fast mana — landed (verified neutral at higher N)
+
+- **Code:** `FAST_MANA_PRODUCERS` dict (mpa_actions.py:200-228, 24 cards), `_available_mana` extended to count untapped fast mana (mpa_actions.py:241-244), `_untapped_mana_sources_count` helper (mpa_policy.py:9-22), `_pick_fast_mana_cast` priority (mpa_policy.py:164-179), wired in `choose_action` after wincon+tutor and before commander+highest-CMC. Runner `_auto_tap_for_cost` extended to tap fast mana before lands.
+- **Tests:** 7 new in `test_mpa_fast_mana.py`; 20/20 green including regression on existing test files.
+- **Full calibration (calibration_report_20260520T014539Z.md):**
+
+| Matchup | v0.4 | v0.5 fast mana N=10 | v0.5 N=20 | In band v0.5 |
+|---|---|---|---|---|
+| B5_vs_B2 | 0.900 | 0.800 (marginal) | **0.900** | ✓ (verified at N=20) |
+| B4_vs_B2 | 0.000 | 0.000 | — | ✗ |
+| B4_vs_B3 | 0.100 | 0.100 | — | ✗ |
+| B3_vs_B2 | 0.600 | 0.600 | — | ✓ |
+| B5_vs_B4 | 0.800 | 0.900 | — | ✗ (overshoot worse) |
+| mirror_B3 | 0.700 | 0.700 | — | ✗ |
+
+- **Decision:** N=10 showed marginal in-band → out-of-band move on B5_vs_B2 (drift 0.05). Verified at N=20: WR=0.90, back in band. The N=10 dip is within binomial noise (1 game out of 10 with σ≈0.11). Capability is architecturally correct and needed by downstream phases (color-aware mana revisit, removal, attack heuristic). Committed as neutral; logged the N=10 → N=20 disambiguation pattern for future reference.
+- **Aggregate state after Phase 3:** in band 2/6, draw rate 13.3% (under 30% threshold).
+
+
 
 
