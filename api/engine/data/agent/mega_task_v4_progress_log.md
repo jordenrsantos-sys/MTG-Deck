@@ -242,3 +242,19 @@ automation pipeline + iter 4 baseline.
 - next phase: Phase 10 — mana-cost-aware Voyage downgrade pass.
 
 ---
+
+## Phase 10 — Mana-cost-aware Voyage downgrade pass — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- tests: pytest **1367 passed / 8 pre-existing fails** (Phase 9 baseline 1357 + 10 new downgrade-pass tests).
+- key findings:
+  - **`api/engine/layers/agent_voyage_downgrade_pass_v1.py`** (~120 lines):
+    - `should_run_downgrade_pass(bracket, theme_profile)` — returns True for B4/B5 OR when theme_profile has a slot weight > 0.2 in a downgrade-relevant theme (combo, storm, storm_combo, ninja_tempo, voltron, reanimator).
+    - `find_cheaper_alternatives(anchor_name, anchor_cmc, color_identity, k=10)` — queries Voyage for top-k×3 semantic neighbors, filters to those with cmc < anchor.cmc AND color identity subset, returns `[{name, cmc, color_identity, similarity, savings}]` sorted by similarity descending.
+    - `run_downgrade_pass_for_deck(anchor_names, deck_cards_with_cmc, color_identity, k_per_anchor=5)` — orchestrator for the agent build flow; returns suggestions list to surface in the build response.
+  - **Surface, don't auto-swap**: per the kickoff, results go into the build response as suggestions for user review. Auto-swap is deferred to iter 6+ if user signals demand.
+  - **10 new unit tests** cover: gate-runs-for-B4/B5/storm/combo, gate-skips-for-casual, anchor-cmc-required, voyage-unavailable graceful skip, cmc < anchor filter, similarity-sort, savings field, deck-orchestrator iteration + empty-result skipping.
+- next phase: Phase 11 — functional diversity prompt-engineering.
+
+---
