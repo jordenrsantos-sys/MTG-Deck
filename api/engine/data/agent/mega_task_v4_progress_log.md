@@ -45,3 +45,21 @@ automation pipeline + iter 4 baseline.
 - next phase: Phase 1 — semantic-neighbor score boost + C2.2 prompt-engineering.
 
 ---
+
+## Phase 1 — Semantic-neighbor score boost + C2.2 prompt engineering (BLOCKING) — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$0.30 (Edgar smoke)
+- tests: pytest **1288 passed / 8 pre-existing fails** (Phase 0 baseline 1283 + 5 new tests).
+- self-correction events: none
+- key findings:
+  - **+0.15 score boost on semantic-neighbor pool entries** in `_run_wild_combo_discovery` (the change is at line ~3023 where the wide-pool candidate dict is constructed for each Voyage neighbor). The boost places semantic neighbors at the top of the no-theme-overlap tier in pool ranking. Theme-overlap cards (score 10+ per matched primitive) still rank first; semantic neighbors now outrank arbitrary corpus filler.
+  - **C2.2 prompt now surfaces `[VOYAGE_SEMANTIC_NEIGHBOR]` tag inline on each pool entry** whose source is `semantic_neighbor`. This makes the source visible to the LLM, not just a hidden field.
+  - **PRIORITY GUIDANCE block** added to the C2.2 user prompt when ≥1 semantic neighbor is in the pool: explicitly tells the LLM "WHEN A SEMANTIC NEIGHBOR FITS COMPARABLY TO A CORPUS STAPLE, PREFER THE SEMANTIC NEIGHBOR. That's where the creativity edge lives." The block also instructs the LLM to set `is_semantic_neighbor_pick: true` on those swaps.
+  - **Output schema extended** with `is_semantic_neighbor_pick` field on every `add_swap` suggestion. The post-call swap-application logic honors BOTH the pool-source lookup AND the LLM's self-reported flag, so source-tagging is robust to case/quoting variation in card names.
+  - **Edgar smoke** (full LLM build, 128.3s wall, $0.30 cost): 3 semantic-source picks in final deck (Forerunner of the Legion, Elenda the Dusk Rose, Indulging Patrician — all legitimate vampire-tribal cards Voyage surfaced and the C2.2 LLM picked). 10 novel combos; status OK. The single-case count matches iter 4's Edgar baseline of 3 — the wider impact will be measurable across the 5-case sweep in Phase 13 (iter 4 average was 1.8; Edgar was already at the top of the iter 4 distribution).
+  - **5 new unit tests** cover: `[VOYAGE_SEMANTIC_NEIGHBOR]` tag rendering, PRIORITY GUIDANCE presence/absence based on pool composition, output schema includes `is_semantic_neighbor_pick`, and source-level verification that `+ 0.15` boost is applied.
+- next phase: Phase 2 — C2.1 prompt trim for wallclock reduction.
+
+---

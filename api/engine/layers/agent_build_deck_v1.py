@@ -2841,6 +2841,7 @@ def _build_wild_combo_user_prompt(
 ) -> str:
     deck_lines = [f"  - {c['card_name']} ({c.get('source', 'agent')})" for c in deck]
     pool_lines: List[str] = []
+    n_semantic_in_pool = 0
     for cand in wide_pool:
         name = cand.get("name", "?")
         type_line = cand.get("type_line") or ""
@@ -2849,7 +2850,16 @@ def _build_wild_combo_user_prompt(
         oracle_text = cand.get("oracle_text") or ""
         if oracle_text and len(oracle_text) > 200:
             oracle_text = oracle_text[:197] + "..."
-        line = f"  - {name} | {type_line} | CMC={cmc} | primitives=[{prims}]"
+        # Iter 5 Phase 1: surface the `source` flag inline so the LLM
+        # can see and prefer semantic neighbors per the priority
+        # guidance below.
+        src = (cand.get("source") or "").strip()
+        if src == "semantic_neighbor":
+            n_semantic_in_pool += 1
+            tag = " [VOYAGE_SEMANTIC_NEIGHBOR]"
+        else:
+            tag = ""
+        line = f"  - {name} | {type_line} | CMC={cmc} | primitives=[{prims}]{tag}"
         if oracle_text:
             line += f"\n      text: {oracle_text}"
         pool_lines.append(line)
@@ -2860,6 +2870,21 @@ def _build_wild_combo_user_prompt(
         if wc:
             intent_block = f"\nLikely win condition (from intent interpreter): {wc}\n"
 
+    priority_block = ""
+    if n_semantic_in_pool > 0:
+        priority_block = (
+            "\n\nPRIORITY GUIDANCE — semantic neighbors:\n"
+            f"  The pool above contains {n_semantic_in_pool} cards tagged "
+            "[VOYAGE_SEMANTIC_NEIGHBOR]. These are cards Voyage AI "
+            "identified as semantically similar to your anchor cards via "
+            "card-text embedding. They are where novel synergies hide "
+            "that the corpus baselines don't surface.\n"
+            "  WHEN A SEMANTIC NEIGHBOR FITS COMPARABLY TO A CORPUS "
+            "STAPLE, PREFER THE SEMANTIC NEIGHBOR. That's where the "
+            "creativity edge lives. Add a `\"is_semantic_neighbor_pick\""
+            ": true` flag on suggestions where the chosen add_card came "
+            "from the [VOYAGE_SEMANTIC_NEIGHBOR] tier."
+        )
     return (
         f"Commander: {commander}\n"
         f"Bracket: {bracket}\n"
@@ -2870,6 +2895,7 @@ def _build_wild_combo_user_prompt(
         + "\n".join(deck_lines)
         + f"\n\nWIDE CANDIDATE POOL ({len(wide_pool)} cards):\n"
         + "\n".join(pool_lines)
+        + priority_block
         + "\n\nOutput JSON exactly:\n"
         + "{\n"
         + '  "suggestions": [\n'
@@ -2879,7 +2905,8 @@ def _build_wild_combo_user_prompt(
         + '     "combo_partner": "Card already in deck that the add interacts with",\n'
         + '     "outcome": "what the interaction produces",\n'
         + '     "is_known_spellbook_combo": false,\n'
-        + '     "is_creative_outlier": true},\n'
+        + '     "is_creative_outlier": true,\n'
+        + '     "is_semantic_neighbor_pick": false},\n'
         + '    {"action": "flag_only",\n'
         + '     "combo_cards": ["Card A in deck", "Card B in deck"],\n'
         + '     "outcome": "what they produce together",\n'
@@ -2986,6 +3013,14 @@ def _run_wild_combo_discovery(
                     if not nb_name or nb_name.strip().lower() in seen_in_pool:
                         continue
                     # Convert to the wide-pool candidate shape.
+                    # Iter 5 Phase 1: +0.15 score boost on semantic-
+                    # neighbor candidates so they outrank no-theme-
+                    # overlap baseline cards in the pool ordering.
+                    # The wide pool's theme-overlap cards score 10+
+                    # per primitive; no-overlap cards score ~0; this
+                    # boost places semantic neighbors at the top of
+                    # the no-overlap tier so they're shown to C2.2
+                    # ahead of arbitrary corpus-baseline filler.
                     wide_candidates.append({
                         "name": nb_name,
                         "type_line": nb.get("type_line", ""),
@@ -2993,7 +3028,7 @@ def _run_wild_combo_discovery(
                         "primitives": nb.get("primitives") or [],
                         "color_identity": nb.get("color_identity") or [],
                         "oracle_text": nb.get("oracle_text") or "",
-                        "score": float(nb.get("similarity") or 0.0),
+                        "score": float(nb.get("similarity") or 0.0) + 0.15,
                         "is_recent_set": False,
                         "released_at": nb.get("released_at") or "",
                         "source": "semantic_neighbor",
@@ -3262,8 +3297,17 @@ def _run_wild_combo_discovery(
             source += "|creative_outlier"
         # Iter 4 Phase 1: tag picks that came from the Voyage semantic-
         # neighbor augmentation so the validation sweep can count them.
+        # Iter 5 Phase 1: also honor the LLM's self-reported
+        # `is_semantic_neighbor_pick` flag as a fallback signal in case
+        # the pool-lookup misses (e.g., add_card differs in case or
+        # quoting from the pool entry).
         added_cand = pool_by_lower.get(add_lower)
-        if added_cand and added_cand.get("source") == "semantic_neighbor":
+        llm_self_flag = bool(sug.get("is_semantic_neighbor_pick", False))
+        from_semantic = (
+            (added_cand and added_cand.get("source") == "semantic_neighbor")
+            or llm_self_flag
+        )
+        if from_semantic:
             source += "|from_semantic_neighbor"
         deck[remove_idx] = {
             "card_name": add_name,
