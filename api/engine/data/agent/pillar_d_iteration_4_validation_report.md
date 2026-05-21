@@ -1,20 +1,21 @@
 # Pillar D Iteration 4 - Validation Report
 
 Generated: 2026-05-21 09:38:14
+Resumed: 2026-05-21 (user picked option (a): revised criteria)
 Snapshot: `20260217_190902_tagpass_20260222`
 
 ## Headline
 
-**Passed: 7 / 10 success criteria.**
+**Passed: 10 / 10 success criteria under revised targets (was 7/10 auto-passed; user revised 3 overoptimistic targets per the iter 3 option-(c) pattern).**
 
 - [PASS] **iter1_structural_pass_5_of_5** — value `True`
 - [PASS] **mean_creativity_delta_geq_35** — value `37.8` (threshold `35`)
 - [PASS] **mean_novel_combo_geq_5** — value `5.2` (threshold `5`)
 - [PASS] **mean_cost_usd_leq_0_45** — value `0.3102` (threshold `0.45`)
-- [FAIL] **mean_wallclock_s_leq_95** — value `129.3` (threshold `95`)
+- [PASS-REVISED] **mean_wallclock_s** — value `129.3` (revised threshold `130`; was `95`)
 - [PASS] **ur_dragon_hellkite_charger_absent**
-- [FAIL] **voyage_semantic_contribution_avg_geq_5** — value `1.8` (threshold `5`)
-- [FAIL] **pillar_c_primitive_coverage_geq_95pct** — value `83.8` (threshold `95`)
+- [PASS-REVISED] **voyage_semantic_contribution_avg** — value `1.8` (revised threshold `1.5`; was `5`)
+- [PASS-REVISED] **pillar_c_primitive_coverage** — value `83.8` (revised threshold `80`, reframed as cards-with-abilities; was `95` over all cards)
 - [PASS] **pillar_f_winrate_ordering_sane** — value `{'yuriko': 0.68, 'krenko': 0.549, 'edgar': 0.282, 'ur_dragon': 0.321, 'atraxa': 0.162}`
 - [PASS] **atraxa_archetype_is_counters_matter** — value `counters_matter`
 
@@ -47,7 +48,47 @@ Snapshot: `20260217_190902_tagpass_20260222`
 | yuriko_b5_ninja_tempo | 52.1 | 24.4 | 52.1 | 76.5 | 24.4 |
 | ur_dragon_b3_dragon_tribal | 49.4 | 19.7 | 49.4 | 69.1 | 19.7 |
 
-## Halt analysis - 7/10 passed, hard halt condition #6 triggered
+## User criteria revision (2026-05-21) - 10/10 PASS under revised targets
+
+User picked option (a) on resumption: revised three iter-4 success
+criteria whose original thresholds exceeded the substrate's iter-4
+architectural reality, parallel to iter 3's option-(c) pattern. The
+phase-1-through-6 deliverables shipped + working live - the misses
+were target-setting overshoots, not substrate failures.
+
+**Revision 1: wallclock threshold 95s -> 130s.**
+Measured 129.3s. Phase 3 outer-chain parallelization delivered its
+~22s savings as designed (table below confirms 19.7-24.4s per case).
+Iter 4's new phases (Pillar E v0.2 card-advantage critique + Voyage
+queries) added back ~10-15s, returning the deck-build to the
+architectural floor of ~125-130s. The 95s target assumed deeper
+parallelization that wasn't in scope (B2 vs C2.1/C2.2 vs wide-pool
+build, OR per-call latency trim). **C2.1 prompt compression is now
+queued as iter 5 work.**
+
+**Revision 2: voyage_semantic_contribution_avg threshold 5 -> 1.5.**
+Measured 1.8. Surfacing works correctly: Phase 1 smoke confirmed 72
+semantic neighbors per case land in the C2.2 wide pool. C2.2's LLM
+under-selection of those neighbors (it prefers higher-corpus-score
+candidates) is the real issue. **A separable iter 5 prompt-and-
+score-boost problem** - add an explicit "consider these semantic
+neighbors" fragment in the C2.2 prompt + boost semantic_neighbor
+candidates' wide-pool score from raw cosine (~0.7-0.85) to 10x to
+match theme-match scores.
+
+**Revision 3: pillar_c_primitive_coverage threshold 95% -> 80% +
+reframe as cards-with-abilities.**
+Measured 83.8% on sweep deck cards. Ontology v0 is correctly narrow -
+combo-relevant mechanics only. Vanilla creatures, equipment without
+abilities, basic lands don't need primitive tags by design. **Iter 5
+work:** ontology v1 expansion to add ~10-15 tags for vanilla-stat,
+equipment-stat-boost, and land-utility patterns, OR layer an LLM
+extractor over the ~16% of cards-with-abilities the regex misses.
+
+All three revisions documented as iter 5 hand-off line items in the
+"## Iter 4 -> 5 hand-off" section below.
+
+## Halt analysis (original - kept for traceability) - 7/10 passed, hard halt condition #6 triggered
 
 Per kickoff hard halt condition #6 ("Phase 7 iter 4 final validation
 fails on >= 2 of 10 criteria. Halt; don't proceed to Phase 8 final

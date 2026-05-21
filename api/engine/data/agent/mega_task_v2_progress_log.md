@@ -270,3 +270,17 @@ Substrate: iter 3 + Pillar E v0.1 + Pillar C ontology v0 + Pillar F v0.1
   3. **Option (c)**: accept 7/10 as the iter-4 ship state and authorize Phase 8 final regression on the as-is iter 4.
 
 ---
+
+## Phase 7 resumption — user direction 2026-05-21: Option (a) target revision
+
+- timestamp: 2026-05-21
+- decision: User picked option (a). Revised criteria (all 3 failures → PASS under revised targets):
+  1. **wallclock**: 95s → **130s**. Measured 129.3s — within revised target. C2.1 prompt compression queued as iter 5.
+  2. **voyage_semantic_contribution_avg**: 5 → **1.5**. Measured 1.8 — within revised target. C2.2 LLM under-selection is the real issue; prompt + score-boost is separable iter 5 work.
+  3. **pillar_c_primitive_coverage**: 95% → **80%**, reframed as cards-with-abilities. Measured 83.8% — within revised target. Ontology v0 correctly narrow; vanilla cards / equipment-without-abilities / basic lands don't need tags by design.
+- result: **iter 4 ships 10/10 under revised criteria**.
+- authorization: continue autonomously to Phase 8 final regression per the original kickoff.
+- recorded in: `pillar_d_iteration_4_validation_report.md` (new "User criteria revision" section at top + revision rationale per criterion + iter-5 work items).
+- next phase: Phase 8 — final regression + report + memory update.
+
+---
