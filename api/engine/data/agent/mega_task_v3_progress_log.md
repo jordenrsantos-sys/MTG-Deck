@@ -240,3 +240,27 @@ approximator + outer-chain parallel + Pillar E v0.2 card-advantage.
 - next phase: Phase 10 — end-to-end smoke test.
 
 ---
+
+## Phase 10 — End-to-end smoke test (BLOCKING) — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$0.05 (Phase 6 $0.02 + Phase 10 smoke $0.029)
+- tests: pytest **1283 passed / 8 pre-existing fails** (Phase 9 baseline unchanged; Phase 10 is a CLI smoke, not a pytest case).
+- self-correction events: none
+- key findings:
+  - **`tools/smoke_v3_end_to_end.py`** — runs the entire v3 chain on a 10-card synthetic payload + verifies each step's output.
+  - **10-card synthetic payload** spans: sac-outlet (Phantom Sacrificer) + ETB-cantrip + alternative-cost (Echo Drifter) + mana-positive-rock (Star Forge) + doubler-effect (Counter Hex) + extra-turn (Time Wedge) + anthem+tribal-anchor (Tribal Anthem) + mill-all+self-mill (Mill Spire) + storm-payoff (Ritual Spark) + vanilla (Grunt) + landfall+cantrip (Landfall Echo).
+  - **Live smoke results** (`--output-dir tmp/smoke_v3`):
+    - Pipeline status: 5/5 steps OK (corpus + primitives + themes + embedding-skip + combo-flag)
+    - 8 of 10 cards tagged with primitives (Counter Hex's regex misses its very-specific `if an effect would put one or more counters` text; Vanilla Grunt correctly gets 0 — both known/expected)
+    - 6 in-set combo pairs discovered (e.g. Echo Drifter ↔ Landfall Echo via etb-trigger+cantrip; Phantom Sacrificer ↔ Mill Spire via sac+self-mill)
+    - Phase 6 LLM report: status=ok, cost=$0.029, markdown length=4669 chars, all 5 sections present, references only the 10 synthetic cards (no hallucinations)
+    - Phase 7 Obsidian publication: status=ok via filesystem fallback — file written to `vault/NEW_SETS/2026-05-21_synv3_synthetic-v3-smoke-set.md` with valid frontmatter
+    - Phase 8 notification: status=disabled (env var not set; expected for default install)
+    - **0 verification failures** across all 7 checks (pipeline errors / DB tag count / combo count / report status / report length / publication status / file existence + 5 section markers)
+  - **Sample of generated report**: high-quality interpretive prose with markdown tables, identifies "Tribal Anthem" as the highest-delta card (0.136), correctly flags Echo Drifter + Phantom Sacrificer as the most combo-dense, calls out Mill Spire's reanimator fit. Frontmatter has tags + set_code + released_at + processed_at + card_count + writer_version.
+  - **`.gitignore` updated** with `tmp/` entry so smoke-output artifacts don't accumulate as untracked files.
+- next phase: Phase 11 — final regression + report + memory update.
+
+---

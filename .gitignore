@@ -60,3 +60,6 @@ Thumbs.db
 *.swp
 *.swo
 api/engine/data/themes/_last_classify_trace.json
+
+# Local scratch / smoke output
+tmp/
