@@ -192,3 +192,29 @@ Authority: autonomous per `mega_task_v1_kickoff.md` until hard halt condition.
 - next phase: Phase 9 — Iter 3 final validation sweep [BLOCKING].
 
 ---
+
+## Phase 9 — Iter 3 final validation sweep — HALTED (per kickoff hard-halt #6)
+
+- timestamp: 2026-05-21 00:30
+- commit: (this commit)
+- cost_to_date: ~$3.65 (Phase 8 ~$2.25 + Phase 9 sweep ~$1.40 across 5 cases)
+- tests: pytest ~1054 (Phase 8 added 18; Phase 9 added nothing — the tool runs against the agent directly).
+- self-correction events: none in the sweep itself.
+- key findings (full data in `pillar_d_iteration_3_validation_report.md`):
+  - **4 / 6 success criteria pass.**
+  - ✅ iter1 structural pass 5/5
+  - ✅ mean creativity_delta = 37.8 (target ≥30, iter-2 baseline 36.8 — slight improvement)
+  - ✅ mean novel_combo = 5.4 (target ≥4, iter-2 baseline 6.0 — slight regression but well above target)
+  - ✅ mean cost = $0.290 (target ≤$0.40, iter-2 baseline $0.278 — +4% from added prompt overhead)
+  - ❌ mean wallclock = 137.3s (target ≤60s, iter-2 baseline 192.4s — 29% improvement but still 2.3x over target)
+  - ❌ ur_dragon_envelope_held_by_design: Hellkite Charger correctly absent; Old Gnawbone present via Phase B archetype_staple (corpus baseline, not LLM phase). guard_fire on Krenko (1) + Atraxa (2) confirms the guard is working architecturally.
+  - **Per the kickoff hard-halt #6 ("Phase 9 iter 3 final validation fails on >= 2 of 6 criteria"), this is a halt event.**
+  - The creativity layer is NOT broken — creativity_delta and novel_combo are both well above target. The two failures are structural (outer-chain serial floor ~120-140s) and architectural (corpus-baseline staples aren't in the combo-registry-based forbidden set), both documented in earlier-phase progress entries.
+  - Phase 8 cite-by-name impact requires manual scoring; sampled rationales show explicit cross-references ("Cordial Vampire's +1/+1 counter distribution lands during the same combat step as Vito's lifegain trigger") — appears to be working.
+- next phase: **HALTED — awaiting user direction.** Options for the user:
+  1. Authorize architectural outer-chain parallelization to close the wallclock gap (estimated 1-2 weeks effort; payoff: wallclock ~75-85s).
+  2. Authorize broader envelope rules (transitive forbidden-set OR per-commander corpus-staple suppression) to close the Ur-Dragon-style leak.
+  3. Accept the 4/6 result and authorize continuation to Phase 10 (Pillar E mana base optimizer), revising the iter-3 wallclock target downward to ~140s and accepting "top corpus staples for the commander cohort" as legitimate user-implicit picks.
+  4. Adjust the iter-3 targets to match the architectural reality and re-run Phase 9.
+
+---
