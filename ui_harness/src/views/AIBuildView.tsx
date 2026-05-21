@@ -11,7 +11,7 @@
  * uses for hand-off (`mtg-engine.active-deck`), so navigating to
  * `#workspace-decks` picks it up — no reducer coupling needed.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Card, CardHeader, CardBody } from "../ui/primitives/Card";
 import Button from "../ui/primitives/Button";
@@ -176,10 +176,37 @@ export default function AIBuildView(props: AIBuildViewProps) {
   const [mustIncludeInput, setMustIncludeInput] = useState("");
   const [mustIncludes, setMustIncludes] = useState<string[]>([]);
   const [snapshotId, setSnapshotId] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [snapshotAutoLoaded, setSnapshotAutoLoaded] = useState(false);
 
   const [building, setBuilding] = useState(false);
   const [response, setResponse] = useState<BuildResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Mega-task v5 Phase 2: auto-default the snapshot id from /snapshots/active
+  // so the user never has to know this internal db identifier exists. If the
+  // fetch fails, the user can still expand Advanced and type one in.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadActiveSnapshot() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/snapshots/active`);
+        if (!res.ok) return;
+        const data = (await res.json()) as { snapshot_id?: string };
+        if (cancelled) return;
+        if (typeof data.snapshot_id === "string" && data.snapshot_id) {
+          setSnapshotId(data.snapshot_id);
+          setSnapshotAutoLoaded(true);
+        }
+      } catch {
+        // Silent fallback: user can still set snapshot id manually via Advanced.
+      }
+    }
+    void loadActiveSnapshot();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function _addChip(input: string, list: string[], setter: (xs: string[]) => void, clearInput: () => void) {
     const value = input.trim();
@@ -308,18 +335,8 @@ export default function AIBuildView(props: AIBuildViewProps) {
                 <Input
                   value={commander}
                   onChange={(e) => setCommander(e.target.value)}
-                  placeholder="e.g. Edgar Markov"
+                  placeholder="e.g., Edgar Markov"
                   aria-label="Commander name"
-                />
-              </label>
-
-              <label className="block text-sm">
-                <span className="block text-text-muted mb-token-1">Snapshot ID</span>
-                <Input
-                  value={snapshotId}
-                  onChange={(e) => setSnapshotId(e.target.value)}
-                  placeholder="e.g. SCRYFALL_2026_03_15"
-                  aria-label="Snapshot ID"
                 />
               </label>
 
@@ -352,7 +369,7 @@ export default function AIBuildView(props: AIBuildViewProps) {
                         _addChip(themeInput, themeHints, setThemeHints, () => setThemeInput(""));
                       }
                     }}
-                    placeholder="e.g. TYPAL_VAMPIRES"
+                    placeholder="e.g., aristocrats, graveyard recursion (optional — agent infers from cards)"
                     aria-label="Add theme hint"
                   />
                   <Button
@@ -398,7 +415,7 @@ export default function AIBuildView(props: AIBuildViewProps) {
                         );
                       }
                     }}
-                    placeholder="e.g. Vito, Thorn of the Dusk Rose"
+                    placeholder="e.g., Vito, Thorn of the Dusk Rose"
                     aria-label="Add must-include card"
                   />
                   <Button
@@ -429,6 +446,40 @@ export default function AIBuildView(props: AIBuildViewProps) {
                   ))}
                 </div>
               </fieldset>
+
+              {/* Mega-task v5 Phase 2: Snapshot ID is an internal db
+                  identifier the agent needs but users have no reason to know.
+                  It's auto-populated from /snapshots/active on mount and
+                  hidden behind this Advanced toggle so the default flow is
+                  Commander -> Bracket -> Build. */}
+              <details
+                open={advancedOpen}
+                onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)}
+                data-testid="advanced-options"
+              >
+                <summary className="cursor-pointer text-text-muted text-sm select-none">
+                  Advanced options
+                </summary>
+                <div className="mt-token-2">
+                  <label className="block text-sm">
+                    <span className="block text-text-muted mb-token-1">
+                      Snapshot ID
+                      {snapshotAutoLoaded ? (
+                        <span className="ml-token-1 text-xs text-text-muted">
+                          (auto-populated from active snapshot)
+                        </span>
+                      ) : null}
+                    </span>
+                    <Input
+                      value={snapshotId}
+                      onChange={(e) => setSnapshotId(e.target.value)}
+                      placeholder="e.g., 20260217_190902_tagpass_20260222"
+                      aria-label="Snapshot ID"
+                      data-testid="snapshot-id-input"
+                    />
+                  </label>
+                </div>
+              </details>
 
               <div className="flex items-center gap-token-2 pt-token-2">
                 <Button variant="primary" onClick={_build} disabled={building} aria-label="Build deck">

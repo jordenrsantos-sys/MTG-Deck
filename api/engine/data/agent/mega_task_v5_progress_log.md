@@ -78,4 +78,41 @@ The full "/health is fast WHILE a build is in flight" property is implied by:
 
 `launch_dev.cmd` itself was untouched — it remains a 1-line wrapper around `launch.cmd`. The intended behavior is satisfied by the launch.py change (and the env-var override gives an escape hatch).
 
+### Phase 1 commit
+
+`3e5ff5f07` — "Phase 1 (mega-task v5): uvicorn multi-worker for concurrent request handling".
+
+---
+
+## Phase 2 — Auto-default snapshot_id + field placeholder/help text
+
+**Started**: 2026-05-21 (immediately after Phase 1 commit)
+
+### Implementation
+
+**Backend** (`api/main.py`):
+- New `GET /snapshots/active` endpoint near the existing `/snapshots` and `/snapshot/preflight/{id}` routes. Returns `{"snapshot_id": <str>}` from the existing `_latest_snapshot_id()` helper. Returns empty string (not 404) when the snapshot list is empty so the UI can fall back to disabled-Build.
+
+**UI** (`ui_harness/src/views/AIBuildView.tsx`):
+- New `useEffect` on mount fetches `/snapshots/active` and populates `snapshotId` state automatically. Silent fallback on fetch failure — user can still set manually via Advanced.
+- New `snapshotAutoLoaded` boolean drives an "(auto-populated from active snapshot)" hint next to the Snapshot ID label when the auto-fetch succeeded.
+- Snapshot ID input moved into a `<details data-testid="advanced-options">` collapsible (collapsed by default via `useState(false)`). The default form is now Commander → Bracket → Theme hints → Must-includes → Build.
+- Improved placeholder text per kickoff spec:
+  - Commander: `"e.g., Edgar Markov"` (was `"e.g. Edgar Markov"`)
+  - Theme hints: `"e.g., aristocrats, graveyard recursion (optional — agent infers from cards)"` (was `"e.g. TYPAL_VAMPIRES"`)
+  - Must-includes: `"e.g., Vito, Thorn of the Dusk Rose"` (was `"e.g. Vito, Thorn of the Dusk Rose"`)
+  - Snapshot ID: `"e.g., 20260217_190902_tagpass_20260222"` (was `"e.g. SCRYFALL_2026_03_15"` — that format never matched real snapshots)
+
+### Tests
+
+- **Backend**: `tests/test_snapshots_active_endpoint.py` — 2 tests (latest available + empty snapshot list).
+- **UI**: `ui_harness/src/views/__tests__/AIBuildViewPhase2UX.test.ts` — 11 tests covering: useEffect mount fetch, snapshotAutoLoaded flag, silent fallback, Advanced details block presence, Snapshot ID inside Advanced (not at top level), collapsed-by-default state, all 4 placeholder strings, and an inverse check that Snapshot ID is NOT in the top-level form area.
+
+### Regression baselines (after Phase 2)
+
+- **pytest**: 1386 passed (1384 prior + 2 new). 8 pre-existing failures unchanged.
+- **vitest**: 722 passed (711 prior + 11 new). 2 pre-existing failures unchanged.
+
+### Phase 2 commit pending
+
 ---

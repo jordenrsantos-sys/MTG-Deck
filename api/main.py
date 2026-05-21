@@ -890,6 +890,20 @@ def snapshots(limit: int = 20):
     return {"snapshots": list_snapshots(limit=limit)}
 
 
+@app.get("/snapshots/active")
+def snapshots_active():
+    """Mega-task v5 Phase 2: return the active (latest) snapshot id.
+
+    The UI previously required users to know + paste a snapshot id (an
+    internal DB identifier with no user-facing meaning); today's live
+    session caught a user pasting a Scryfall card URL into that field.
+    This endpoint lets the UI auto-default the field so the user never
+    has to know it exists. Returns an empty string if no snapshots are
+    registered yet (so the UI can fall back to disabled-Build).
+    """
+    return {"snapshot_id": _latest_snapshot_id()}
+
+
 @app.get("/snapshot/preflight/{snapshot_id}")
 def snapshot_preflight_v1(snapshot_id: str):
     with cards_db_connect() as con:
