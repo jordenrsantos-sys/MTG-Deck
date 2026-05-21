@@ -31,6 +31,7 @@ ARCHETYPES = (
     "voltron",        # commander-damage / single-creature-amplification
     "storm",          # ritual chains + free spells → kill spell
     "aristocrats",    # sacrifice outlets + death triggers
+    "counters_matter",# +1/+1, charge, loyalty, energy counters + proliferate
     "control",        # counter/removal heavy → slow win
     "combo",          # explicit 2-3-card kill loop
     "blink",          # ETB-trigger-abuse + flicker effects
@@ -60,6 +61,20 @@ _KEYWORD_PATTERNS: Dict[str, List[str]] = {
     "aristocrats": [r"\baristocrat", r"\bsacrifice outlet", r"\bsac outlet",
                     r"\bdeath trigger", r"\bdies trigger", r"\bblood artist",
                     r"\bdrain"],
+    # Iter 4 Phase 2: counters-matter archetype (proliferate, +1/+1, charge,
+    # loyalty, energy). Distinguished from "tribal" by absence of a single
+    # dominant creature type and by the explicit counter mechanic.
+    "counters_matter": [
+        r"\bproliferate\b",
+        r"\+1/\+1 counters?",
+        r"\bcharge counters?\b",
+        r"\bloyalty counters?\b",
+        r"\benergy counters?\b",
+        r"\bcounters (matter|theme)",
+        r"\bplus.one.plus.one\b",
+        r"\bcounter[- ]doubling",
+        r"\bcounters? on permanents",
+    ],
     "control":     [r"\bcontrol\b", r"\bcounter(spell|magic)?\b",
                     r"\bremoval\b", r"\bboard wipe", r"\bwipe creatures",
                     r"\bstax\b"],
@@ -203,6 +218,23 @@ _FRAGMENTS: Dict[str, str] = {
         "engine. Drain effects (Blood Artist, Zulaport Cutthroat) close the "
         "game. Cards that reanimate after sac (Reassembling Skeleton, Bloodghast) "
         "are gold."
+    ),
+    "counters_matter": (
+        "\n[ARCHETYPE: counters_matter] This deck cares about COUNTERS — +1/+1 "
+        "counters, charge counters, loyalty counters, energy, etc. Look for "
+        "cards that:\n"
+        "  - Place or distribute counters across multiple permanents (Hardened "
+        "Scales, Doubling Season, Branching Evolution).\n"
+        "  - Proliferate or counter-doubling effects (Inexorable Tide, Roalesk's "
+        "death trigger, Astral Cornucopia).\n"
+        "  - Counter-removal synergies — moving counters to convert them into "
+        "value (Vorel of the Hull Clade, Fertilid).\n"
+        "  - Win conditions that scale with counter count (Walking Ballista, "
+        "Reyhan, Inkmoth Nexus + infect for poison wins).\n"
+        "  - Sacrifice outlets that scale with counters (Volrath the Fallen "
+        "variants, Cult of the Waxing Moon).\n"
+        "Avoid suggesting generic value cards if a counter-matters card with "
+        "equivalent CMC slot exists."
     ),
     "control": (
         "\n[ARCHETYPE: control] Look for cheap interaction (1-2 mana removal/"

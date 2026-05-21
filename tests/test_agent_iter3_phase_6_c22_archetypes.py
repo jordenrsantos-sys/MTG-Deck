@@ -157,6 +157,74 @@ class DetectArchetypeTests(unittest.TestCase):
         result = detect_archetype(intent_analysis=ia)
         self.assertEqual(result, "tokens")
 
+    # Iter 4 Phase 2: counters-matter archetype detection.
+
+    def test_atraxa_proliferate_detects_counters_matter(self) -> None:
+        ia = {
+            "likely_win_condition": (
+                "Proliferate +1/+1 counters and planeswalker loyalty counters "
+                "until creatures and planeswalkers reach lethal thresholds"
+            ),
+            "implicit_themes": ["+1/+1 counters", "proliferate value engine",
+                                "charge counters on artifacts"],
+        }
+        result = detect_archetype(
+            intent_analysis=ia,
+            theme_hints=["THEME_PROLIFERATE", "THEME_PLUS1_COUNTERS"],
+            commander="Atraxa, Praetors' Voice",
+        )
+        self.assertEqual(result, "counters_matter")
+
+    def test_roalesk_apex_hybrid_detects_counters_matter(self) -> None:
+        ia = {
+            "likely_win_condition": (
+                "Roalesk death trigger proliferates all permanents repeatedly "
+                "for compounding +1/+1 counter swarms"
+            ),
+            "implicit_themes": ["+1/+1 counters", "proliferate triggers"],
+        }
+        result = detect_archetype(
+            intent_analysis=ia,
+            theme_hints=["THEME_PROLIFERATE"],
+            commander="Roalesk, Apex Hybrid",
+        )
+        self.assertEqual(result, "counters_matter")
+
+    def test_pir_toothy_detects_counters_matter(self) -> None:
+        ia = {
+            "likely_win_condition": (
+                "Pir doubles every +1/+1 counter placement on Toothy until "
+                "Toothy draws the deck"
+            ),
+            "implicit_themes": ["+1/+1 counters", "counter-doubling"],
+        }
+        result = detect_archetype(
+            intent_analysis=ia,
+            theme_hints=["THEME_PLUS1_COUNTERS"],
+            commander="Pir, Imaginative Rascal",
+        )
+        self.assertEqual(result, "counters_matter")
+
+    def test_edgar_markov_does_not_false_positive_counters_matter(self) -> None:
+        # Edgar Markov vampire tribal has SOME +1/+1 counter interactions
+        # (Cordial Vampire, Bloodthirsty Conqueror), but the dominant
+        # archetype signal is tribal. counters_matter must NOT win here.
+        ia = {
+            "likely_win_condition": (
+                "Flood with vampires via Edgar's eminence; Bloodthirsty "
+                "Conqueror scales with +1/+1 counters but the primary plan "
+                "is wide vampire combat"
+            ),
+            "implicit_themes": ["vampire tribal", "lifegain payoffs",
+                                "aristocrats light"],
+        }
+        result = detect_archetype(
+            intent_analysis=ia,
+            theme_hints=["TYPAL_VAMPIRES"],
+            commander="Edgar Markov",
+        )
+        self.assertEqual(result, "tribal")
+
     def test_voltron_detection(self) -> None:
         ia = {
             "likely_win_condition": "Equip a hexproof commander with voltron auras for one-shot commander damage",

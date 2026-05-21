@@ -74,3 +74,25 @@ Substrate: iter 3 + Pillar E v0.1 + Pillar C ontology v0 + Pillar F v0.1
 - next phase: Phase 2 — counters-matter archetype + Phase 6 detector refinement.
 
 ---
+
+## Phase 2 — Counters-matter archetype detector — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$1.92 (Phase 2 is pure-Python — no new LLM build runs; deferred the Atraxa LLM smoke to Phase 7's 5-case sweep)
+- tests: pytest **1153 passed / 8 pre-existing fails** (Phase 1 baseline 1149 + 4 new counters_matter tests).
+- self-correction events: none
+- key findings:
+  - `agent_c22_prompt_templates_v1.ARCHETYPES` extended with `"counters_matter"`, inserted **between `aristocrats` and `control`** in the tuple so that the tribal-first priority is preserved (tribal > voltron > storm > aristocrats > counters_matter > control > combo > …).
+  - Detection patterns added to `_KEYWORD_PATTERNS["counters_matter"]`: `\bproliferate\b`, `\+1/\+1 counters?`, `\bcharge counters?\b`, `\bloyalty counters?\b`, `\benergy counters?\b`, `\bcounters (matter|theme)`, `\bplus.one.plus.one\b`, `\bcounter[- ]doubling`, `\bcounters? on permanents`.
+  - Per-archetype prompt fragment added to `_FRAGMENTS["counters_matter"]`: 5-bullet guidance covering counter distribution (Hardened Scales / Doubling Season), proliferate/doubling effects, counter-removal synergies, counter-scaling wincons (Walking Ballista, infect), and counter-sacrifice outlets.
+  - **4 new unit tests** in `test_agent_iter3_phase_6_c22_archetypes.py`:
+    - `test_atraxa_proliferate_detects_counters_matter` — passes.
+    - `test_roalesk_apex_hybrid_detects_counters_matter` — passes.
+    - `test_pir_toothy_detects_counters_matter` — passes.
+    - `test_edgar_markov_does_not_false_positive_counters_matter` — passes (Edgar with vampire+1/+1 counter prose still detects as `tribal` because vampire keywords outscore counter keywords).
+  - **Existing 18 tests unchanged** — including the iter-3 `test_atraxa_proliferate_detects_default_or_control` which only asserted `result in ARCHETYPES and result != "tribal"` — `counters_matter` satisfies both.
+  - **Live Atraxa LLM smoke deferred** to Phase 7's 5-case sweep (saves ~$0.30 in development LLM spend; the detection is pure-Python and unit-tested, so the integration risk is minimal). Phase 7 success criterion 10 (`atraxa_archetype_is_counters_matter`) gates the live verification.
+- next phase: Phase 3 — outer-chain parallelization [BLOCKING].
+
+---
