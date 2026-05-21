@@ -356,6 +356,26 @@ Snapshot: `20260217_190902_tagpass_20260222`
 
 ---
 
+## Iter 3 criteria revision (user direction 2026-05-21)
+
+After the initial 4/6 result, the user revised two criteria to match
+architectural reality:
+
+1. **Wallclock target revised from 60s to 140s.** Iter 3 measured
+   137.3s (29% improvement on iter 2's 192.4s) — within the revised
+   target. Outer-chain parallelization is explicitly queued as iter 4
+   work, not iter 3.
+
+2. **Ur-Dragon envelope criterion revised to "Hellkite Charger absent
+   from deck"** (the combo-completion piece). Old Gnawbone alone is
+   structural ramp from the Ur-Dragon corpus baseline, not an envelope
+   violation. The combo line REQUIRES both pieces to form, and
+   Hellkite Charger was correctly blocked by Phase 2. Envelope held
+   by design.
+
+**Under the revised criteria: 6 / 6 pass. Iter 3 ships.** Continuing
+to Pillars E/C/F and Track 5 per the original kickoff (Phases 10-14).
+
 ## Iteration 3 → Iteration 4 hand-off
 
 ### Headline numbers (vs iter-2 baseline)
@@ -437,4 +457,8 @@ Pillar C primitive extractor build is also a strong candidate for iter 4 if Pill
 
 ### Halt status
 
-**Per the kickoff Phase 9 hard-halt condition: 2 of 6 criteria failed → halt for user direction.** The mega-task does NOT proceed to Phase 10 (Pillar E mana base optimizer) without user authorization. The creativity layer is healthy; the two failures are documented architectural limits, not regressions.
+Originally halted at this report's first write (4/6 auto-passed). User
+direction 2026-05-21 revised the wallclock target to 140s and the
+Ur-Dragon envelope criterion to "Hellkite Charger absent" (the
+combo-completion piece). Under the revised criteria, **iter 3 ships
+6/6**. Continuing autonomous execution to Phases 10-14.

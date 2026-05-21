@@ -218,3 +218,16 @@ Authority: autonomous per `mega_task_v1_kickoff.md` until hard halt condition.
   4. Adjust the iter-3 targets to match the architectural reality and re-run Phase 9.
 
 ---
+
+## Phase 9 resumption — user direction 2026-05-21: Option (c) target revision
+
+- timestamp: 2026-05-21 00:55
+- decision: User picked option (c). Revised criteria:
+  1. Wallclock target: 60s → 140s. Iter 3 measured 137.3s — within revised target.
+  2. Ur-Dragon envelope criterion: tightened to "Hellkite Charger absent" (the combo-completion piece). Old Gnawbone alone is structural ramp, not envelope violation. Hellkite Charger correctly blocked by Phase 2.
+- result: **iter 3 ships 6/6** under revised criteria.
+- authorization: continue autonomously through Phases 10-14 per the original kickoff. Pillars E/C/F + Track 5 are independent of the iter-3 creativity layer.
+- recorded in: pillar_d_iteration_3_validation_report.md (criteria-revision section at top, plus updated halt-status section at end).
+- next phase: Phase 10 — Pillar E v0.1 mana base optimizer.
+
+---
