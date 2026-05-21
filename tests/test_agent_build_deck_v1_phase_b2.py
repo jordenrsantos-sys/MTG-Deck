@@ -393,9 +393,14 @@ class BuildDeckWithLlmTests(unittest.TestCase):
         # Conflict warning surfaced in build warnings.
         codes = [w["code"] for w in result["warnings"]]
         self.assertIn("INTENT_CONFLICT_WARNING", codes)
-        # LLM metrics accrued — only B2 because we stubbed C2/D2.
-        self.assertEqual(len(summary["llm_metrics"]["calls"]), 1)
-        self.assertEqual(summary["llm_metrics"]["calls"][0]["phase"], "B2_intent_interpreter")
+        # LLM metrics accrued. We stubbed C2.1/C2.2/D2 so B2 is the
+        # only LLM call we initiated; Pillar E (iter-3 Phase 10) may
+        # add a mana_base_critique entry if the optimizer detects a
+        # discrepancy in the stubbed deck. Accept 1-2 entries; the
+        # first must be the B2 intent interpreter.
+        calls = summary["llm_metrics"]["calls"]
+        self.assertIn(len(calls), (1, 2))
+        self.assertEqual(calls[0]["phase"], "B2_intent_interpreter")
         self.assertGreater(summary["llm_metrics"]["total_cost_usd"], 0)
 
 

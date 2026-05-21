@@ -156,6 +156,19 @@ def _validate_case(captured: Dict[str, Any]) -> Dict[str, Any]:
 
     iter1_pass = len(deck) == 100 and not singleton_violations and not must_dropped
 
+    # Phase 10 (Pillar E): mana_base report from the agent summary.
+    mana_base = summary.get("mana_base") or {}
+
+    # Phase 12 (Pillar F): run the statistical approximator against
+    # the deck. Pure post-build pattern matching — no LLM calls.
+    try:
+        from api.engine.layers.agent_statistical_approximator_v1 import (
+            approximate_pod_winrate,
+        )
+        pillar_f_report = approximate_pod_winrate(deck=deck).to_dict()
+    except Exception as exc:
+        pillar_f_report = {"error": f"{exc.__class__.__name__}: {exc}"}
+
     out: Dict[str, Any] = {
         "case_id": case["id"],
         "iter1_passed": iter1_pass,
@@ -193,6 +206,8 @@ def _validate_case(captured: Dict[str, Any]) -> Dict[str, Any]:
             "guard_fire_events": guard.get("guard_fire_events") or [],
         },
         "semantic_source_count": semantic_source_count,
+        "mana_base": mana_base,
+        "pillar_f_approximator": pillar_f_report,
     }
     if case["id"] == "ur_dragon_b3_dragon_tribal":
         out["ur_dragon_check"] = _ur_dragon_check(deck, guard)

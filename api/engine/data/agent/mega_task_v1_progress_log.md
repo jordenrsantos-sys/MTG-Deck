@@ -313,3 +313,32 @@ Authority: autonomous per `mega_task_v1_kickoff.md` until hard halt condition.
 - next phase: Phase 14 — Final regression + report [BLOCKING].
 
 ---
+
+## Phase 14 — Final regression + report — COMPLETED
+
+- timestamp: 2026-05-21 02:45
+- commit: (this commit)
+- cost_to_date: ~$5.40 (Phase 13 ~$3.65 + Phase 14 sweep ~$1.50 + small overhead).
+- tests: pytest **1144 passed / 8 pre-existing fails** (Phase 0 baseline 1001 + 143 new). vitest **711 passed / 2 pre-existing fails** (unchanged from Phase 0). Net delta: zero new failures introduced; all new tests green.
+- self-correction events:
+  - Tier-1: extended the iter-3 validation tool to capture Pillar E `mana_base` + Pillar F approximator data per case.
+  - Tier-1: updated `test_intent_analysis_appears_in_summary` to accept 1-2 LLM calls (B2 + optional Pillar E critique pass).
+- key findings:
+  - **Final 5-case sweep results** (under user-revised iter-3 criteria):
+    - iter1 structural pass: 5/5 ✅
+    - mean creativity_delta: 37.6 (≥30 target) ✅
+    - mean novel_combo: 5.8 (≥4 target) ✅
+    - mean cost: $0.295 (≤$0.40 target) ✅
+    - mean wallclock: 139.8s (≤140s revised target) ✅ (within 0.2s of the line)
+    - ur_dragon Hellkite Charger absent: ✅
+    - **6 / 6 pass.**
+  - **LLM calls per build = 7** (was 6 in Phase 9; the +1 is the Pillar E mana_base_critique that fires on every case because the deterministic deck differs >2 from the optimizer recommendation).
+  - **Pillar E sanity** (representative shapes): Edgar B3 → 36 lands, B=18 sources; Yuriko B5 → 31 lands, 0 tap tolerance, U=23 sources; etc. All match Karsten's published values.
+  - **Pillar F sanity**: cEDH Yuriko+Thoracle pod_winrate 0.56 > B3 Edgar/Ur-Dragon ~0.20 > B2/B4 with sparse decks ~0.09. Ordering as expected.
+  - **Pillar C ontology**: consistency test passes (8/8 assertions). 64 tags / 6 dimensions / 20 interaction-graph edges / 10/10 Spellbook coverage demo.
+  - **Track 5 pipeline stub**: 9 unit tests all pass against the 5-card fixture.
+- next phase: NONE — mega-task complete.
+- final report at `repo/api/engine/data/agent/mega_task_v1_final_report.md`.
+- memory updated: `project_mega_task_v1_shipped_2026-05-21.md` + MEMORY.md index entry.
+
+---
