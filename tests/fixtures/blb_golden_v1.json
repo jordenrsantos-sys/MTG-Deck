@@ -1,0 +1,309 @@
+{
+  "set_code": "blb",
+  "set_name": "Bloomburrow",
+  "cards": [
+    {
+      "name": "Stormchaser's Talent",
+      "oracle_text": "(Gain the next level as a sorcery to add its ability.)\nWhen this Class enters, create a 1/1 blue and red Otter creature token with prowess.\n{3}{U}: Level 2\nWhen this Class becomes level 2, return target instant or sorcery card from your graveyard to your hand.\n{5}{U}: Level 3\nWhenever you cast an instant or sorcery spell, create a 1/1 blue and red Otter creature token with prowess.",
+      "type_line": "Enchantment — Class",
+      "mana_cost": "{U}",
+      "expected_primitives_v1": [
+        "combo-assembly",
+        "etb-trigger",
+        "recursion-graveyard"
+      ]
+    },
+    {
+      "name": "Beza, the Bounding Spring",
+      "oracle_text": "When Beza enters, create a Treasure token if an opponent controls more lands than you. You gain 4 life if an opponent has more life than you. Create two 1/1 blue Fish creature tokens if an opponent controls more creatures than you. Draw a card if an opponent has more cards in hand than you.",
+      "type_line": "Legendary Creature — Elemental Elk",
+      "mana_cost": "{2}{W}{W}",
+      "expected_primitives_v1": [
+        "cantrip",
+        "combo-assembly",
+        "etb-trigger",
+        "token-producer"
+      ]
+    },
+    {
+      "name": "Eluge, the Shoreless Sea",
+      "oracle_text": "Eluge's power and toughness are each equal to the number of Islands you control.\nWhenever Eluge enters or attacks, put a flood counter on target land. It's an Island in addition to its other types for as long as it has a flood counter on it.\nThe first instant or sorcery spell you cast each turn costs {U} (or {1}) less to cast for each land you control with a flood counter on it.",
+      "type_line": "Legendary Creature — Elemental Fish",
+      "mana_cost": "{1}{U}{U}{U}",
+      "expected_primitives_v1": [
+        "attack-trigger",
+        "cost-discount",
+        "etb-trigger",
+        "free-spell"
+      ]
+    },
+    {
+      "name": "Barkform Harvester",
+      "oracle_text": "Changeling (This card is every creature type.)\nReach\n{2}: Put target card from your graveyard on the bottom of your library.",
+      "type_line": "Artifact Creature — Shapeshifter",
+      "mana_cost": "{3}",
+      "expected_primitives_v1": [
+        "combo-assembly"
+      ]
+    },
+    {
+      "name": "Mind Spiral",
+      "oracle_text": "Gift a tapped Fish (You may promise an opponent a gift as you cast this spell. If you do, they create a tapped 1/1 blue Fish creature token before its other effects.)\nTarget player draws three cards. If the gift was promised, tap target creature an opponent controls and put a stun counter on it. (If a permanent with a stun counter would become untapped, remove one from it instead.)",
+      "type_line": "Sorcery",
+      "mana_cost": "{4}{U}",
+      "expected_primitives_v1": [
+        "tap-down"
+      ]
+    },
+    {
+      "name": "Plumecreed Escort",
+      "oracle_text": "Flash\nFlying\nWhen this creature enters, target creature you control gains hexproof until end of turn.",
+      "type_line": "Creature — Bird Scout",
+      "mana_cost": "{1}{U}",
+      "expected_primitives_v1": [
+        "creature-protection",
+        "etb-trigger",
+        "flash-grant"
+      ]
+    },
+    {
+      "name": "Wildfire Howl",
+      "oracle_text": "Gift a card (You may promise an opponent a gift as you cast this spell. If you do, they draw a card before its other effects.)\nWildfire Howl deals 2 damage to each creature. If the gift was promised, instead Wildfire Howl deals 1 damage to any target and 2 damage to each creature.",
+      "type_line": "Sorcery",
+      "mana_cost": "{1}{R}{R}",
+      "expected_primitives_v1": [
+        "cantrip"
+      ]
+    },
+    {
+      "name": "Pileated Provisioner",
+      "oracle_text": "Flying\nWhen this creature enters, put a +1/+1 counter on target creature you control without flying.",
+      "type_line": "Creature — Bird Scout",
+      "mana_cost": "{4}{W}",
+      "expected_primitives_v1": [
+        "etb-trigger",
+        "evasion-grant"
+      ]
+    },
+    {
+      "name": "Colossification",
+      "oracle_text": "Enchant creature\nWhen this Aura enters, tap enchanted creature.\nEnchanted creature gets +20/+20.",
+      "type_line": "Enchantment — Aura",
+      "mana_cost": "{5}{G}{G}",
+      "expected_primitives_v1": [
+        "combo-assembly",
+        "etb-trigger"
+      ]
+    },
+    {
+      "name": "Stocking the Pantry",
+      "oracle_text": "Whenever you put one or more +1/+1 counters on a creature you control, put a supply counter on this enchantment.\n{2}, Remove a supply counter from this enchantment: Draw a card.",
+      "type_line": "Enchantment",
+      "mana_cost": "{G}",
+      "expected_primitives_v1": [
+        "cantrip"
+      ]
+    },
+    {
+      "name": "Cache Grab",
+      "oracle_text": "Mill four cards. You may put a permanent card from among the cards milled this way into your hand. If you control a Squirrel or returned a Squirrel card to your hand this way, create a Food token. (To mill four cards, put the top four cards of your library into your graveyard. A Food token is an artifact with \"{2}, {T}, Sacrifice this token: You gain 3 life.\")",
+      "type_line": "Instant",
+      "mana_cost": "{1}{G}",
+      "expected_primitives_v1": [
+        "self-mill",
+        "token-producer"
+      ]
+    },
+    {
+      "name": "Dewdrop Cure",
+      "oracle_text": "Gift a card (You may promise an opponent a gift as you cast this spell. If you do, they draw a card before its other effects.)\nReturn up to two target creature cards each with mana value 2 or less from your graveyard to the battlefield. If the gift was promised, instead return up to three target creature cards each with mana value 2 or less from your graveyard to the battlefield.",
+      "type_line": "Sorcery",
+      "mana_cost": "{2}{W}",
+      "expected_primitives_v1": [
+        "cantrip"
+      ]
+    },
+    {
+      "name": "Rabid Gnaw",
+      "oracle_text": "Target creature you control gets +1/+0 until end of turn. Then it deals damage equal to its power to target creature you don't control.",
+      "type_line": "Instant",
+      "mana_cost": "{1}{R}",
+      "expected_primitives_v1": [
+        "infinite-damage-source"
+      ]
+    },
+    {
+      "name": "Helga, Skittish Seer",
+      "oracle_text": "Whenever you cast a creature spell with mana value 4 or greater, you draw a card, gain 1 life, and put a +1/+1 counter on Helga.\n{T}: Add X mana of any one color, where X is Helga's power. Spend this mana only to cast creature spells with mana value 4 or greater or creature spells with {X} in their mana costs.",
+      "type_line": "Legendary Creature — Frog Druid",
+      "mana_cost": "{G}{W}{U}",
+      "expected_primitives_v1": [
+        "cantrip",
+        "combo-assembly",
+        "cost-discount",
+        "x-spell-payoff"
+      ]
+    },
+    {
+      "name": "Builder's Talent",
+      "oracle_text": "(Gain the next level as a sorcery to add its ability.)\nWhen this Class enters, create a 0/4 white Wall creature token with defender.\n{W}: Level 2\nWhenever one or more noncreature, nonland permanents you control enter, put a +1/+1 counter on target creature you control.\n{4}{W}: Level 3\nWhen this Class becomes level 3, return target noncreature, nonland permanent card from your graveyard to the battlefield.",
+      "type_line": "Enchantment — Class",
+      "mana_cost": "{1}{W}",
+      "expected_primitives_v1": [
+        "combo-assembly",
+        "etb-trigger",
+        "token-producer"
+      ]
+    },
+    {
+      "name": "Roughshod Duo",
+      "oracle_text": "Trample\nWhenever you expend 4, target creature you control gets +1/+1 and gains trample until end of turn. (You expend 4 as you spend your fourth total mana to cast spells during a turn.)",
+      "type_line": "Creature — Mouse Raccoon",
+      "mana_cost": "{2}{R}",
+      "expected_primitives_v1": [
+        "evasion-grant"
+      ]
+    },
+    {
+      "name": "Splash Lasher",
+      "oracle_text": "Offspring {1}{U} (You may pay an additional {1}{U} as you cast this spell. If you do, when this creature enters, create a 1/1 token copy of it.)\nWhen this creature enters, tap up to one target creature and put a stun counter on it. (If a permanent with a stun counter would become untapped, remove one from it instead.)",
+      "type_line": "Creature — Frog Wizard",
+      "mana_cost": "{3}{U}",
+      "expected_primitives_v1": [
+        "etb-trigger",
+        "token-producer"
+      ]
+    },
+    {
+      "name": "Portent of Calamity",
+      "oracle_text": "Reveal the top X cards of your library. For each card type, you may exile a card of that type from among them. Put the rest into your graveyard. You may cast a spell from among the exiled cards without paying its mana cost if you exiled four or more cards this way. Then put the rest of the exiled cards into your hand.",
+      "type_line": "Sorcery",
+      "mana_cost": "{X}{U}",
+      "expected_primitives_v1": [
+        "free-spell",
+        "x-spell-payoff"
+      ]
+    },
+    {
+      "name": "Plumecreed Mentor",
+      "oracle_text": "Flying\nWhenever this creature or another creature you control with flying enters, put a +1/+1 counter on target creature you control without flying.",
+      "type_line": "Creature — Bird Scout",
+      "mana_cost": "{1}{W}{U}",
+      "expected_primitives_v1": [
+        "evasion-grant"
+      ]
+    },
+    {
+      "name": "Salvation Swan",
+      "oracle_text": "Flash\nFlying\nWhenever this creature or another Bird you control enters, exile up to one target creature you control without flying. Return it to the battlefield under its owner's control with a flying counter on it at the beginning of the next end step.",
+      "type_line": "Creature — Bird Cleric",
+      "mana_cost": "{3}{W}",
+      "expected_primitives_v1": [
+        "evasion-grant",
+        "flash-grant",
+        "persist-creature"
+      ]
+    },
+    {
+      "name": "Vren, the Relentless",
+      "oracle_text": "Ward {2}\nIf a creature an opponent controls would die, exile it instead.\nAt the beginning of each end step, create X 1/1 black Rat creature tokens with \"This token gets +1/+1 for each other Rat you control,\" where X is the number of creatures that were exiled under your opponents' control this turn.",
+      "type_line": "Legendary Creature — Rat Rogue",
+      "mana_cost": "{2}{U}{B}",
+      "expected_primitives_v1": [
+        "token-producer"
+      ]
+    },
+    {
+      "name": "Maha, Its Feathers Night",
+      "oracle_text": "Flying, trample\nWard—Discard a card.\nCreatures your opponents control have base toughness 1.",
+      "type_line": "Legendary Creature — Elemental Bird",
+      "mana_cost": "{3}{B}{B}",
+      "expected_primitives_v1": [
+        "combo-assembly"
+      ]
+    },
+    {
+      "name": "Essence Channeler",
+      "oracle_text": "As long as you've lost life this turn, this creature has flying and vigilance.\nWhenever you gain life, put a +1/+1 counter on this creature.\nWhen this creature dies, put its counters on target creature you control.",
+      "type_line": "Creature — Bat Cleric",
+      "mana_cost": "{1}{W}",
+      "expected_primitives_v1": [
+        "combo-assembly",
+        "death-trigger",
+        "lifegain-payoff"
+      ]
+    },
+    {
+      "name": "Kitsa, Otterball Elite",
+      "oracle_text": "Vigilance\nProwess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)\n{T}: Draw a card, then discard a card.\n{2}, {T}: Copy target instant or sorcery spell you control. You may choose new targets for the copy. Activate only if Kitsa's power is 3 or greater.",
+      "type_line": "Legendary Creature — Otter Wizard",
+      "mana_cost": "{1}{U}",
+      "expected_primitives_v1": [
+        "cantrip",
+        "combo-assembly"
+      ]
+    },
+    {
+      "name": "Might of the Meek",
+      "oracle_text": "Target creature gains trample until end of turn. It also gets +1/+0 until end of turn if you control a Mouse.\nDraw a card.",
+      "type_line": "Instant",
+      "mana_cost": "{R}",
+      "expected_primitives_v1": [
+        "cantrip",
+        "evasion-grant"
+      ]
+    },
+    {
+      "name": "Sugar Coat",
+      "oracle_text": "Flash\nEnchant creature or Food\nEnchanted permanent is a colorless Food artifact with \"{2}, {T}, Sacrifice this artifact: You gain 3 life\" and loses all other card types and abilities.",
+      "type_line": "Enchantment — Aura",
+      "mana_cost": "{2}{U}",
+      "expected_primitives_v1": [
+        "flash-grant"
+      ]
+    },
+    {
+      "name": "Downwind Ambusher",
+      "oracle_text": "Flash\nWhen this creature enters, choose one —\n• Target creature an opponent controls gets -1/-1 until end of turn.\n• Destroy target creature an opponent controls that was dealt damage this turn.",
+      "type_line": "Creature — Skunk Assassin",
+      "mana_cost": "{3}{B}",
+      "expected_primitives_v1": [
+        "etb-trigger",
+        "flash-grant",
+        "removal-creature"
+      ]
+    },
+    {
+      "name": "Lilysplash Mentor",
+      "oracle_text": "Reach\n{1}{G}{U}: Exile another target creature you control, then return it to the battlefield under its owner's control with a +1/+1 counter on it. Activate only as a sorcery.",
+      "type_line": "Creature — Frog Druid",
+      "mana_cost": "{2}{G}{U}",
+      "expected_primitives_v1": [
+        "combo-assembly",
+        "persist-creature"
+      ]
+    },
+    {
+      "name": "Playful Shove",
+      "oracle_text": "Playful Shove deals 1 damage to any target.\nDraw a card.",
+      "type_line": "Sorcery",
+      "mana_cost": "{1}{R}",
+      "expected_primitives_v1": [
+        "cantrip"
+      ]
+    },
+    {
+      "name": "Scrapshooter",
+      "oracle_text": "Gift a card (You may promise an opponent a gift as you cast this spell. If you do, when it enters, they draw a card.)\nReach\nWhen this creature enters, if the gift was promised, destroy target artifact or enchantment an opponent controls.",
+      "type_line": "Creature — Raccoon Archer",
+      "mana_cost": "{1}{G}{G}",
+      "expected_primitives_v1": [
+        "cantrip",
+        "etb-trigger",
+        "removal-artifact"
+      ]
+    }
+  ],
+  "expected_combo_pair_count": 162,
+  "notes": "Golden fixture for the Phase 9 BLB validation test. expected_primitives_v1 captures the Pillar C extractor's deterministic regex output for these 30 cards. expected_combo_pair_count is the in-set Phase 4 discovery count using these primitives. Regenerate via `python tests/fixtures/_generate_blb_golden.py`."
+}
