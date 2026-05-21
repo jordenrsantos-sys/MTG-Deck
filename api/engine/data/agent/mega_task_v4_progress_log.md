@@ -139,3 +139,25 @@ automation pipeline + iter 4 baseline.
 - next phase: Phase 5 — B2 structured weighted theme profile.
 
 ---
+
+## Phase 5 — B2 structured weighted theme profile (BLOCKING) — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$0.90 (no new LLM build runs; Phase 5 is prompt + parsing only)
+- tests: pytest **1330 passed / 8 pre-existing fails** (Phase 4 baseline 1319 + 11 new theme-profile tests).
+- self-correction events: none
+- key findings:
+  - **B2 system prompt extended** with the THEME PROFILE section that documents the 4 operating modes (cards_only / hint_led / hybrid / bare_commander) + the `theme_profile` output schema.
+  - **B2 user prompt output schema extended** with `theme_profile` field requiring `{primary, secondary, tertiary, mode}` shape where each slot is `{theme: compact_id, weight: 0.0-1.0}` and weights sum to 1.0.
+  - **`_normalize_theme_profile(raw, theme_hints, must_include_cards)`** helper validates + normalizes the LLM's output: re-normalizes drifted weights to sum 1.0, falls back to a deterministic shape when LLM output is missing/invalid (primary = first theme hint if any, else "default"), and recomputes `mode` from inputs if the LLM emits an invalid mode string.
+  - **`_infer_theme_profile_mode(theme_hints, must_include_cards)`** deterministic mode classifier:
+    - both empty → `bare_commander`
+    - hints only → `hint_led`
+    - cards only → `cards_only`
+    - both → `hybrid`
+  - **`BARE_COMMANDER_DEFAULT` warning** surfaced in the build response when `theme_profile.mode == "bare_commander"`, telling the user the agent fell back to the corpus-typical archetype and they can redirect with hints/cards.
+  - **11 new unit tests** cover: mode inference for all 4 modes, well-formed LLM output passthrough, weight re-normalization (2/1 input → 0.67/0.33), fallback when raw is None / all empty, invalid-mode-string recomputation, system + user prompt include `theme_profile` schema.
+- next phase: Phase 6 — cascade theme profile through C2.1/C2.2/D2.
+
+---

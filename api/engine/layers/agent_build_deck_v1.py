@@ -211,6 +211,21 @@ def compute_agent_build_deck_v1(
                         "code": "INTENT_CONFLICT_WARNING",
                         "message": cw,
                     })
+            # Iter 5 Phase 5: surface bare-commander mode as an informational
+            # warning so the user knows the agent fell back to the corpus
+            # baseline (and can redirect with explicit hints/cards).
+            tp = intent_analysis.get("theme_profile") or {}
+            if tp.get("mode") == "bare_commander":
+                warnings.append({
+                    "code": "BARE_COMMANDER_DEFAULT",
+                    "message": (
+                        f"No theme hints or must-include cards provided. "
+                        f"Using the corpus-typical archetype "
+                        f"'{tp.get('primary', {}).get('theme', 'default')}' "
+                        f"for {commander.strip()!r}. Specify hints or cards "
+                        "to redirect."
+                    ),
+                })
 
     # ---- Phase B: build the candidate pool ----
     t_pool = perf_counter()
@@ -1752,7 +1767,27 @@ _INTENT_INTERPRETER_SYSTEM_PROMPT = (
     "If any field is unknown, return an empty list / empty string for it; "
     "never invent unknown card names.\n"
     "5. Card names must be EXACT Magic: The Gathering printed names "
-    "(case-sensitive, with any apostrophes and commas).\n"
+    "(case-sensitive, with any apostrophes and commas).\n\n"
+    "THEME PROFILE (iter 5 / mega-task v4 Phase 5):\n"
+    "Produce a structured weighted theme profile reflecting the user's "
+    "stated direction. Operating modes you should detect from the input:\n"
+    "  - CARDS-ONLY: theme_hints empty, must-include cards present. "
+    "Infer themes purely from the cards' mechanics + types.\n"
+    "  - HINT-LED: theme_hints provided, weight them heavily; cards "
+    "reinforce.\n"
+    "  - HYBRID: both provided; blend, bias toward hints when they "
+    "exist.\n"
+    "  - BARE-COMMANDER: both empty. Fall back to the most-played "
+    "corpus archetype for the commander; tag this mode in your output.\n\n"
+    "Output `theme_profile` with three keys: `primary`, `secondary`, "
+    "`tertiary`. Each entry is `{theme: <theme-name>, weight: <0.0-1.0>}` "
+    "and the three weights sum to 1.0 (~0.6 / ~0.3 / ~0.1 is the "
+    "default split for a well-defined deck). Theme names should be "
+    "compact lowercase identifiers like `dragon_tribal`, "
+    "`graveyard_recursion`, `counters_matter`, `aristocrats`, "
+    "`storm_combo`, `voltron`, `landfall`, `control`, etc. Honor user "
+    "intent — do NOT pivot toward the corpus-typical archetype if the "
+    "user signaled a different direction.\n"
 )
 
 
@@ -1779,10 +1814,17 @@ def _build_intent_interpreter_user_prompt(
         '    {"card": "Exact Card Name", "why": "one sentence reason grounded in the user picks/themes"}\n'
         "  ],\n"
         '  "conflict_warnings": ["..."],\n'
-        '  "likely_win_condition": "one sentence"\n'
+        '  "likely_win_condition": "one sentence",\n'
+        '  "theme_profile": {\n'
+        '    "primary":   {"theme": "compact_id", "weight": 0.6},\n'
+        '    "secondary": {"theme": "compact_id", "weight": 0.3},\n'
+        '    "tertiary":  {"theme": "compact_id", "weight": 0.1},\n'
+        '    "mode": "cards_only|hint_led|hybrid|bare_commander"\n'
+        '  }\n'
         "}\n\n"
         "Limits: implicit_themes 3-5 entries. suggested_extensions 5-10 entries. "
-        "conflict_warnings 0-3 entries (only real conflicts, e.g. bracket vs combo).\n"
+        "conflict_warnings 0-3 entries (only real conflicts, e.g. bracket vs combo). "
+        "theme_profile weights MUST sum to 1.0.\n"
         "Remember: no combo auto-expansion. If a must-include is half of a "
         "known combo, the other half is NOT a suggested_extension."
     )
@@ -1882,7 +1924,86 @@ def _run_intent_interpreter(
         "suggested_extensions": _as_list_of_dicts(parsed.get("suggested_extensions")),
         "conflict_warnings": _as_list_of_strings(parsed.get("conflict_warnings")),
         "likely_win_condition": str(parsed.get("likely_win_condition") or "").strip(),
+        # Iter 5 Phase 5: structured weighted theme profile.
+        "theme_profile": _normalize_theme_profile(
+            parsed.get("theme_profile"),
+            theme_hints=theme_hints,
+            must_include_cards=must_include_cards,
+        ),
     }
+
+
+def _normalize_theme_profile(
+    raw: Any,
+    *,
+    theme_hints: Optional[List[str]] = None,
+    must_include_cards: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Validate + normalize the LLM's theme_profile output.
+
+    Ensures the structure is `{primary, secondary, tertiary, mode}`
+    with `{theme: str, weight: float}` per slot. Re-normalizes weights
+    to sum to 1.0 if the LLM's output drifts. Falls back to a
+    deterministic default profile when the LLM output is missing or
+    invalid (cards-only/hint-led/hybrid/bare_commander all handled).
+    """
+    theme_hints = theme_hints or []
+    must_include_cards = must_include_cards or []
+
+    if isinstance(raw, dict):
+        slots = {}
+        for slot_name in ("primary", "secondary", "tertiary"):
+            entry = raw.get(slot_name)
+            if isinstance(entry, dict):
+                theme = str(entry.get("theme") or "").strip().lower().replace(" ", "_")
+                weight_raw = entry.get("weight")
+                try:
+                    weight = float(weight_raw)
+                except (TypeError, ValueError):
+                    weight = 0.0
+                if theme:
+                    slots[slot_name] = {"theme": theme, "weight": max(0.0, weight)}
+        if slots:
+            # Re-normalize weights to sum 1.0.
+            total = sum(s["weight"] for s in slots.values())
+            if total > 0:
+                for s in slots.values():
+                    s["weight"] = round(s["weight"] / total, 4)
+            mode_raw = str(raw.get("mode") or "").strip().lower()
+            if mode_raw not in {"cards_only", "hint_led", "hybrid", "bare_commander"}:
+                mode_raw = _infer_theme_profile_mode(theme_hints, must_include_cards)
+            return {
+                "primary": slots.get("primary") or {"theme": "default", "weight": 1.0},
+                "secondary": slots.get("secondary") or {"theme": "", "weight": 0.0},
+                "tertiary": slots.get("tertiary") or {"theme": "", "weight": 0.0},
+                "mode": mode_raw,
+            }
+
+    # Deterministic fallback when LLM output is missing/invalid.
+    mode = _infer_theme_profile_mode(theme_hints, must_include_cards)
+    primary_theme = "default"
+    if theme_hints:
+        primary_theme = theme_hints[0].strip().lower().replace(" ", "_") or "default"
+    return {
+        "primary": {"theme": primary_theme, "weight": 1.0},
+        "secondary": {"theme": "", "weight": 0.0},
+        "tertiary": {"theme": "", "weight": 0.0},
+        "mode": mode,
+    }
+
+
+def _infer_theme_profile_mode(
+    theme_hints: List[str], must_include_cards: List[str],
+) -> str:
+    has_hints = bool(theme_hints)
+    has_cards = bool(must_include_cards)
+    if has_hints and has_cards:
+        return "hybrid"
+    if has_hints and not has_cards:
+        return "hint_led"
+    if has_cards and not has_hints:
+        return "cards_only"
+    return "bare_commander"
 
 
 def _as_list_of_strings(v: Any) -> List[str]:
