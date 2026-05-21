@@ -198,3 +198,25 @@ approximator + outer-chain parallel + Pillar E v0.2 card-advantage.
 - next phase: Phase 8 — desktop notification (Tier-3 skippable).
 
 ---
+
+## Phase 8 — Notification integration — COMPLETED (live desktop toast Tier-3 skipped)
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: $0.02 (no new spend)
+- tests: pytest **1279 passed / 8 pre-existing fails** (Phase 7 baseline 1270 + 9 new notifier tests).
+- self-correction events:
+  - **Tier-3 partial-skip on live desktop toast smoke**: the BurntToast PowerShell module isn't installed in this environment. Auto-installing PowerShell modules system-wide is an unauthorized action (user-system-level change). **Action taken**: ship + test the Python module with both paths; the desktop-toast path silently falls back to "file_only" status when BurntToast is missing. Phase 10's smoke will use the file-only path; user can `Install-Module BurntToast` later to enable live toasts.
+- key findings:
+  - **`api/engine/integrations/new_set_notifier_v1.py`** (~150 lines):
+    - `is_enabled()` — gates on `MTG_ENGINE_NOTIFICATIONS_ENABLED` env var; default off.
+    - `compose_notification(set_code, set_name, card_count, top_archetypes, report_path)` — builds the `Notification` payload (title + body + top-3 archetypes + audit metadata).
+    - `notify(notification, allow_desktop_toast=True)`:
+      1. Returns `status="disabled"` immediately if env var is not set (zero side effects).
+      2. Writes a JSON audit record to `api/engine/data/notifications/<timestamp>_<set_code>.json` (always when enabled).
+      3. Attempts a Windows toast via `powershell -Command "Import-Module BurntToast; New-BurntToastNotification ..."`. Returns `status="file_only"` if BurntToast not installed or PowerShell unavailable; returns `status="ok"` if toast succeeded.
+  - **Safety**: PowerShell command uses single-quoted strings + doubles embedded single quotes to avoid injection. 10s timeout on the subprocess call. Non-Windows platforms silently skip the toast path.
+  - **9 new unit tests** cover: env-var gating (truthy/falsy values), notification composition (title + body + top-3 truncation + empty-archetypes graceful), full notify() paths (disabled / enabled-file-only / toast-failure-fallback). Live desktop toast smoke skipped — documented above.
+- next phase: Phase 9 — validation harness on a known historical set.
+
+---
