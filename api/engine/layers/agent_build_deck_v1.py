@@ -21,7 +21,7 @@ is testable end-to-end before the selection algorithm exists in Phases B-D.
 from __future__ import annotations
 
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 AGENT_BUILD_DECK_VERSION = "agent_build_deck_v1.0"
@@ -137,6 +137,32 @@ def compute_agent_build_deck_v1(
             ),
         })
 
+    # ---- Iter 3 Phase 2: combo-anchor hard guard ----
+    # For each user must-include, scan the combo registry for combos that
+    # name it; every OTHER card in those combos enters the forbidden set.
+    # Every downstream LLM phase (B2/C2.1/C2.2/D2) sees the forbidden
+    # list in its prompt AND has its output re-validated against the
+    # set. Cards on the forbidden list that the LLM proposes get dropped
+    # and logged as guard_fire events. Exception: a partner that's also
+    # a must-include means the user opted in — no addition.
+    from api.engine.layers.agent_combo_anchor_guard_v1 import (
+        build_forbidden_set as _build_forbidden_set,
+        format_forbidden_block_for_prompt as _format_forbidden_block,
+    )
+    forbidden_set, forbidden_sources = _build_forbidden_set(must_include_cards)
+    guard_fire_events: List[Dict[str, Any]] = []
+    forbidden_prompt_block = _format_forbidden_block(forbidden_set)
+    if forbidden_set:
+        warnings.append({
+            "code": "COMBO_ANCHOR_GUARD_ACTIVE",
+            "message": (
+                f"Combo-anchor guard is active: {len(forbidden_set)} cards forbidden "
+                f"based on {len(forbidden_sources)} combos where a user must-include "
+                f"is an anchor. The forbidden list will be enforced across all LLM "
+                f"phases. Sample forbidden cards: {sorted(forbidden_set)[:6]}"
+            ),
+        })
+
     # ---- Iteration 2 Phase B2: LLM call #1 — intent interpreter ----
     # Inspects (commander, bracket, theme_hints, must_include_cards) and
     # returns implicit_themes, suggested_extensions, conflict_warnings,
@@ -155,6 +181,7 @@ def compute_agent_build_deck_v1(
             must_include_cards=must_include_cards,
             llm_metrics=llm_metrics,
             warnings=warnings,
+            forbidden_prompt_block=forbidden_prompt_block,
         )
         if intent_analysis:
             # Inferred themes added to hints; tracked separately via the
@@ -167,6 +194,15 @@ def compute_agent_build_deck_v1(
                 if isinstance(ext, dict):
                     name = ext.get("card")
                     if isinstance(name, str) and name.strip():
+                        # Iter 3 Phase 2: drop forbidden cards before they
+                        # enter the suggested-extensions list.
+                        if name.strip().lower() in forbidden_set:
+                            guard_fire_events.append({
+                                "phase": "B2_intent_interpreter",
+                                "field": "suggested_extensions",
+                                "card": name.strip(),
+                            })
+                            continue
                         suggested_extension_names.append(name.strip())
             # Surface conflict_warnings to the user.
             for cw in intent_analysis.get("conflict_warnings") or []:
@@ -188,6 +224,7 @@ def compute_agent_build_deck_v1(
             seed=seed,
             call_counter=call_counter,
             suggested_extension_names=suggested_extension_names,
+            forbidden_set=forbidden_set,
         )
     except Exception as exc:
         return {
@@ -242,6 +279,9 @@ def compute_agent_build_deck_v1(
             intent_analysis=intent_analysis,
             llm_metrics=llm_metrics,
             novel_combo_flags=novel_combo_flags,
+            forbidden_set=forbidden_set,
+            forbidden_prompt_block=forbidden_prompt_block,
+            guard_fire_events=guard_fire_events,
         )
         warnings.extend(critic_warnings)
 
@@ -264,6 +304,9 @@ def compute_agent_build_deck_v1(
             intent_analysis=intent_analysis,
             llm_metrics=llm_metrics,
             novel_combo_flags=novel_combo_flags,
+            forbidden_set=forbidden_set,
+            forbidden_prompt_block=forbidden_prompt_block,
+            guard_fire_events=guard_fire_events,
         )
         warnings.extend(wild_warnings)
 
@@ -305,6 +348,9 @@ def compute_agent_build_deck_v1(
             must_include_cards=must_include_cards,
             novel_combo_flags=novel_combo_flags,
             archetype_brief=pool.get("archetype_brief") or {},
+            forbidden_set=forbidden_set,
+            forbidden_prompt_block=forbidden_prompt_block,
+            guard_fire_events=guard_fire_events,
         )
         warnings.extend(final_critic_warnings)
 
@@ -384,6 +430,17 @@ def compute_agent_build_deck_v1(
         "consider_adding": last_findings.get("consider_adding") or [],
         "novel_combo_flags": novel_combo_flags,
         "intent_analysis": intent_analysis,
+        # Iter 3 Phase 2: combo-anchor guard report. `forbidden_set_size`
+        # is the count of distinct cards forbidden by the guard;
+        # `guard_fire_events` is the list of LLM-suggestion drops.
+        "combo_anchor_guard": {
+            "active": bool(forbidden_set),
+            "forbidden_set_size": len(forbidden_set),
+            "forbidden_set_sample": sorted(forbidden_set)[:20],
+            "sources": forbidden_sources,
+            "guard_fire_events": guard_fire_events,
+            "guard_fire_count": len(guard_fire_events),
+        },
     }
 
     return {
@@ -425,6 +482,14 @@ def _empty_summary(bracket: str, must_include_cards: List[str]) -> Dict[str, Any
         "consider_adding": [],
         "novel_combo_flags": [],
         "intent_analysis": None,
+        "combo_anchor_guard": {
+            "active": False,
+            "forbidden_set_size": 0,
+            "forbidden_set_sample": [],
+            "sources": [],
+            "guard_fire_events": [],
+            "guard_fire_count": 0,
+        },
     }
 
 
@@ -568,6 +633,7 @@ def _build_candidate_pool(
     seed: Optional[int],
     call_counter: Dict[str, int],
     suggested_extension_names: Optional[List[str]] = None,
+    forbidden_set: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """Compose archetype_brief + theme_top_cards into a ranked candidate pool.
 
@@ -726,6 +792,39 @@ def _build_candidate_pool(
                 # Combine the source string for downstream visibility.
                 if "llm_intent_extension" not in cand["source"].split("|"):
                     cand["source"] = cand["source"] + "|llm_intent_extension"
+
+    # Iter 3 Phase 2: drop forbidden cards from the deterministic pool
+    # too. The kickoff rule applies the guard to LLM phases only, but
+    # the Ur-Dragon test case demonstrated that some forbidden cards
+    # (e.g. cards from the corpus archetype_staple list) enter via the
+    # deterministic pool. Filtering the pool ensures the forbidden set
+    # is the envelope of "things the user did not opt into", applied
+    # universally. User picks (score=INF) are never filtered — the user
+    # listing both halves of a combo IS the opt-in signal, and the
+    # forbidden set is empty for those anchors.
+    if forbidden_set:
+        pre_count = len(by_name)
+        forbidden_removed: List[str] = []
+        for name in list(by_name.keys()):
+            if name.strip().lower() in forbidden_set:
+                # Defensive: never drop a user must-include. (This
+                # shouldn't fire — must-includes are listed by user, and
+                # build_forbidden_set excludes them from the partner set
+                # — but belt-and-suspenders.)
+                if by_name[name].get("is_user_pick"):
+                    continue
+                forbidden_removed.append(name)
+                del by_name[name]
+        if forbidden_removed:
+            warnings.append({
+                "code": "POOL_FORBIDDEN_FILTERED",
+                "message": (
+                    f"Combo-anchor guard removed {len(forbidden_removed)} "
+                    f"cards from the deterministic candidate pool: "
+                    f"{forbidden_removed[:10]}{'...' if len(forbidden_removed) > 10 else ''} "
+                    f"(pool size {pre_count} -> {len(by_name)})."
+                ),
+            })
 
     # Deterministic tie-break. When seed is provided, hash(name, seed) gives a
     # stable seed-dependent ordering for equal-score candidates without
@@ -1569,6 +1668,7 @@ def _run_intent_interpreter(
     must_include_cards: List[str],
     llm_metrics: Dict[str, Any],
     warnings: List[Dict[str, str]],
+    forbidden_prompt_block: str = "",
 ) -> Optional[Dict[str, Any]]:
     """Run LLM call #1 (intent interpreter). Returns the parsed structured
     output dict on success, or None on any failure (which is surfaced as
@@ -1577,8 +1677,13 @@ def _run_intent_interpreter(
 
     Tracks token / cost / latency in `llm_metrics["calls"]` so the
     response payload accumulates the cost across all four LLM phases.
+
+    Iter 3 Phase 2: `forbidden_prompt_block` is appended to the system
+    prompt so the LLM sees the combo-anchor guard list. The build_deck()
+    caller also filters the suggested_extensions output against the
+    forbidden_set after this returns — defense in depth.
     """
-    system = _INTENT_INTERPRETER_SYSTEM_PROMPT
+    system = _INTENT_INTERPRETER_SYSTEM_PROMPT + (forbidden_prompt_block or "")
     user = _build_intent_interpreter_user_prompt(
         commander=commander, bracket=bracket,
         theme_hints=theme_hints, must_include_cards=must_include_cards,
@@ -1922,6 +2027,9 @@ def _run_candidate_critic(
     intent_analysis: Optional[Dict[str, Any]],
     llm_metrics: Dict[str, Any],
     novel_combo_flags: List[Dict[str, Any]],
+    forbidden_set: Optional[Set[str]] = None,
+    forbidden_prompt_block: str = "",
+    guard_fire_events: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
     """Run the candidate critic. Returns (new_deck, warnings).
 
@@ -1972,6 +2080,7 @@ def _run_candidate_critic(
 
     # Make the call.
     system = _CANDIDATE_CRITIC_SYSTEM_PROMPT.format(n_swappable=len(swappable))
+    system += (forbidden_prompt_block or "")
     user = _build_candidate_critic_user_prompt(
         commander=commander, bracket=bracket, theme_hints=theme_hints,
         intent_analysis=intent_analysis,
@@ -2061,6 +2170,23 @@ def _run_candidate_critic(
         if not name:
             continue
         name_lower = name.lower()
+        # Iter 3 Phase 2: reject combo-anchor-forbidden cards.
+        if forbidden_set and name_lower in forbidden_set:
+            warnings.append({
+                "code": "CRITIC_REJECTED_FORBIDDEN",
+                "message": (
+                    f"Critic suggested {name!r} but it's on the combo-anchor "
+                    f"forbidden list (would complete a combo with a user "
+                    f"must-include); dropped."
+                ),
+            })
+            if guard_fire_events is not None:
+                guard_fire_events.append({
+                    "phase": "C2_1_candidate_critic",
+                    "field": "selected_cards",
+                    "card": name,
+                })
+            continue
         # Reject duplicates of locked-or-already-picked.
         if name_lower in deck_names_lower:
             warnings.append({
@@ -2292,6 +2418,9 @@ def _run_wild_combo_discovery(
     intent_analysis: Optional[Dict[str, Any]],
     llm_metrics: Dict[str, Any],
     novel_combo_flags: List[Dict[str, Any]],
+    forbidden_set: Optional[Set[str]] = None,
+    forbidden_prompt_block: str = "",
+    guard_fire_events: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
     """Run the wild-combo-discovery pass. Returns (new_deck, warnings).
     Applies ADD swaps that pass color/bracket/singleton validation; logs
@@ -2349,6 +2478,7 @@ def _run_wild_combo_discovery(
 
     # Call the LLM.
     system = _WILD_COMBO_SYSTEM_PROMPT.format(n_max=_WILD_COMBO_MAX_SUGGESTIONS)
+    system += (forbidden_prompt_block or "")
     user = _build_wild_combo_user_prompt(
         commander=commander, bracket=bracket, theme_hints=theme_hints,
         intent_analysis=intent_analysis, deck=deck, wide_pool=wide_candidates,
@@ -2411,6 +2541,30 @@ def _run_wild_combo_discovery(
             cards = sug.get("combo_cards")
             if not isinstance(cards, list) or len(cards) != 2:
                 continue
+            # Iter 3 Phase 2: a flag mentioning a forbidden card means the
+            # LLM is asserting a combo line involving a card that shouldn't
+            # be in the deck. Drop and log; don't surface that combo.
+            blocked = False
+            if forbidden_set:
+                for c in cards:
+                    if isinstance(c, str) and c.strip().lower() in forbidden_set:
+                        blocked = True
+                        if guard_fire_events is not None:
+                            guard_fire_events.append({
+                                "phase": "C2_2_wild_combo_discovery",
+                                "field": "flag_only.combo_cards",
+                                "card": c,
+                            })
+                        break
+            if blocked:
+                warnings.append({
+                    "code": "WILD_COMBO_FLAG_REJECTED_FORBIDDEN",
+                    "message": (
+                        f"Wild-combo flagged {cards!r} but one card is on the "
+                        f"combo-anchor forbidden list; flag dropped."
+                    ),
+                })
+                continue
             novel_combo_flags.append({
                 "cards": [str(cards[0]), str(cards[1])],
                 "outcome": outcome,
@@ -2429,6 +2583,24 @@ def _run_wild_combo_discovery(
             continue
         add_lower = add_name.lower()
         remove_lower = remove_name.lower()
+
+        # Iter 3 Phase 2: reject combo-anchor-forbidden adds.
+        if forbidden_set and add_lower in forbidden_set:
+            warnings.append({
+                "code": "WILD_COMBO_REJECTED_FORBIDDEN",
+                "message": (
+                    f"Wild-combo suggested adding {add_name!r} but it's on the "
+                    f"combo-anchor forbidden list (would complete a combo with "
+                    f"a user must-include); dropped."
+                ),
+            })
+            if guard_fire_events is not None:
+                guard_fire_events.append({
+                    "phase": "C2_2_wild_combo_discovery",
+                    "field": "add_swap.add_card",
+                    "card": add_name,
+                })
+            continue
 
         cand = pool_by_lower.get(add_lower)
         if not cand:
@@ -2785,6 +2957,9 @@ def _run_final_critic(
     must_include_cards: Optional[List[str]] = None,
     novel_combo_flags: Optional[List[Dict[str, Any]]] = None,
     archetype_brief: Optional[Dict[str, Any]] = None,
+    forbidden_set: Optional[Set[str]] = None,
+    forbidden_prompt_block: str = "",
+    guard_fire_events: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
     """Run the final critic. Returns (deck_with_rewritten_reasons, warnings).
     Mutates `last_findings` to add `summary_narrative` + `consider_adding`.
@@ -2807,7 +2982,7 @@ def _run_final_critic(
         cap=30,
     )
 
-    system = _FINAL_CRITIC_SYSTEM_PROMPT
+    system = _FINAL_CRITIC_SYSTEM_PROMPT + (forbidden_prompt_block or "")
     user = _build_final_critic_user_prompt(
         commander=commander, bracket=bracket,
         theme_hints=theme_hints, intent_analysis=intent_analysis,
@@ -2897,6 +3072,15 @@ def _run_final_critic(
             continue
         # Suppress entries that turn out to already be in the deck.
         if name.lower() in deck_names_lower:
+            continue
+        # Iter 3 Phase 2: reject combo-anchor-forbidden adds.
+        if forbidden_set and name.lower() in forbidden_set:
+            if guard_fire_events is not None:
+                guard_fire_events.append({
+                    "phase": "D2_final_critic",
+                    "field": "consider_adding",
+                    "card": name,
+                })
             continue
         consider_adding.append({"card": name, "why": why})
         if len(consider_adding) >= 3:
