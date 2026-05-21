@@ -258,3 +258,16 @@ automation pipeline + iter 4 baseline.
 - next phase: Phase 11 — functional diversity prompt-engineering.
 
 ---
+
+## Phase 11 — Functional diversity prompt-engineering — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- tests: pytest **1373 passed / 8 pre-existing fails** (Phase 10 baseline 1367 + 6 new functional-diversity tests).
+- key findings:
+  - **`_render_functional_diversity_block(targets)`** + **`_functional_diversity_block_from_profile(profile)`** helpers added to `agent_build_deck_v1.py`. The former renders per-Pillar-E-category target counts + the explicit "within category variety is GOOD; across category overstuffing is BAD" guidance. The latter blends from a B2 theme_profile via Phase 7's `theme_target_blender_v1` then renders.
+  - **C2.1 + C2.2 user prompts** both append the functional-diversity block when an `intent_analysis.theme_profile` is present. Backwards-compat: no block when profile is missing.
+  - **6 new unit tests** cover: explicit-targets rendering with labels (ramp pieces / card-advantage pieces / interaction / creatures / win conditions), empty-input no-block, archetype-specific extras (sac_outlets, etc.) surfaced, profile-wrapper blends then renders (storm → ramp=12 / interaction=6), C2.1 + C2.2 integration verifies block in built prompts.
+- next phase: Phase 12 — additional combo database integration.
+
+---

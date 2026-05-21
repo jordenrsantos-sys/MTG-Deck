@@ -2006,6 +2006,69 @@ def _infer_theme_profile_mode(
     return "bare_commander"
 
 
+def _functional_diversity_block_from_profile(
+    profile: Optional[Dict[str, Any]],
+) -> str:
+    """Iter 5 Phase 11 convenience: blend theme-aware Pillar E targets
+    from a B2 theme_profile + render the FUNCTIONAL DIVERSITY block.
+    Returns "" when profile is None or the blender isn't importable.
+    """
+    if not isinstance(profile, dict):
+        return ""
+    try:
+        from api.engine.layers.theme_target_blender_v1 import (
+            blend_targets_for_profile,
+        )
+    except ImportError:
+        return ""
+    targets = blend_targets_for_profile(profile)
+    return _render_functional_diversity_block(targets)
+
+
+def _render_functional_diversity_block(
+    targets: Optional[Dict[str, int]],
+) -> str:
+    """Iter 5 Phase 11: render a FUNCTIONAL DIVERSITY GUIDANCE block
+    for C2.1 / C2.2 prompts. The block tells the LLM:
+      - target counts per Pillar E category (ramp / draw / interaction)
+      - "within category variety is GOOD; across category overstuffing
+        is BAD"
+
+    `targets` is the output of `theme_target_blender_v1.blend_targets_for_profile`
+    (theme-aware) OR Pillar E's own recommendation. When None, no block
+    is added.
+    """
+    if not isinstance(targets, dict) or not targets:
+        return ""
+    relevant_slots = [
+        ("ramp", "ramp pieces"),
+        ("draw", "card-advantage pieces"),
+        ("interaction", "interaction (counters/removal/wipes)"),
+        ("creatures", "creatures"),
+        ("win_conditions", "win conditions"),
+    ]
+    lines = [
+        "",
+        "FUNCTIONAL DIVERSITY GUIDANCE (Pillar E targets):",
+    ]
+    for key, label in relevant_slots:
+        if key in targets:
+            lines.append(f"  - {label} target: {targets[key]}")
+    extras = [
+        (k, v) for k, v in targets.items()
+        if k not in {s[0] for s in relevant_slots} and k != "lands"
+    ]
+    for k, v in extras:
+        lines.append(f"  - {k.replace('_', ' ')} target: {v}")
+    lines.append(
+        "  WITHIN each category, variety is GOOD (multiple ramp pieces "
+        "with different cost/conditions = correct). ACROSS the target "
+        "counts, don't over-pack: more than target + 2 in any category "
+        "is a sign of redundant-wasteful, not redundant-valuable."
+    )
+    return "\n".join(lines) + "\n"
+
+
 def _render_theme_profile_block(profile: Optional[Dict[str, Any]]) -> str:
     """Iter 5 Phase 6: render a USER THEME PROFILE block for downstream
     LLM prompts. Tells each phase to honor user themes over corpus
@@ -2309,6 +2372,10 @@ def _build_candidate_critic_user_prompt(
         )
         # Iter 5 Phase 6: cascade B2's structured theme profile.
         intent_block += _render_theme_profile_block(intent_analysis.get("theme_profile"))
+        # Iter 5 Phase 11: functional diversity guidance from theme-aware targets.
+        intent_block += _functional_diversity_block_from_profile(
+            intent_analysis.get("theme_profile")
+        )
 
     return (
         f"Commander: {commander}\n"
@@ -3026,6 +3093,10 @@ def _build_wild_combo_user_prompt(
             intent_block = f"\nLikely win condition (from intent interpreter): {wc}\n"
         # Iter 5 Phase 6: cascade theme profile through C2.2.
         intent_block += _render_theme_profile_block(intent_analysis.get("theme_profile"))
+        # Iter 5 Phase 11: functional diversity guidance.
+        intent_block += _functional_diversity_block_from_profile(
+            intent_analysis.get("theme_profile")
+        )
 
     priority_block = ""
     if n_semantic_in_pool > 0:
