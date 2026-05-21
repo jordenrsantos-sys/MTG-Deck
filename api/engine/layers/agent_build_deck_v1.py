@@ -354,6 +354,93 @@ def compute_agent_build_deck_v1(
         )
         warnings.extend(final_critic_warnings)
 
+    # ---- Phase 10 (Pillar E v0.1): mana base reconciliation ----
+    # Compute Karsten-compliant mana-base recommendation from the deck's
+    # nonland cards + commander CI + bracket. Reconcile against the
+    # actual deck. Significant discrepancies (>2 lands or >2 sources of
+    # any color) trigger an LLM critique pass if the LLM layer is
+    # available. The optimizer is deterministic; the LLM only critiques
+    # discrepancies (e.g. "storm runs fewer lands — this deviation is
+    # justified" or "deck is 4 lands short — swap X for Forest").
+    mana_base_block: Dict[str, Any] = {
+        "active": False,
+        "recommendation": None,
+        "reconciliation": None,
+        "llm_critique": None,
+    }
+    try:
+        from api.engine.layers.mana_base_optimizer_v1 import (
+            compute_mana_base, reconcile_deck_lands,
+        )
+        # Resolve archetype hint from B2 if available; safe fallback.
+        archetype_hint = None
+        for c in llm_metrics.get("calls") or []:
+            if c.get("phase") == "C2_2_wild_combo_discovery":
+                archetype_hint = c.get("archetype")
+                break
+        # Extract nonland cards with their mana_cost + cmc from the deck.
+        # The build deck dicts don't carry mana_cost/cmc directly, so we
+        # join against the pool by name.
+        pool_by_name_lower = {
+            (c.get("name") or "").strip().lower(): c
+            for c in pool.get("candidates") or []
+        }
+        nonland_cards: List[Dict[str, Any]] = []
+        for c in deck:
+            name = c.get("card_name") or ""
+            # Skip lands by source/name heuristic.
+            if c.get("source") == "mana_base":
+                continue
+            if name in _BASIC_LAND_NAMES:
+                continue
+            if "[slot=land]" in (c.get("reason") or ""):
+                continue
+            pool_match = pool_by_name_lower.get(name.strip().lower())
+            if pool_match:
+                nonland_cards.append({
+                    "name": name,
+                    "mana_cost": pool_match.get("mana_cost") or "",
+                    "cmc": pool_match.get("cmc") or 0,
+                })
+        rec = compute_mana_base(
+            commander_color_identity=pool.get("color_identity") or [],
+            nonland_cards=nonland_cards,
+            bracket=bracket,
+            archetype_hint=archetype_hint,
+        )
+        reconciliation = reconcile_deck_lands(deck=deck, recommendation=rec)
+        mana_base_block["active"] = True
+        mana_base_block["recommendation"] = rec.to_dict()
+        mana_base_block["reconciliation"] = reconciliation
+        # LLM critique only when (a) discrepancy is significant and
+        # (b) the LLM layer is available.
+        if reconciliation["significant"] and llm_client.is_available():
+            critique = _run_mana_base_critique(
+                llm_client=llm_client,
+                commander=commander.strip(),
+                bracket=bracket,
+                archetype_hint=archetype_hint,
+                recommendation=rec,
+                reconciliation=reconciliation,
+                llm_metrics=llm_metrics,
+            )
+            mana_base_block["llm_critique"] = critique
+            if critique and not critique.get("justified", True):
+                warnings.append({
+                    "code": "MANA_BASE_DISCREPANCY_UNJUSTIFIED",
+                    "message": (
+                        f"Mana-base optimizer flagged {len(reconciliation['discrepancies'])} "
+                        f"discrepancies; LLM critique did not justify them. "
+                        f"First discrepancy: {reconciliation['discrepancies'][0]}"
+                    ),
+                })
+    except Exception as exc:
+        # Defensive — Pillar E should never block a build.
+        warnings.append({
+            "code": "MANA_BASE_OPTIMIZER_FAILED",
+            "message": f"{exc.__class__.__name__}: {exc}",
+        })
+
     # ---- Summary ----
     body = deck[1:]  # may have been swapped during Phase D
     user_picks_present = sum(1 for c in body if c.get("source") == "user_intent")
@@ -441,6 +528,11 @@ def compute_agent_build_deck_v1(
             "guard_fire_events": guard_fire_events,
             "guard_fire_count": len(guard_fire_events),
         },
+        # Phase 10 (Pillar E v0.1): mana base recommendation +
+        # reconciliation. `active=False` when the optimizer failed or
+        # the LLM layer was unavailable; the recommendation field is
+        # still populated in that case (the optimizer is deterministic).
+        "mana_base": mana_base_block,
     }
 
     return {
@@ -489,6 +581,12 @@ def _empty_summary(bracket: str, must_include_cards: List[str]) -> Dict[str, Any
             "sources": [],
             "guard_fire_events": [],
             "guard_fire_count": 0,
+        },
+        "mana_base": {
+            "active": False,
+            "recommendation": None,
+            "reconciliation": None,
+            "llm_critique": None,
         },
     }
 
@@ -3534,3 +3632,104 @@ def _run_final_critic(
     last_findings["consider_adding"] = consider_adding
 
     return deck, warnings
+
+
+# ============================================================
+# Phase 10 (Pillar E v0.1) — mana-base LLM critique pass.
+# ============================================================
+#
+# When the deterministic Karsten optimizer's recommendation differs
+# from the actual deck by >2 lands or >2 sources of any color, the
+# build calls this critique pass. The LLM either:
+#   1. justifies the deviation (e.g. "storm runs fewer lands because
+#      rituals replace lands"), in which case the deck stands; OR
+#   2. flags the deviation as unjustified and suggests swaps.
+#
+# The deterministic enforcer (caller in build_deck) inspects the
+# critique result and either records the rationale or surfaces a
+# warning. Iter 4+ may auto-apply LLM-proposed swaps; iter 3 just
+# surfaces the LLM's verdict.
+
+_MANA_BASE_CRITIQUE_INPUT_TOKEN_BUDGET = 4000
+_MANA_BASE_CRITIQUE_OUTPUT_TOKEN_BUDGET = 1000
+
+
+_MANA_BASE_CRITIQUE_SYSTEM_PROMPT = (
+    "You are reviewing a Commander deck's mana base against Karsten's "
+    "color-source formula. The optimizer has flagged discrepancies "
+    "(actual vs target). Your job: decide whether each discrepancy is "
+    "JUSTIFIED by the deck's archetype / strategy / bracket, or "
+    "UNJUSTIFIED (the deck genuinely needs more/fewer lands or "
+    "sources).\n\n"
+    "Justified examples:\n"
+    "  - Storm decks run -3 to -5 lands because rituals replace lands.\n"
+    "  - Landfall decks run +2 to +4 lands to fuel triggers.\n"
+    "  - Reanimator runs -2 lands because Buried Alive into Reanimate "
+    "    is faster than ramping.\n"
+    "  - A 0-tap-land cEDH deck on B5 deliberately avoids ETB-tapped "
+    "    lands even at the cost of color screw.\n\n"
+    "Output VALID JSON ONLY:\n"
+    "{\n"
+    '  "justified": true|false,\n'
+    '  "explanation": "one sentence",\n'
+    '  "suggested_swaps": [ {"out": "Card", "in": "Card", "reason": "..."} ]\n'
+    "}\n"
+    "If justified=true, suggested_swaps should be []. If "
+    "justified=false, list 0-3 swaps the deck should consider."
+)
+
+
+def _run_mana_base_critique(
+    *,
+    llm_client: Any,
+    commander: str,
+    bracket: str,
+    archetype_hint: Optional[str],
+    recommendation: Any,  # ManaBaseRecommendation
+    reconciliation: Dict[str, Any],
+    llm_metrics: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Run the LLM critique pass on a flagged mana-base discrepancy.
+    Returns the parsed critique dict, or None on failure. Always records
+    a metrics entry for the call (whether ok or not).
+    """
+    user = (
+        f"Commander: {commander}\n"
+        f"Bracket: {bracket}\n"
+        f"Archetype: {archetype_hint or '(unknown)'}\n"
+        f"\nOptimizer recommendation:\n"
+        f"  Target lands: {recommendation.target_land_count}\n"
+        f"  Color sources: {recommendation.color_source_targets}\n"
+        f"  Tap-land tolerance: {recommendation.tap_land_tolerance}\n"
+        f"  Rationale: {recommendation.rationale}\n"
+        f"\nActual deck mana base:\n"
+        f"  Lands: {reconciliation['actual_land_count']}\n"
+        f"  Color sources: {reconciliation['actual_color_sources']}\n"
+        f"\nDiscrepancies:\n"
+        + "\n".join(f"  - {d}" for d in reconciliation["discrepancies"])
+        + "\n\nIs each discrepancy justified? Output JSON per the system prompt."
+    )
+    result = llm_client.call_with_budget(
+        system=_MANA_BASE_CRITIQUE_SYSTEM_PROMPT,
+        user=user,
+        max_input_tokens=_MANA_BASE_CRITIQUE_INPUT_TOKEN_BUDGET,
+        max_output_tokens=_MANA_BASE_CRITIQUE_OUTPUT_TOKEN_BUDGET,
+    )
+    llm_metrics["calls"].append({
+        "phase": "E_mana_base_critique",
+        "ok": result.ok,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "cost_usd": result.cost_usd,
+        "latency_ms": result.latency_ms,
+        "error_code": result.error_code,
+        "retries": result.retries,
+    })
+    if not result.ok or not isinstance(result.parsed_json, dict):
+        return None
+    parsed = result.parsed_json
+    return {
+        "justified": bool(parsed.get("justified", True)),
+        "explanation": str(parsed.get("explanation") or "").strip(),
+        "suggested_swaps": _as_list_of_dicts(parsed.get("suggested_swaps")),
+    }

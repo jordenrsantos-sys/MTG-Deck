@@ -231,3 +231,24 @@ Authority: autonomous per `mega_task_v1_kickoff.md` until hard halt condition.
 - next phase: Phase 10 — Pillar E v0.1 mana base optimizer.
 
 ---
+
+## Phase 10 — Pillar E v0.1 mana base optimizer — COMPLETED
+
+- timestamp: 2026-05-21 01:30
+- commit: (this commit)
+- cost_to_date: ~$3.65 (no new LLM build runs in Phase 10 — unit tests only)
+- tests: 26 new in test_mana_base_optimizer_v1.py covering Karsten table lookup, pip parsing (single, double, triple, hybrid, X-cost), 5-color deck shape, bracket progression (B1 → B5), archetype adjustments (storm -4, landfall +2, others), reconciliation discrepancy detection. All 60 agent + Pillar E tests pass.
+- self-correction events:
+  - Two test fixups for my own arithmetic — Karsten's `WW@CMC2 = 23` is harder than `WW@CMC4 = 18`, so the MAX-over-cards correctly picks 23. Same for hybrid {R/G}{R/G} at CMC 2 = 23.
+- key findings:
+  - New module `mana_base_optimizer_v1.py` with the deterministic Karsten formula (7-CMC table × 3 pip-counts). Encodes Commander 100-card values (Karsten's 60-card values + ~5 per row for Commander).
+  - `compute_mana_base(commander_color_identity, nonland_cards, bracket, archetype_hint)` → ManaBaseRecommendation dataclass with target_land_count, color_source_targets, tap_land_tolerance, utility_land_budget, basic_nonbasic_ratio, rationale, requirements_summary.
+  - Bracket policy per-bracket: lands (B1=38 → B5=32), tap tolerance (B1=12 → B5=0), basic ratio (B1=0.50 → B5=0.12), utility budget (B1=2 → B5=8).
+  - Archetype deltas: storm -4 lands, reanimator -2, landfall +2, control +1, voltron -1, combo -1.
+  - `reconcile_deck_lands(deck, recommendation)` → counts actual lands + per-color sources in the deck, emits discrepancies when delta>2 lands or delta>2 sources of any color.
+  - Integration in `compute_agent_build_deck_v1`: after Phase D2, runs the optimizer and the reconciliation. If discrepancies are significant AND the LLM layer is available, fires `_run_mana_base_critique` — a new LLM call that either justifies the deviation (e.g. "storm runs fewer lands") or marks it unjustified with suggested swaps. The deterministic enforcer doesn't auto-apply swaps in iter 3 (that's an iter 4+ extension); it surfaces the LLM's verdict in `summary.mana_base`.
+  - Response shape: new `summary.mana_base` block with `active`, `recommendation`, `reconciliation`, `llm_critique`. Empty/null in `_empty_summary` for shape consistency.
+  - Edge case: nonland cards joined to the pool by name to get mana_cost/cmc. Cards not in the pool (basics, etc.) are filtered out before passing to compute_mana_base — they have no color pips anyway.
+- next phase: Phase 11 — Pillar C primitive ontology design.
+
+---
