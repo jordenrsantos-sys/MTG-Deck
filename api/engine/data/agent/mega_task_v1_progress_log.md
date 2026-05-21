@@ -290,3 +290,26 @@ Authority: autonomous per `mega_task_v1_kickoff.md` until hard halt condition.
 - next phase: Phase 13 — Track 5 new-set pipeline scaffolding.
 
 ---
+
+## Phase 13 — Track 5 new-set pipeline scaffolding — COMPLETED
+
+- timestamp: 2026-05-21 02:30
+- commit: (this commit)
+- cost_to_date: ~$3.65 (no LLM calls in Phase 13 — orchestrator is pure Python)
+- tests: 9 new in test_new_set_pipeline_v0.py.
+- self-correction events: none.
+- key findings:
+  - `tools/new_set_pipeline_v0.py` ships the orchestrator + stubs for each step.
+  - Five-step pipeline: `tag_with_primitives` → `score_for_themes` → `update_corpus_metadata` → `update_embedding_index` → `flag_potential_combo_pairs`.
+  - Iter 3 stubs:
+    - tag_with_primitives → empty list per card (iter 4 wires Pillar C extractor).
+    - score_for_themes → empty dict per card (iter 4 wires the theme classifier).
+    - update_embedding_index → 0 added (iter 4 wires Voyage AI).
+  - Iter 3 functional:
+    - update_corpus_metadata → writes Scryfall-shaped rows to the cards table via INSERT OR REPLACE (idempotent). Returns 0 when no target_snapshot_id (dry-run mode).
+    - flag_potential_combo_pairs → heuristic regex scan against 7 combo-relevant phrases in oracle_text.
+  - Runbook at `api/engine/data/scripts/new_set_pipeline_v0.md` documents invocation, input format, iter-4 wiring plan.
+  - Tests: orchestrator runs without errors on a 5-card fixture (vampire / sorcery-tutor / mana rock / sac-outlet enchantment / utility land), each step records a status string, combo flagging correctly identifies sac-outlet + mana-rock + lifelink-vampire (but not tutor — search-library isn't in the heuristic phrases list).
+- next phase: Phase 14 — Final regression + report [BLOCKING].
+
+---
