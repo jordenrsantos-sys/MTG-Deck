@@ -1,0 +1,115 @@
+{
+  "version": "combo_brackets_v1_external_sources.0",
+  "notes": "Additive combo registry. NEVER modifies combo_brackets_v1.json (Spellbook canonical). Sources: hand-curated seed list (v1.0); EDHRec / cEDH-decklist-database extractors planned for iter 6. Each entry has source attribution + bracket classification + a one-sentence outcome. Merge policy: Spellbook entry takes precedence on bracket conflicts.",
+  "sources_recognized": ["hand_curated", "edhrec", "cedhdb", "community"],
+  "discovered": [
+    {
+      "source": "hand_curated",
+      "card_names": ["Niv-Mizzet, Parun", "Curiosity"],
+      "color_identity": ["R", "U"],
+      "combo_size": 2,
+      "brackets_allowed": ["B4", "B5"],
+      "outcome": "Curiosity on Niv-Mizzet: each cantrip Niv-Mizzet pings draws a card, looping until each opponent dies.",
+      "category": "creature-combo"
+    },
+    {
+      "source": "hand_curated",
+      "card_names": ["Sanguine Bond", "Exquisite Blood"],
+      "color_identity": ["B"],
+      "combo_size": 2,
+      "brackets_allowed": ["B3", "B4", "B5"],
+      "outcome": "Sanguine Bond turns life gain into opponent life loss; Exquisite Blood turns opponent life loss into your life gain. Trigger either to win.",
+      "category": "permanent-combo"
+    },
+    {
+      "source": "hand_curated",
+      "card_names": ["Heliod, Sun-Crowned", "Walking Ballista"],
+      "color_identity": ["W"],
+      "combo_size": 2,
+      "brackets_allowed": ["B4", "B5"],
+      "outcome": "Heliod gives Ballista lifelink. Pay 1 to add a counter; activate to ping for 1; gain 1 life; Heliod adds another counter. Infinite damage.",
+      "category": "creature-combo"
+    },
+    {
+      "source": "hand_curated",
+      "card_names": ["Splinter Twin", "Deceiver Exarch"],
+      "color_identity": ["R", "U"],
+      "combo_size": 2,
+      "brackets_allowed": ["B4", "B5"],
+      "outcome": "Twin enchanted Exarch can be tapped to make a hasted copy of Exarch, which untaps the original. Infinite hasted creatures.",
+      "category": "creature-combo"
+    },
+    {
+      "source": "hand_curated",
+      "card_names": ["Animar, Soul of Elements", "Ancestral Statue"],
+      "color_identity": ["G", "R", "U"],
+      "combo_size": 2,
+      "brackets_allowed": ["B4", "B5"],
+      "outcome": "Animar with 3+ +1/+1 counters lets Ancestral Statue cast for free. Statue bounces itself; recast triggers Animar; loop produces infinite ETB.",
+      "category": "creature-combo"
+    },
+    {
+      "source": "hand_curated",
+      "card_names": ["Sword of the Meek", "Thopter Foundry"],
+      "color_identity": ["B", "U", "W"],
+      "combo_size": 2,
+      "brackets_allowed": ["B3", "B4", "B5"],
+      "outcome": "Foundry sacrifices Sword to make a thopter token + 1 life; Sword returns when a 1/1 enters. Infinite thopters + infinite life.",
+      "category": "artifact-combo"
+    },
+    {
+      "source": "hand_curated",
+      "card_names": ["Worldgorger Dragon", "Animate Dead"],
+      "color_identity": ["B"],
+      "combo_size": 2,
+      "brackets_allowed": ["B4", "B5"],
+      "outcome": "Animate Worldgorger; its ETB exiles all permanents including the aura; aura returns; Worldgorger returns with ETB; loop. With Dramatic Reversal effect: infinite ETB.",
+      "category": "graveyard-combo"
+    },
+    {
+      "source": "hand_curated",
+      "card_names": ["Mikaeus, the Unhallowed", "Walking Ballista"],
+      "color_identity": ["B"],
+      "combo_size": 2,
+      "brackets_allowed": ["B4", "B5"],
+      "outcome": "Mikaeus gives non-human creatures undying. Ballista enters with X+1/+1 counters (via undying), removes counter to ping, dies, returns with another counter via undying. Infinite damage.",
+      "category": "creature-combo"
+    },
+    {
+      "source": "hand_curated",
+      "card_names": ["Karmic Guide", "Reveillark"],
+      "color_identity": ["W"],
+      "combo_size": 2,
+      "brackets_allowed": ["B3", "B4", "B5"],
+      "outcome": "With a sac outlet: sac Karmic Guide; Reveillark dies; on Reveillark death, return Karmic + a 2-or-less creature; loop with persist/undying creatures for infinite death triggers.",
+      "category": "creature-combo"
+    },
+    {
+      "source": "hand_curated",
+      "card_names": ["Time Sieve", "Thopter Assembly"],
+      "color_identity": ["B", "U"],
+      "combo_size": 2,
+      "brackets_allowed": ["B4", "B5"],
+      "outcome": "Sac 5 artifacts to Time Sieve → extra turn. Thopter Assembly: at upkeep with 5 thopters out, bounce Assembly to make 5 thopters. Infinite turns.",
+      "category": "artifact-combo"
+    },
+    {
+      "source": "hand_curated",
+      "card_names": ["Pestilent Souleater", "Devoted Druid"],
+      "color_identity": ["B", "G"],
+      "combo_size": 2,
+      "brackets_allowed": ["B4", "B5"],
+      "outcome": "Devoted Druid taps for G, untaps with -1/-1 counter. Souleater (or any infect creature) gets infinite +1/+1 via Souleater's ability. Infinite mana + infect.",
+      "category": "creature-combo"
+    },
+    {
+      "source": "hand_curated",
+      "card_names": ["Felidar Guardian", "Saheeli Rai"],
+      "color_identity": ["R", "U", "W"],
+      "combo_size": 2,
+      "brackets_allowed": ["B4", "B5"],
+      "outcome": "Saheeli -2 to copy Felidar Guardian; Guardian ETB blinks Saheeli; new Saheeli copies Guardian again. Infinite hasted creatures.",
+      "category": "creature-combo"
+    }
+  ]
+}

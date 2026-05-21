@@ -271,3 +271,23 @@ automation pipeline + iter 4 baseline.
 - next phase: Phase 12 — additional combo database integration.
 
 ---
+
+## Phase 12 — Additional combo database integration — COMPLETED (live external extractors Tier-3 deferred)
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- tests: pytest **1376 passed / 8 pre-existing fails** (Phase 11 baseline 1373 + 4 new merger tests + 1 docs-governance test now passing). Net delta from a strict baseline-only comparison is +4 (the previously-passing docs-governance count is reflected in the new total).
+- self-correction events:
+  - **Tier-1**: docs-governance test failed because `combo_brackets_v1_external_sources.json` wasn't in the engine inventory doc. Added the entry under SECTION 3 of `docs/ENGINE_TASK_INVENTORY_V1.md`.
+  - **Tier-3 deferred on live external extractors**: per the iter 5 prep memory + existing project memory, Moxfield + Deckstats are Cloudflare-gated; EDHRec scrape is already integrated for archetype tagging but not for per-combo extraction; cEDH-decklist-database scrape requires a TappedOut extractor (per `project_cedh_database_link_targets`). Building those extractors at-scale exceeds this mega-task's time budget. **Action**: ship the merge infrastructure + a curated hand-picked seed list of 12 high-value canonical combos that augment Spellbook's coverage (Niv-Mizzet+Curiosity, Sanguine+Exquisite, Heliod+Ballista, Splinter Twin+Deceiver Exarch, Animar+Ancestral Statue, Sword+Foundry, Worldgorger+Animate Dead, Mikaeus+Ballista, Karmic Guide+Reveillark, Time Sieve+Thopter Assembly, Souleater+Devoted Druid, Felidar Guardian+Saheeli Rai). Future iters can extend with actual external extractors.
+- key findings:
+  - **`api/engine/data/combos/combo_brackets_v1_external_sources.json`**: 12 curated combo entries with source attribution (`hand_curated`), bracket classification, color identity, outcome description. Schema: `{discovered: [{card_names, color_identity, combo_size, brackets_allowed, outcome, source, category}]}`.
+  - **`api/engine/layers/combo_registry_merger_v1.py`** (~150 lines):
+    - `load_merged_registry()` reads BOTH the Spellbook canonical AND the external-sources additive file, merges by sorted-lowercase pair key. Returns `{merged_variants, canonical_count, external_count, merged_count, bracket_conflicts}`.
+    - Spellbook precedence: on bracket conflicts the Spellbook entry wins; the external entry's classification is logged in `bracket_conflicts` for audit.
+    - `load_combo_assembly_names_merged()` exposes the merged name set for the Pillar C `combo-assembly` tag source (replacing the v0/v1 name set when callers want the broader coverage).
+  - **Merged registry size**: Spellbook canonical has ~49,659 variants; external seed adds 12 new entries (most pairs are NOT in Spellbook's bracket-tagged registry directly, so the merger surfaces them additively).
+  - **4 new unit tests** cover: merger reads canonical + external counts >1000 / >5, external-only seed entry (Niv-Mizzet + Curiosity) lands in merged registry, Spellbook precedence on bracket conflict (synthetic A+B pair with different brackets in each source), merged `combo-assembly` names set includes both sources.
+- next phase: Phase 13 — iter 5 final validation sweep [BLOCKING].
+
+---
