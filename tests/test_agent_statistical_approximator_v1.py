@@ -52,10 +52,14 @@ class WinPathMatchingTests(unittest.TestCase):
         self.assertTrue(kiki.armed)
 
     def test_aristocrats_engine_via_primitives(self) -> None:
+        # Iter 4 Phase 6: win-paths now reference Pillar C ontology
+        # tags (kebab-case) rather than the iter-1 primitives_v0
+        # taxonomy. The aristocrats_drain win-path requires
+        # `sac-outlet` + `death-trigger` + (persist-creature OR recursion-graveyard).
         deck = [
-            _card("Viscera Seer", ["SACRIFICE_OUTLET"]),
-            _card("Blood Artist", ["DEATH_TRIGGER"]),
-            _card("Reassembling Skeleton", ["RECURSION_GRAVEYARD"]),
+            _card("Viscera Seer", ["sac-outlet"]),
+            _card("Blood Artist", ["death-trigger"]),
+            _card("Reassembling Skeleton", ["recursion-graveyard"]),
         ]
         matches = _match_win_paths(deck)
         m = next(p for p in matches if p.win_path_id == "aristocrats_drain")
@@ -74,6 +78,63 @@ class WinPathMatchingTests(unittest.TestCase):
     def test_no_armed_paths_on_empty_deck(self) -> None:
         matches = _match_win_paths([])
         self.assertEqual(sum(1 for m in matches if m.armed), 0)
+
+    # ----- Iter 4 Phase 6: tests for new primitive-grounded win-paths -----
+
+    def test_mass_token_anthem_armed(self) -> None:
+        deck = [
+            _card("Bitterblossom", ["token-producer"]),
+            _card("Anointed Procession", ["doubler-effect", "token-producer"]),
+            _card("Glorious Anthem", ["anthem-effect"]),
+        ]
+        matches = _match_win_paths(deck)
+        m = next(p for p in matches if p.win_path_id == "mass_token_anthem")
+        self.assertTrue(m.armed)
+
+    def test_mass_mill_lockout_armed(self) -> None:
+        deck = [
+            _card("Bruvac the Grandiloquent", ["mill-all"]),
+            _card("Animate Dead", ["recursion-graveyard"]),
+        ]
+        matches = _match_win_paths(deck)
+        m = next(p for p in matches if p.win_path_id == "mass_mill_lockout")
+        self.assertTrue(m.armed)
+
+    def test_stax_grind_armed(self) -> None:
+        deck = [
+            _card("Winter Orb", ["stax-effect"]),
+            _card("Rhystic Study", ["draw-engine"]),
+        ]
+        matches = _match_win_paths(deck)
+        m = next(p for p in matches if p.win_path_id == "stax_grind")
+        self.assertTrue(m.armed)
+
+    def test_etb_flicker_chain_armed(self) -> None:
+        deck = [
+            _card("Mulldrifter", ["etb-trigger"]),
+            _card("Ephemerate", ["flicker-effect"]),
+        ]
+        matches = _match_win_paths(deck)
+        m = next(p for p in matches if p.win_path_id == "etb_flicker_chain")
+        self.assertTrue(m.armed)
+
+    def test_tutor_combo_assembly_armed(self) -> None:
+        deck = [
+            _card("Demonic Tutor", ["tutor-broad"]),
+            _card("Thassa's Oracle", ["combo-assembly"]),
+        ]
+        matches = _match_win_paths(deck)
+        m = next(p for p in matches if p.win_path_id == "tutor_combo_assembly")
+        self.assertTrue(m.armed)
+
+    def test_extra_turn_chain_armed(self) -> None:
+        deck = [
+            _card("Time Walk", ["extra-turn"]),
+            _card("Aggravated Assault", ["extra-combat"]),
+        ]
+        matches = _match_win_paths(deck)
+        m = next(p for p in matches if p.win_path_id == "extra_turn_chain")
+        self.assertTrue(m.armed)
 
 
 class MatchupWinrateTests(unittest.TestCase):

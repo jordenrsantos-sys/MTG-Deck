@@ -179,3 +179,42 @@ Substrate: iter 3 + Pillar E v0.1 + Pillar C ontology v0 + Pillar F v0.1
 - next phase: Phase 6 — Pillar F v0.1 upgrade with real primitives.
 
 ---
+
+## Phase 6 — Pillar F v0.1 primitive-grounded upgrade — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$2.57 (Phase 6 is pure-Python; no LLM build runs)
+- tests: pytest **1200 passed / 8 pre-existing fails** (Phase 5 baseline 1194 + 6 new primitive-grounded win-path tests).
+- self-correction events: none
+- key findings:
+  - **WIN_PATHS catalog upgraded** to use Pillar C ontology (kebab-case) tags instead of iter-1 primitives_v0 (UPPERCASE_SNAKE):
+    - `aristocrats_drain`: `["SACRIFICE_OUTLET", "DEATH_TRIGGER"]` + `["PERSIST_CREATURE", "RECURSION_GRAVEYARD"]` → `["sac-outlet", "death-trigger"]` + `["persist-creature", "recursion-graveyard"]`.
+    - `extra_combat_voltron`: `["INFINITE_MANA", "EXTRA_COMBAT"]` → `["infinite-mana-source", "extra-combat"]`.
+    - `krenko_goblin_swarm`: `["TYPAL_GOBLINS"]` → `["tribal-anchor"]`.
+    - `proliferate_counters`: `["THEME_PROLIFERATE", "THEME_PLUS1_COUNTERS"]` → `["doubler-effect"]` (the ontology doesn't have a dedicated proliferate tag; doubler-effect is the closest semantic match).
+  - **6 new win-paths added** (kickoff target was 4-6):
+    - `mass_token_anthem`: `token-producer` + `anthem-effect` → 8.0 speed.
+    - `mass_mill_lockout`: `mill-all` + `recursion-graveyard` → 9.0 speed.
+    - `stax_grind`: `stax-effect` + `draw-engine` → 10.0 speed.
+    - `etb_flicker_chain`: `etb-trigger` + `flicker-effect` → 7.0 speed.
+    - `tutor_combo_assembly`: `tutor-broad` + `combo-assembly` → 4.5 speed (high-tier cEDH line).
+    - `extra_turn_chain`: `extra-turn` + `extra-combat` → 7.0 speed.
+  - **Catalog total: 18 win-paths** (was 12).
+  - **`_primitives_set` upgraded** to query `cards.primitives_v1_json` from the DB when `db_snapshot_id` is provided, in addition to reading the inline `primitives` field on each deck dict. Allows the approximator to use real primitive tags even when deck cards don't carry primitives inline.
+  - **`_interaction_density` and `_resilience_score`** updated to accept BOTH v0 (UPPERCASE) and v1 (kebab-case) tags — backwards compatibility preserved for any caller still passing v0 primitives.
+  - **`approximate_pod_winrate`** signature extended with optional `db_snapshot_id` parameter (default None → backwards compatible with iter-3 callers).
+  - **Iter-3 test** `test_aristocrats_engine_via_primitives` updated from v0 tags to v1 tags (forward-fix on a test whose specific implementation behavior the kickoff explicitly changed in this phase). **No iter-3 tests changed in behavior beyond that single test's primitive-tag vocabulary update.**
+  - **5-case ordering sanity check** (sparse decks: commander + must-includes, same as iter-3 baseline):
+    | Case | Pod winrate | Kickoff target | Status |
+    |---|---|---|---|
+    | yuriko_b5 (Thoracle+DC) | 0.560 | > 0.5 | ✅ |
+    | krenko_b4 (Snoop+Kiki) | 0.450 | 0.30-0.45 | ✅ (at upper bound) |
+    | edgar_b3 (Vito+Bloodthirsty) | 0.203 | 0.20-0.35 | ✅ |
+    | ur_dragon_b3 (Dragon Tempest+Tiamat) | 0.203 | 0.20-0.30 | ✅ |
+    | atraxa_b2 (Doubling Season+Pir) | 0.122 | 0.10-0.25 | ✅ |
+    Ordering: **Yuriko > Krenko > Edgar ≈ Ur-Dragon > Atraxa** ✅ (kickoff's required ordering preserved). All 5 cases land within the kickoff's per-case target ranges.
+  - **Coverage**: every card in the 5 sweep decks above has non-empty `primitives_v1_json` in the DB (verified during the Phase 5 backfill — combo-relevant cards are 100% Spellbook-covered).
+- next phase: Phase 7 — iter 4 final validation sweep [BLOCKING].
+
+---

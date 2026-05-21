@@ -1,5 +1,5 @@
 """
-agent_statistical_approximator_v1 — Pillar F v0.1.
+agent_statistical_approximator_v1 — Pillar F v0.1 (iter 4 upgrade).
 
 Statistical approximator for 4-player Commander deck-vs-pod win rate.
 No game simulation; decomposes decks into win-paths + interaction
@@ -10,18 +10,21 @@ Architecturally separate from Phase 5b's MPA substrate (per the
 kickoff: "Pillar F v0.1 in this mega-task is a SEPARATE statistical
 layer that does NOT depend on or interact with the MPA").
 
+Iter 4 Phase 6 upgrade: win-paths now reference the Pillar C
+ontology's primitive tags (`primitives_v1`, lowercase-kebab) instead
+of the iter-1 primitives_v0 taxonomy. Deck card primitives are
+looked up from `cards.primitives_v1_json` (populated by the Phase 5
+backfill) and falls back to the `primitives` field on the deck dict
+when present. 4 new win-paths added (mass-token-anthem, mass-mill-
+lockout, stax-grind, etb-flicker, tutor-combo-assembly).
+
 Public API:
-  - approximate_pod_winrate(deck, opponents) → PodWinrateReport
+  - approximate_pod_winrate(deck, opponents, db_snapshot_id) → PodWinrateReport
   - PodWinrateReport: dataclass with pod_winrate, per_opponent_winrate,
     decomposition
 
-The decomposition is built from primitive-tag pattern matching
-against the deck. Iter 3 uses iter-1's `primitives_v0` taxonomy
-(no Pillar C extractor yet); iter 4+ will read the richer
-`primitive_tags_v1` once the extractor is built.
-
-Per the kickoff, this is a v0.1 SCAFFOLD. Stub areas (heuristic
-placeholders, not full implementations):
+Per the kickoff, this remains a v0.1 SCAFFOLD. Stub areas
+(heuristic placeholders, not full implementations):
   - 4+-card combo chain matching (only 2-3-card patterns covered)
   - Mana stochasticity (average opening hand assumed)
   - Mid-game adaptation (linear play assumed)
@@ -113,8 +116,8 @@ WIN_PATHS: List[Dict[str, Any]] = [
         "description": "Loop sac + recur + drain trigger for incremental life loss across the table.",
         "required_card_names": [],
         "any_card_names": [],
-        "primitives": ["SACRIFICE_OUTLET", "DEATH_TRIGGER"],
-        "any_primitives": ["PERSIST_CREATURE", "RECURSION_GRAVEYARD"],
+        "primitives": ["sac-outlet", "death-trigger"],
+        "any_primitives": ["persist-creature", "recursion-graveyard"],
         "speed_score": 8.0,
         "category": "engine",
     },
@@ -151,7 +154,7 @@ WIN_PATHS: List[Dict[str, Any]] = [
         "any_card_names": [
             "aggravated assault", "hellkite charger", "world at war",
         ],
-        "primitives": ["INFINITE_MANA", "EXTRA_COMBAT"],
+        "primitives": ["infinite-mana-source", "extra-combat"],
         "speed_score": 6.0,
         "category": "creature-combo",
     },
@@ -174,7 +177,7 @@ WIN_PATHS: List[Dict[str, Any]] = [
         "description": "Tap Krenko to double goblins; with haste/untap effects, exponential token production.",
         "required_card_names": ["krenko, mob boss"],
         "any_card_names": [],
-        "primitives": ["TYPAL_GOBLINS"],
+        "primitives": ["tribal-anchor"],
         "speed_score": 7.0,
         "category": "tribal-combat",
     },
@@ -184,9 +187,70 @@ WIN_PATHS: List[Dict[str, Any]] = [
         "description": "Build +1/+1 counters via Atraxa/Pir; proliferate to lethal combat damage.",
         "required_card_names": [],
         "any_card_names": ["atraxa, praetors' voice", "pir, imaginative rascal"],
-        "primitives": ["THEME_PROLIFERATE", "THEME_PLUS1_COUNTERS"],
+        "primitives": ["doubler-effect"],
         "speed_score": 9.0,
         "category": "tribal-combat",
+    },
+    # ----- Iter 4 Phase 6: new primitive-grounded win-paths -----
+    {
+        "id": "mass_token_anthem",
+        "name": "Mass tokens + anthem swarm",
+        "description": "Wide token production scaled by anthem effects pushes combat to lethal.",
+        "required_card_names": [],
+        "any_card_names": [],
+        "primitives": ["token-producer", "anthem-effect"],
+        "speed_score": 8.0,
+        "category": "tribal-combat",
+    },
+    {
+        "id": "mass_mill_lockout",
+        "name": "Mass mill + recursion lockout",
+        "description": "Mill opponents repeatedly while recursion keeps the engine alive.",
+        "required_card_names": [],
+        "any_card_names": [],
+        "primitives": ["mill-all", "recursion-graveyard"],
+        "speed_score": 9.0,
+        "category": "engine",
+    },
+    {
+        "id": "stax_grind",
+        "name": "Stax + value-engine grind",
+        "description": "Lock opponents under stax pieces while a draw engine pulls ahead.",
+        "required_card_names": [],
+        "any_card_names": [],
+        "primitives": ["stax-effect", "draw-engine"],
+        "speed_score": 10.0,
+        "category": "engine",
+    },
+    {
+        "id": "etb_flicker_chain",
+        "name": "ETB-trigger + flicker engine",
+        "description": "Ephemerate/Eldrazi Displacer + value ETBs compound into inevitability.",
+        "required_card_names": [],
+        "any_card_names": [],
+        "primitives": ["etb-trigger", "flicker-effect"],
+        "speed_score": 7.0,
+        "category": "engine",
+    },
+    {
+        "id": "tutor_combo_assembly",
+        "name": "Tutor-broad + combo-assembly piece",
+        "description": "Demonic Tutor / Vampiric Tutor + named combo-assembly card (Thoracle, Kiki, Heliod) → guaranteed combo turn.",
+        "required_card_names": [],
+        "any_card_names": [],
+        "primitives": ["tutor-broad", "combo-assembly"],
+        "speed_score": 4.5,
+        "category": "tutor-combo",
+    },
+    {
+        "id": "extra_turn_chain",
+        "name": "Extra-turn chain + extra-combat",
+        "description": "Extra turns stacked with extra combats deliver one-shot voltron kills.",
+        "required_card_names": [],
+        "any_card_names": [],
+        "primitives": ["extra-turn", "extra-combat"],
+        "speed_score": 7.0,
+        "category": "creature-combo",
     },
 ]
 
@@ -235,13 +299,57 @@ def _name_lower_set(deck: Sequence[Dict[str, Any]]) -> set:
     return {(c.get("card_name") or c.get("name") or "").strip().lower() for c in deck}
 
 
-def _primitives_set(deck: Sequence[Dict[str, Any]]) -> set:
-    """Union of all primitives across the deck's cards."""
+def _primitives_set(
+    deck: Sequence[Dict[str, Any]],
+    db_snapshot_id: Optional[str] = None,
+) -> set:
+    """Union of all primitives across the deck's cards.
+
+    Iter 4 Phase 6: primary source is `cards.primitives_v1_json` (loaded
+    per-snapshot when `db_snapshot_id` is given). Falls back to deck
+    cards' inline `primitives` field for tests + cases where the DB
+    isn't available.
+    """
     out: set = set()
     for c in deck:
         for p in (c.get("primitives") or []):
             if isinstance(p, str):
                 out.add(p)
+
+    if db_snapshot_id:
+        names = [
+            (c.get("card_name") or c.get("name") or "").strip()
+            for c in deck
+        ]
+        names = [n for n in names if n]
+        try:
+            import sqlite3
+            from engine.db import resolve_db_path
+            con = sqlite3.connect(str(resolve_db_path()))
+            try:
+                # Chunk to avoid massive IN-lists.
+                for i in range(0, len(names), 500):
+                    chunk = names[i:i + 500]
+                    qmarks = ",".join("?" * len(chunk))
+                    rows = con.execute(
+                        f"SELECT primitives_v1_json FROM cards "
+                        f"WHERE snapshot_id=? AND name IN ({qmarks})",
+                        tuple([db_snapshot_id] + chunk),
+                    ).fetchall()
+                    for (raw,) in rows:
+                        if not raw:
+                            continue
+                        try:
+                            for p in json.loads(raw):
+                                if isinstance(p, str):
+                                    out.add(p)
+                        except json.JSONDecodeError:
+                            pass
+            finally:
+                con.close()
+        except Exception:
+            pass
+
     return out
 
 
@@ -293,7 +401,15 @@ def _match_win_paths(
 
 
 def _interaction_density(deck_primitives: set) -> int:
+    """Count interaction primitives — accepts both v0 (UPPERCASE) and
+    v1 (kebab-case) tags for backwards compatibility."""
     interaction_prims = {
+        # v1 (Pillar C ontology)
+        "counterspell-hard", "counterspell-soft", "free-counter",
+        "removal-creature", "removal-artifact", "removal-enchantment",
+        "removal-mass-creatures", "removal-mass-board",
+        "bounce",
+        # v0 (legacy primitives_v0)
         "COUNTERSPELL_GENERIC", "COUNTERSPELL_CREATURE",
         "TARGETED_REMOVAL_CREATURE", "TARGETED_REMOVAL_ARTIFACT",
         "TARGETED_REMOVAL_ENCHANTMENT", "TARGETED_REMOVAL_PLANESWALKER",
@@ -306,6 +422,10 @@ def _resilience_score(deck_primitives: set, deck_names_lower: set) -> int:
     """Count of protection / recursion primitives + a few known
     high-value protection cards by name."""
     resilience_prims = {
+        # v1
+        "recursion-graveyard", "fizzle-prevention", "creature-protection",
+        "combo-protection",
+        # v0
         "RECURSION_GRAVEYARD",
     }
     score = len(deck_primitives & resilience_prims)
@@ -410,10 +530,16 @@ def approximate_pod_winrate(
     *,
     deck: Sequence[Dict[str, Any]],
     opponents: Optional[Sequence[Dict[str, Any]]] = None,
+    db_snapshot_id: Optional[str] = None,
 ) -> PodWinrateReport:
     """Compute pod winrate for `deck` against `opponents` (or 3
     bracket-distributed opponents from opposition_decks_v1.json if
-    None is passed)."""
+    None is passed).
+
+    Iter 4 Phase 6: when `db_snapshot_id` is provided, the function
+    loads primitives_v1 tags for each deck card from the cards table
+    so win-path detection uses the Pillar C ontology vocabulary.
+    """
     if opponents is None:
         all_opps = load_opposition_decks()
         # Default: 3 opponents — first B2, first B3, first B4 — to
@@ -428,7 +554,7 @@ def approximate_pod_winrate(
             opponents = all_opps[:3]
 
     deck_names_lower = _name_lower_set(deck)
-    deck_primitives = _primitives_set(deck)
+    deck_primitives = _primitives_set(deck, db_snapshot_id=db_snapshot_id)
 
     matches = _match_win_paths(deck, deck_names_lower, deck_primitives)
     armed = [m for m in matches if m.armed]
