@@ -116,3 +116,26 @@ automation pipeline + iter 4 baseline.
 - next phase: Phase 4 — MTG comprehensive rules + Scryfall card rulings embedded into Voyage.
 
 ---
+
+## Phase 4 — Voyage rules + rulings embedding (NON-BLOCKING) — COMPLETED (at-scale embedding Tier-3 deferred)
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$0.90 (no new spend in Phase 4 — at-scale embedding deferred)
+- tests: pytest **1319 passed / 8 pre-existing fails** (Phase 3 baseline 1312 + 7 new rules-embedding tests).
+- self-correction events:
+  - **Tier-3 deferral on at-scale embedding run**: the kickoff anticipated the MTG Comprehensive Rules text was already integrated in the repo's substrate ("75,835 entries per RULES_HIERARCHY") but only `primitive_rules_v0` (18 internal rows) is present — the WotC Comprehensive Rules text file isn't shipped. Plus, embedding ~150k Scryfall rulings would take ~50 min wall (rate-limited Scryfall fetch at 100ms/req × 30k cards) and ~$1 in Voyage cost. **Decision**: ship the embedding pipeline module + schema migration + query function, defer the at-scale run to a future operator-triggered job. The path is ready.
+  - **Tier-1**: my `split_rules_into_sections` initially dropped rule sections whose body was empty (title-only entries like "601.2a When a player casts a spell..."). Fixed: titles alone are meaningful content; the splitter now emits sections with text="<rule_id> <title>" even when there's no separate body.
+- key findings:
+  - **`api/engine/layers/voyage_rules_embedding_v1.py`** (~280 lines):
+    - `ensure_schema(db_path)` adds `source_type` (default `'card'` for existing rows), `rule_id`, `ruling_card`, `raw_text` columns + `idx_card_embeddings_source_type` index to the existing `card_embeddings_v1.sqlite`. Idempotent. Existing 30,395 card rows untouched.
+    - `split_rules_into_sections(rules_text)` parses WotC Comprehensive Rules text into per-section chunks. Header regex matches `^(\d{3}(?:\.\d{1,3}[a-z]?)?)\s*\.?\s*(.+?)$` so it catches `100.1`, `100.1a`, `601.2a` formats.
+    - `embed_comprehensive_rules(rules_text, db_path, model="voyage-3", batch_size=128)` splits + batches + embeds rules sections with source_type="rule". Skips already-embedded rule_ids.
+    - `embed_scryfall_rulings(rulings_data, db_path, ...)` embeds Scryfall rulings (one ordinal-indexed PK per ruling). Skips already-embedded rulings.
+    - `query_rules(query_text, k=5, source_type=None, db_path)` embeds the query with `input_type="query"`, computes cosine similarity over the rules+rulings vectors (filtered by source_type if given), returns top-k.
+  - **Cost estimate (one-time, deferred)**: rules ~$0.27 + rulings ~$0.81 = ~$1.08 total. Within budget; deferred only for time/data-source reasons.
+  - **Schema migration applied** to live `card_embeddings_v1.sqlite`: added 4 columns, preserved all 30,395 existing card rows (source_type='card' default). The card-embedding index continues to work unchanged.
+  - **7 new unit tests** cover: schema migration (added when missing + idempotent on re-run), rule-section splitting (3 sections including title-only), embed_comprehensive_rules happy path (mocked Voyage; verifies DB writes), embed_scryfall_rulings (composite PKs per card+ordinal), query_rules (empty when DB missing, top-k by cosine).
+- next phase: Phase 5 — B2 structured weighted theme profile.
+
+---
