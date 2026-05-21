@@ -123,3 +123,26 @@ Substrate: iter 3 + Pillar E v0.1 + Pillar C ontology v0 + Pillar F v0.1
 - next phase: Phase 4 — Pillar E v0.2 card advantage optimizer.
 
 ---
+
+## Phase 4 — Pillar E v0.2 card advantage optimizer — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$2.57 (Phase 3 baseline $2.27 + Edgar smoke $0.30)
+- tests: pytest **1187 passed / 8 pre-existing fails** (Phase 3 baseline 1163 + 24 new card-advantage tests). 1 iter-3 test (`test_intent_analysis_appears_in_summary`) updated to accept the new `E_card_advantage_critique` LLM call (range expanded 1-2 → 1-3); same forward-fix pattern as iter-3 Phase 14 with the mana-base critique.
+- self-correction events:
+  - **Tier-1**: First Edgar smoke showed `current_counts={'cantrip': 0, 'engine': 0, 'burst': 0}` because the optimizer only looked up oracle_text in the narrow C2.1 candidate pool. Most deck cards (basics, C2.2 picks, semantic-neighbor picks) aren't in that pool, so they were left unclassified. Patched `compute_card_advantage` to fall back to a direct cards-table query (`_load_deck_card_metadata_from_db`) for any deck card missing from the narrow pool. Re-verified offline against a 14-card Edgar-shaped deck: counts now come back as `{cantrip: 1, engine: 2, burst: 1}` — plausible for the input. The LLM critique fires correctly on the discrepancy.
+- key findings:
+  - **New module `card_advantage_optimizer_v1.py`** (235 lines): `compute_card_advantage(deck, bracket, archetype_hint, pool) -> CardAdvantageRecommendation`. Bracket base targets B1=8 → B5=10. Archetype deltas: storm -3, voltron -1, control +2, blink/group_hug +1, others 0. Mix profile per archetype (cantrip / engine / burst weights). Reconciliation surfaces discrepancies above 2-unit threshold in either direction.
+  - **Keyword classifier**: three regex pattern families. Burst takes precedence over engine over cantrip (a card matching multiple categories is bucketed under the strongest). Permanent vs non-permanent check distinguishes ETB-cantrip creatures from one-shot sorcery cantrips. High-CMC cantrip-on-ETB patterns get bucketed as engines (Mulldrifter on a 6-CMC body is an engine, not a cantrip).
+  - **Integration in `compute_agent_build_deck_v1`** mirrors the mana-base v0.1 pattern: after the mana-base block, run `compute_card_advantage`, surface in `summary.card_advantage`, fire `_run_card_advantage_critique` only on `significant=True` and `llm_client.is_available()`. `summary.card_advantage` is always present (with `active: False` shape stability in the empty path).
+  - **Edgar smoke (live, full LLM build)**:
+    - Wall: 126.5s (further drop vs Phase 3's 144s — the C2.1+C2.2 parallel gain plus the card-advantage critique runs in ~8s).
+    - Cost: $0.2928 (Edgar iter 3 baseline was $0.28; +$0.012 = +4% from the new critique pass).
+    - 8 LLM calls (was 7) — added `E_card_advantage_critique` at 8.1s / $0.0063.
+    - Critique fired (justified=False, 3 suggested swaps including Necropotence, Vampiric Rites, Wheel of Fortune). Iter 4 does NOT auto-apply LLM swap suggestions (kickoff: "Same precedence as mana base: optimizer output is the baseline; LLM critique can override with rationale"). Iter 5+ may add auto-swap.
+  - **24 new unit tests** cover keyword classifier (7 tests across cantrip/engine/burst/non-draw/high-CMC-ETB), per-bracket targets (5 tests), mix-profile apportionment (4 tests), reconciliation thresholding (2 tests), reference deck shapes (5 mono-W control / BG aristocrats / UR storm / WUBRG goodstuff / mono-R aggro voltron), and version-string surface.
+  - **Known limitation**: the keyword regex misses "draw two cards" (Sign in Blood / Read the Bones / Skullclamp) because the burst pattern starts at `three`. Counts are slightly under-detected for that class of card. Documenting as known gap; iter 5 can extend the pattern OR replace keyword detection with primitive-tag-driven detection once the Pillar C extractor (Phase 5) lands.
+- next phase: Phase 5 — Pillar C primitive extractor [BLOCKING].
+
+---

@@ -419,6 +419,58 @@ def compute_agent_build_deck_v1(
             "message": f"{exc.__class__.__name__}: {exc}",
         })
 
+    # ---- Iter 4 Phase 4: Pillar E v0.2 card-advantage optimizer ----
+    # Compute target draw count + mix vs the deck's actual draw shape.
+    # Same hybrid pattern as mana base: deterministic recommendation,
+    # LLM critique on significant discrepancy.
+    card_advantage_block: Dict[str, Any] = {
+        "active": False,
+        "recommendation": None,
+        "llm_critique": None,
+    }
+    try:
+        from api.engine.layers.card_advantage_optimizer_v1 import (
+            compute_card_advantage,
+        )
+        archetype_hint = None
+        for c in llm_metrics.get("calls") or []:
+            if c.get("phase") == "C2_2_wild_combo_discovery":
+                archetype_hint = c.get("archetype")
+                break
+        ca_rec = compute_card_advantage(
+            deck=deck,
+            bracket=bracket,
+            archetype_hint=archetype_hint,
+            pool=pool,
+        )
+        card_advantage_block["active"] = True
+        card_advantage_block["recommendation"] = ca_rec.to_dict()
+        if ca_rec.significant and llm_client.is_available():
+            critique = _run_card_advantage_critique(
+                llm_client=llm_client,
+                commander=commander.strip(),
+                bracket=bracket,
+                archetype_hint=archetype_hint,
+                recommendation=ca_rec,
+                llm_metrics=llm_metrics,
+            )
+            card_advantage_block["llm_critique"] = critique
+            if critique and not critique.get("justified", True):
+                warnings.append({
+                    "code": "CARD_ADVANTAGE_DISCREPANCY_UNJUSTIFIED",
+                    "message": (
+                        f"Card-advantage optimizer flagged "
+                        f"{len(ca_rec.discrepancies)} discrepancies; "
+                        f"LLM critique did not justify them. "
+                        f"First discrepancy: {ca_rec.discrepancies[0]}"
+                    ),
+                })
+    except Exception as exc:
+        warnings.append({
+            "code": "CARD_ADVANTAGE_OPTIMIZER_FAILED",
+            "message": f"{exc.__class__.__name__}: {exc}",
+        })
+
     # ---- Summary ----
     body = deck[1:]  # may have been swapped during Phase D
     user_picks_present = sum(1 for c in body if c.get("source") == "user_intent")
@@ -511,6 +563,9 @@ def compute_agent_build_deck_v1(
         # the LLM layer was unavailable; the recommendation field is
         # still populated in that case (the optimizer is deterministic).
         "mana_base": mana_base_block,
+        # Iter 4 Phase 4 (Pillar E v0.2): card-advantage recommendation
+        # + LLM critique (when discrepancy is significant).
+        "card_advantage": card_advantage_block,
     }
 
     return {
@@ -564,6 +619,11 @@ def _empty_summary(bracket: str, must_include_cards: List[str]) -> Dict[str, Any
             "active": False,
             "recommendation": None,
             "reconciliation": None,
+            "llm_critique": None,
+        },
+        "card_advantage": {
+            "active": False,
+            "recommendation": None,
             "llm_critique": None,
         },
     }
@@ -3883,6 +3943,97 @@ def _run_mana_base_critique(
     )
     llm_metrics["calls"].append({
         "phase": "E_mana_base_critique",
+        "ok": result.ok,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "cost_usd": result.cost_usd,
+        "latency_ms": result.latency_ms,
+        "error_code": result.error_code,
+        "retries": result.retries,
+    })
+    if not result.ok or not isinstance(result.parsed_json, dict):
+        return None
+    parsed = result.parsed_json
+    return {
+        "justified": bool(parsed.get("justified", True)),
+        "explanation": str(parsed.get("explanation") or "").strip(),
+        "suggested_swaps": _as_list_of_dicts(parsed.get("suggested_swaps")),
+    }
+
+
+# ============================================================
+# Iter 4 Phase 4 (Pillar E v0.2) — card-advantage LLM critique pass.
+# ============================================================
+
+_CARD_ADVANTAGE_CRITIQUE_INPUT_TOKEN_BUDGET = 3000
+_CARD_ADVANTAGE_CRITIQUE_OUTPUT_TOKEN_BUDGET = 800
+
+
+_CARD_ADVANTAGE_CRITIQUE_SYSTEM_PROMPT = (
+    "You are reviewing a Commander deck's card-advantage shape against "
+    "Pillar E v0.2's deterministic recommendation. The optimizer "
+    "categorizes draw pieces as 'cantrip' (cheap one-shot draw), "
+    "'engine' (recurring per-turn or per-trigger draw on permanents), "
+    "and 'burst' (3+ cards per spell — wheels, large refills). The "
+    "optimizer has flagged a deviation between target and actual.\n\n"
+    "Your job: decide whether the deviation is JUSTIFIED by the deck's "
+    "archetype / strategy / bracket.\n\n"
+    "Justified examples:\n"
+    "  - Storm decks substitute rituals/tutors for engine draw.\n"
+    "  - Reanimator skips draw because graveyard-fill is its filter.\n"
+    "  - Aggro decks accept low draw because tempo replaces value.\n"
+    "  - Group hug decks pump opponents' draw and run more bursts.\n\n"
+    "Output VALID JSON ONLY:\n"
+    "{\n"
+    '  "justified": true|false,\n'
+    '  "explanation": "one sentence",\n'
+    '  "suggested_swaps": [ {"out": "Card", "in": "Card", "reason": "..."} ]\n'
+    "}\n"
+    "If justified=true, suggested_swaps should be []. If "
+    "justified=false, list 0-3 swaps the deck should consider."
+)
+
+
+def _run_card_advantage_critique(
+    *,
+    llm_client: Any,
+    commander: str,
+    bracket: str,
+    archetype_hint: Optional[str],
+    recommendation: Any,  # CardAdvantageRecommendation
+    llm_metrics: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Run the LLM critique pass on a flagged card-advantage discrepancy.
+
+    Returns the parsed critique dict, or None on failure. Always records
+    a metrics entry for the call.
+    """
+    user = (
+        f"Commander: {commander}\n"
+        f"Bracket: {bracket}\n"
+        f"Archetype: {archetype_hint or '(unknown)'}\n"
+        f"\nOptimizer recommendation:\n"
+        f"  Target total: {recommendation.target_count} "
+        f"({recommendation.mix_targets['cantrip']} cantrip / "
+        f"{recommendation.mix_targets['engine']} engine / "
+        f"{recommendation.mix_targets['burst']} burst)\n"
+        f"\nActual deck shape:\n"
+        f"  Total: {sum(recommendation.current_counts.values())} "
+        f"({recommendation.current_counts['cantrip']} cantrip / "
+        f"{recommendation.current_counts['engine']} engine / "
+        f"{recommendation.current_counts['burst']} burst)\n"
+        f"\nDiscrepancies:\n"
+        + "\n".join(f"  - {d}" for d in recommendation.discrepancies)
+        + "\n\nIs each discrepancy justified? Output JSON per the system prompt."
+    )
+    result = llm_client.call_with_budget(
+        system=_CARD_ADVANTAGE_CRITIQUE_SYSTEM_PROMPT,
+        user=user,
+        max_input_tokens=_CARD_ADVANTAGE_CRITIQUE_INPUT_TOKEN_BUDGET,
+        max_output_tokens=_CARD_ADVANTAGE_CRITIQUE_OUTPUT_TOKEN_BUDGET,
+    )
+    llm_metrics["calls"].append({
+        "phase": "E_card_advantage_critique",
         "ok": result.ok,
         "input_tokens": result.input_tokens,
         "output_tokens": result.output_tokens,
