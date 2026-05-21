@@ -284,3 +284,28 @@ Substrate: iter 3 + Pillar E v0.1 + Pillar C ontology v0 + Pillar F v0.1
 - next phase: Phase 8 — final regression + report + memory update.
 
 ---
+
+## Phase 8 — Final regression + report + memory update — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$4.07 (Phase 7 baseline $4.07; Phase 8 is pure verification + reports — no new LLM build runs; reusing the existing iter-4 sweep per user direction)
+- tests:
+  - pytest **1200 passed / 8 pre-existing fails** (Phase 0 baseline 1145 + 55 new across phases 1-6). Pre-existing failures unchanged.
+  - vitest **711 passed / 2 pre-existing fails** (matches Phase 0 baseline exactly).
+- self-correction events: none
+- key findings:
+  - **Full pytest + vitest regression**: clean. No new failures introduced anywhere in the mega-task v2 work.
+  - **Voyage embedding index integrity**: 30,395 rows; `embeddings_meta` shows snapshot=20260217_190902_tagpass_20260222, model=voyage-3, card_count=30395; query smoke (Sol Ring) returns Sisay's Ring + Ur-Golem's Eye + Thran Dynamo — semantically appropriate fast-mana artifacts.
+  - **Pillar C primitive coverage report (corpus-level)**: 36,709 cards / 22,169 tagged = 60.4%. Commander-legal subset: 30,395 / 20,102 = 66.1%. Sweep-deck cards-with-abilities: 83.8% (from Phase 7 sweep). All 64 ontology tags appeared at least once.
+  - **Pillar F approximator smoke (sparse decks, db_snapshot_id passed)**: Yuriko 0.56 > Krenko 0.45 > Edgar 0.20 ~ Ur-Dragon 0.20 > Atraxa 0.12 — ordering preserved across all 5 cases (sparse mode = commander + must-includes only).
+  - **Pillar E v0.2 card-advantage smoke**: optimizer fires on all 5 sparse-deck cases as expected (3 cards is well below the 9-12 target → significant=True universally; the full 100-card decks in Phase 7 saw 4-8 detected pieces).
+  - **Outer-chain parallelization confirmation**: Phase 7 sweep recorded per-call latencies; mean parallel window 51.5s vs serial baseline 73.1s — 22s/case savings, matching the Phase 3 design prediction across all 5 cases.
+  - **Final report written** at `repo/api/engine/data/agent/mega_task_v2_final_report.md` with phase-by-phase status, iter-4 final metrics, per-pillar ship state, Voyage index status, outer-chain breakdown, resource consumption, and the 7 kickoff hand-off questions answered.
+  - **Memory updated**:
+    - New `project_mega_task_v2_shipped_2026-05-21.md` at the canonical memory directory.
+    - `MEMORY.md` index entry appended after the v1 entry.
+- mega-task complete. Final commit chain: 9 atomic commits on top of mega-task v1's 2f177ee7a (commits: cde0f915d, fdcead78f, 41f6d502b, 323f0a75c, 325a64171, 45aed33e2, 85649fdd0, 04021a12c, ef87c7027, (Phase 8 commit)).
+
+---
+
