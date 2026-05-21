@@ -170,6 +170,47 @@ Ran the SSE endpoint end-to-end with real Anthropic + Voyage calls (no mocks). S
 - **pytest**: 1396 passed (1386 prior + 10 new). 8 pre-existing failures unchanged.
 - **vitest**: 747 passed (722 prior + 25 new). 2 pre-existing failures unchanged.
 
-### Phase 3 commit pending
+### Phase 3 commit
+
+`d61bd8465` — "Phase 3 (mega-task v5): build progress streaming via SSE + UI progress display".
+
+---
+
+## Phase 4 — Elapsed timer + cancel button + 240s timeout
+
+**Started**: 2026-05-21 (immediately after Phase 3 commit)
+
+### Implementation
+
+All UI-side (no backend changes needed — the streaming hook from Phase 3 already exposes `cancel()`).
+
+**`AIBuildView.tsx`**:
+- New module constants: `BUILD_TIMEOUT_SECONDS = 240` + `BUILD_TYPICAL_LOW_S = 110` + `BUILD_TYPICAL_HIGH_S = 130` (iter 5 5-case sweep observed wallclock 110-130s).
+- New `wallSeconds` state + `useEffect` that starts a `setInterval` (250ms tick) when `building` flips true. The interval increments `wallSeconds` from a `Date.now()` baseline and on each tick checks `elapsed > BUILD_TIMEOUT_SECONDS` — if exceeded, calls `stream.cancel()` and sets the kickoff-mandated explicit error: "Build exceeded expected duration. Check engine logs in launch_dev.cmd terminal."
+- The wall-clock stopwatch is independent of the server-emitted `elapsed_s` (which only updates at phase boundaries — can sit static for 30+s during a slow LLM call). The wallclock ticks every 250ms so the user sees continuous progress.
+- The disabled "Building…" button is now replaced with an actionable Cancel button (data-testid="cancel-build-button") via a ternary on `building`. Cancel calls `stream.cancel()` + `stream.reset()` + clears `response` + sets `errorMessage = "Build cancelled."`
+- New "Build stopwatch" span (data-testid="build-stopwatch", aria-live="polite") renders next to the Cancel button with format "Building… 47s (typical 110-130s)" per kickoff spec.
+- Apply-to-Workspace button now stays hidden while building (avoids confusing "Apply" CTA on a pre-build deck) — condition is `response?.status === "OK" && !building`.
+
+### Tests
+
+`ui_harness/src/views/__tests__/AIBuildViewPhase4TimerCancel.test.ts` — 11 tests:
+- Constants present (240s ceiling, 110-130s typical range)
+- Stopwatch element has the documented testid + aria-live
+- Display format matches the kickoff string
+- setInterval driven by Date.now() (the right primitive — re-entrant safe under React 18 strict mode)
+- clearInterval on cleanup
+- Timeout check uses `BUILD_TIMEOUT_SECONDS` (not a magic number)
+- Exact error wording matches kickoff
+- Cancel button replaces the disabled Build button via ternary on `building`
+- `_cancelBuild` calls cancel + reset + clears response + sets "Build cancelled"
+- Apply-to-Workspace hidden while building
+
+### Regression baselines (after Phase 4)
+
+- **pytest**: 1396 passed (no new backend tests; vitest carries Phase 4).
+- **vitest**: 758 passed (747 prior + 11 new). 2 pre-existing failures unchanged.
+
+### Phase 4 commit pending
 
 ---

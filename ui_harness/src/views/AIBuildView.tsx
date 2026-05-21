@@ -36,6 +36,13 @@ const BRACKET_LABELS: Record<(typeof BRACKETS)[number], string> = {
 
 const ACTIVE_DECK_STORAGE_KEY = "mtg-engine.active-deck";
 
+// Mega-task v5 Phase 4: client-side stopwatch + 240s timeout.
+// Iter 5 5-case sweep observed wallclock 110-130s; we use this for the
+// "typical" expectation anchor + the 240s safety ceiling.
+const BUILD_TIMEOUT_SECONDS = 240;
+const BUILD_TYPICAL_LOW_S = 110;
+const BUILD_TYPICAL_HIGH_S = 130;
+
 type DeckCard = { card_name: string; reason: string; source: string };
 
 type EnvelopeMetrics = {
@@ -212,6 +219,37 @@ export default function AIBuildView(props: AIBuildViewProps) {
   const stream = useBuildStreaming({ apiBaseUrl: API_BASE_URL });
   const building = stream.isStreaming;
 
+  // Mega-task v5 Phase 4: client-side stopwatch + 240s timeout. The
+  // server-emitted elapsed_s updates only at phase boundaries (so it can sit
+  // at the same value for 30+ seconds during a slow LLM call); the wallclock
+  // stopwatch ticks every second so the user sees continuous progress.
+  // Driven entirely off mount/unmount of the build (resets on each new build).
+  const [wallSeconds, setWallSeconds] = useState(0);
+  useEffect(() => {
+    if (!building) {
+      setWallSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const intervalId = window.setInterval(() => {
+      const elapsed = (Date.now() - startedAt) / 1000;
+      setWallSeconds(elapsed);
+      if (elapsed > BUILD_TIMEOUT_SECONDS) {
+        // Force cancel + surface explicit error per kickoff spec.
+        stream.cancel();
+        setErrorMessage(
+          "Build exceeded expected duration. Check engine logs in launch_dev.cmd terminal."
+        );
+      }
+    }, 250);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+    // We deliberately depend only on `building` so the timer resets on each
+    // new build but not on every event tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [building]);
+
   // Push the final response (when stream completes) into the local response
   // state so the existing deck-render JSX picks it up unchanged.
   useEffect(() => {
@@ -287,6 +325,16 @@ export default function AIBuildView(props: AIBuildViewProps) {
       theme_hints: themeHints,
       must_include_cards: mustIncludes,
     });
+  }
+
+  // Mega-task v5 Phase 4: user-initiated abort. The hook's cancel() aborts
+  // the underlying fetch; we also clear any partial response so the UI
+  // returns to the pre-build state.
+  function _cancelBuild() {
+    stream.cancel();
+    stream.reset();
+    setResponse(null);
+    setErrorMessage("Build cancelled.");
   }
 
   function _applyToWorkspace() {
@@ -508,11 +556,31 @@ export default function AIBuildView(props: AIBuildViewProps) {
                 </div>
               </details>
 
-              <div className="flex items-center gap-token-2 pt-token-2">
-                <Button variant="primary" onClick={_build} disabled={building} aria-label="Build deck">
-                  {building ? "Building…" : "Build deck"}
-                </Button>
-                {response?.status === "OK" ? (
+              <div className="flex items-center gap-token-2 pt-token-2 flex-wrap">
+                {building ? (
+                  <Button
+                    variant="secondary"
+                    onClick={_cancelBuild}
+                    aria-label="Cancel build"
+                    data-testid="cancel-build-button"
+                  >
+                    Cancel
+                  </Button>
+                ) : (
+                  <Button variant="primary" onClick={_build} aria-label="Build deck">
+                    Build deck
+                  </Button>
+                )}
+                {building ? (
+                  <span
+                    className="text-sm text-text-muted"
+                    data-testid="build-stopwatch"
+                    aria-live="polite"
+                  >
+                    Building… {wallSeconds.toFixed(0)}s (typical {BUILD_TYPICAL_LOW_S}-{BUILD_TYPICAL_HIGH_S}s)
+                  </span>
+                ) : null}
+                {response?.status === "OK" && !building ? (
                   <Button variant="secondary" onClick={_applyToWorkspace} aria-label="Apply to workspace">
                     Apply to Workspace
                   </Button>
