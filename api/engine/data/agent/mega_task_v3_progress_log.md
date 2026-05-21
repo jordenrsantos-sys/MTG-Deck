@@ -178,3 +178,23 @@ approximator + outer-chain parallel + Pillar E v0.2 card-advantage.
 - next phase: Phase 7 — Obsidian integration.
 
 ---
+
+## Phase 7 — Obsidian integration (NEW_SETS folder + report writing) — COMPLETED (live MCP path Tier-3 skipped)
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: $0.02 (no new LLM/API spend)
+- tests: pytest **1270 passed / 8 pre-existing fails** (Phase 6 baseline 1259 + 11 new obsidian-writer tests).
+- self-correction events:
+  - **Tier-3 partial-skip on live MCP publish**: at the start of Phase 7 the obsidian MCP returned `[WinError 10061] No connection could be made` against `127.0.0.1:27124`, meaning the Obsidian Local REST API plugin isn't currently serving. **Action taken**: the Python module is shipped + tested with both paths (MCP dispatcher + filesystem fallback); Phase 10's end-to-end smoke will use the filesystem fallback for the live write. The user can later start the Obsidian REST API and re-run Phase 10 to validate the MCP path live.
+- key findings:
+  - **`api/engine/integrations/obsidian_new_set_writer_v1.py`** (~230 lines):
+    - **Planning layer (pure Python)**: `compose_set_report_payload(envelope) -> PublicationPlan` produces deterministic primary_filepath / primary_content (with frontmatter: `tags: [new-set, automation]`, set_code, set_name, released_at, processed_at, card_count, writer_version) / index_filepath / index_append_line / home_filepath / home_section_heading / home_append_line.
+    - **MCP dispatcher** (`McpDispatch` class + `publish_via_mcp(envelope, mcp)`): wraps the agent's obsidian-MCP tool calls. Each MCP method (`get_file_contents`, `append_content`, `patch_content`) is an injectable callable so tests run with mocks and the live agent context wires real MCP invocations. Home.md patch failure falls back to "append-with-header" (creates the section if the heading didn't exist).
+    - **Filesystem fallback** (`publish_via_filesystem(envelope, vault_root)`): writes the same files directly to disk under `vault_root`. Idempotent: re-runs detect existing wikilinks in the index + home and skip the append. Creates the `## Recent set releases` section in Home.md if missing.
+  - **Frontmatter fields**: `tags: [new-set, automation]`, `set_code`, `set_name`, `released_at`, `processed_at`, `card_count`, `writer_version`. Slug strips non-alphanumeric characters (e.g. "Spider-Man's Big Adventure" → "spider-man-s-big-adventure").
+  - **Filepath format**: `NEW_SETS/<YYYY-MM-DD>_<set_code>_<set_slug>.md` per kickoff spec.
+  - **11 new unit tests** cover: filepath composition + frontmatter + slug + index/home line shape; MCP dispatch (primary + index + home) ordering; missing-dispatch graceful skip; home patch failure → append-with-header fallback; filesystem write to all three files; filesystem idempotency on re-publish; section creation in existing Home.md.
+- next phase: Phase 8 — desktop notification (Tier-3 skippable).
+
+---
