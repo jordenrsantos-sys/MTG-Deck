@@ -2313,8 +2313,13 @@ def _run_candidate_critic(
 # size or oracle-text length, this can come back down.
 _WILD_COMBO_INPUT_TOKEN_BUDGET = 35000
 _WILD_COMBO_OUTPUT_TOKEN_BUDGET = 3500
-_WILD_COMBO_POOL_SIZE = 350  # smaller than the wide-pool max so token
-                              # budget fits at the call_with_budget guard.
+# Iter 3 Phase 4: reduce pool size from 350 → 240 to buy margin in the
+# 35k C2.2 input token ceiling and hit the kickoff smoke target ≤28k.
+# Atraxa with pool=275 produced 30.4k input tokens; pool=240 should
+# land near 26-27k. Oracle text per card grew from 220 → 300 chars cap
+# (with sentence-boundary cutting), so the per-card token count rose
+# slightly but the pool count reduction more than compensates.
+_WILD_COMBO_POOL_SIZE = 240
 _WILD_COMBO_MAX_SUGGESTIONS = 5
 
 

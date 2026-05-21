@@ -166,11 +166,24 @@ def compute_agent_wide_candidate_pool_v1(
         score = float(theme_overlap) * 10.0
 
         oracle_text = (row["oracle_text"] or "").strip()
-        # Truncate oracle text to keep token budget reasonable. Most
-        # mechanics fit in the first ~200 chars; longer rules (saga,
-        # MDFC) get cut off — that's an iteration-3 problem.
-        if oracle_text and len(oracle_text) > 220:
-            oracle_text = oracle_text[:217] + "..."
+        # Iter 3 Phase 4: trim oracle text to 300 chars, preferring a
+        # sentence boundary cut. Most mechanics fit in ~200 chars; the
+        # extra headroom (vs the 220 iter-2 cap) catches the second
+        # sentence of two-paragraph effects (e.g. ETB + activated). The
+        # pool-size reduction below compensates for the per-card growth.
+        if oracle_text and len(oracle_text) > 300:
+            # Prefer cutting on a sentence boundary near the 300-char
+            # mark. Search for the last sentence-ending punctuation
+            # within chars 200-300 and cut there.
+            window = oracle_text[:300]
+            cut_at = max(
+                window.rfind(". "), window.rfind("! "), window.rfind("? "),
+                window.rfind(".\n"), window.rfind(";"),
+            )
+            if cut_at >= 200:
+                oracle_text = oracle_text[:cut_at + 1] + " ..."
+            else:
+                oracle_text = oracle_text[:297] + "..."
 
         cand = {
             "name": name,

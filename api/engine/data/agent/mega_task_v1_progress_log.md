@@ -96,3 +96,20 @@ Authority: autonomous per `mega_task_v1_kickoff.md` until hard halt condition.
 - next phase: Phase 4 — C2.2 oracle-text trim + pool-size tuning.
 
 ---
+
+## Phase 4 — C2.2 oracle-text trim + pool-size tuning — COMPLETED
+
+- timestamp: 2026-05-20 22:35
+- commit: (this commit)
+- cost_to_date: ~$2.25 (Phase 3 ~$1.91 + Phase 4 ~$0.34 in one Atraxa smoke)
+- tests: agent test cluster still 177 pass.
+- self-correction events:
+  - **Tier-1**: First Phase 4 smoke (pool=275) hit C2.2 input 30.4k tokens, above the kickoff's smoke target ≤28k. Lowered pool size from 275 → 240 to land in the 26-27k range. No re-smoke (deterministic change; Phase 9 sweep will validate).
+- key findings:
+  - Oracle text cap raised 220 → 300 chars with sentence-boundary cutting (search `. `, `! `, `? `, `;` in the 200-300 window; cut there if found, else hard-truncate at 297). Slightly more per-card information for the LLM while keeping the pool readable.
+  - Pool size reduced 350 → 240 (kickoff target was 250-300; 240 buys extra margin against the input budget).
+  - Atraxa smoke at pool=275: C2.2 input 30436 tokens (vs 37447 in Phase 3 = 19% drop), cost $0.3414 (vs Phase 3 $0.3557 = 4% drop), wall 136.4s (vs Phase 3 154.6s = 12% improvement), creativity_delta 41 (unchanged), novel_combo 7 (unchanged from Phase 3).
+  - At pool=240 (post-retune) C2.2 input expected ~26-27k tokens. Per-build LLM cost expected to drop another ~$0.01.
+- next phase: Phase 5 — released_at column + recent-set boost.
+
+---
