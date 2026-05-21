@@ -1,0 +1,90 @@
+{
+  "version": "theme_target_count_matrix_v1.0",
+  "notes": "Per-theme target counts for Pillar E optimizers. Pillar E blends across these per the B2 theme_profile weights (primary 60% + secondary 30% + tertiary 10% default).",
+  "themes": {
+    "default": {
+      "lands": 36, "ramp": 10, "draw": 10, "interaction": 10,
+      "creatures": 28, "win_conditions": 4
+    },
+    "storm_combo": {
+      "lands": 32, "ramp": 12, "draw": 12, "interaction": 6,
+      "creatures": 18, "win_conditions": 3
+    },
+    "storm": {
+      "lands": 32, "ramp": 12, "draw": 12, "interaction": 6,
+      "creatures": 18, "win_conditions": 3
+    },
+    "combo": {
+      "lands": 33, "ramp": 11, "draw": 11, "interaction": 8,
+      "creatures": 22, "win_conditions": 4
+    },
+    "tribal": {
+      "lands": 37, "ramp": 10, "draw": 9, "interaction": 9,
+      "creatures": 34, "win_conditions": 3
+    },
+    "dragon_tribal": {
+      "lands": 38, "ramp": 12, "draw": 9, "interaction": 8,
+      "creatures": 30, "win_conditions": 3
+    },
+    "voltron": {
+      "lands": 36, "ramp": 10, "draw": 8, "interaction": 8,
+      "creatures": 18, "win_conditions": 1,
+      "equipment_auras": 12
+    },
+    "control": {
+      "lands": 38, "ramp": 9, "draw": 12, "interaction": 14,
+      "creatures": 18, "win_conditions": 3
+    },
+    "stax": {
+      "lands": 36, "ramp": 10, "draw": 10, "interaction": 14,
+      "creatures": 16, "win_conditions": 2,
+      "stax_pieces": 12
+    },
+    "aristocrats": {
+      "lands": 36, "ramp": 10, "draw": 10, "interaction": 9,
+      "creatures": 30, "win_conditions": 3,
+      "sac_outlets": 6, "death_payoffs": 6
+    },
+    "landfall": {
+      "lands": 40, "ramp": 12, "draw": 9, "interaction": 8,
+      "creatures": 24, "win_conditions": 3
+    },
+    "counters_matter": {
+      "lands": 36, "ramp": 10, "draw": 10, "interaction": 9,
+      "creatures": 28, "win_conditions": 3,
+      "counter_payoffs": 8
+    },
+    "graveyard_recursion": {
+      "lands": 35, "ramp": 10, "draw": 10, "interaction": 9,
+      "creatures": 28, "win_conditions": 3,
+      "recursion_pieces": 8
+    },
+    "reanimator": {
+      "lands": 34, "ramp": 10, "draw": 10, "interaction": 9,
+      "creatures": 26, "win_conditions": 4,
+      "reanimation_pieces": 8
+    },
+    "blink": {
+      "lands": 36, "ramp": 11, "draw": 10, "interaction": 9,
+      "creatures": 26, "win_conditions": 3,
+      "flicker_effects": 6
+    },
+    "tokens": {
+      "lands": 36, "ramp": 11, "draw": 9, "interaction": 9,
+      "creatures": 25, "win_conditions": 3,
+      "token_doublers": 4, "anthems": 4
+    },
+    "group_hug": {
+      "lands": 38, "ramp": 11, "draw": 13, "interaction": 8,
+      "creatures": 20, "win_conditions": 3
+    },
+    "value_engine": {
+      "lands": 36, "ramp": 11, "draw": 12, "interaction": 9,
+      "creatures": 26, "win_conditions": 3
+    },
+    "ninja_tempo": {
+      "lands": 33, "ramp": 9, "draw": 12, "interaction": 9,
+      "creatures": 24, "win_conditions": 4
+    }
+  }
+}

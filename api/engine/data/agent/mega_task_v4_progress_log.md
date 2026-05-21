@@ -177,3 +177,31 @@ automation pipeline + iter 4 baseline.
 - next phase: Phase 7 — theme-aware Pillar E target counts.
 
 ---
+
+## Phase 7 — Theme-aware Pillar E target counts — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$0.90
+- tests: pytest **1345 passed / 8 pre-existing fails** (Phase 6 baseline 1337 + 8 new blender tests).
+- self-correction events: none
+- key findings:
+  - **`api/engine/data/structural/theme_target_count_matrix_v1.json`**: per-theme target counts for 18 themes (default + storm + storm_combo + combo + tribal + dragon_tribal + voltron + control + stax + aristocrats + landfall + counters_matter + graveyard_recursion + reanimator + blink + tokens + group_hug + value_engine + ninja_tempo). Each row covers `lands / ramp / draw / interaction / creatures / win_conditions` + archetype-specific extras (equipment_auras, sac_outlets, etc).
+  - Reference values per kickoff spec:
+    - storm: 32 lands / 12 ramp / 12 draw / 6 interaction
+    - tribal: 37 lands / 10 ramp / 9 draw / 9 interaction
+    - control: 38 lands / 9 ramp / 12 draw / 14 interaction (+ matches kickoff "12-15 interaction" range)
+    - landfall: 40 lands / 12 ramp / 9 draw / 8 interaction
+  - **`api/engine/layers/theme_target_blender_v1.py`** (~90 lines):
+    - `load_target_matrix(path=None)` parses the JSON, ensures `default` row is always present (built-in fallback if file missing/corrupt).
+    - `blend_targets_for_profile(theme_profile, matrix=None)` blends per-slot weighted sum of the contributing themes' rows. Themes not in the matrix fall back to `default`. Returns blended `{slot: int}` dict, rounded.
+  - **Smoke values (unit-tested)**:
+    - Pure storm profile → 32 lands ✓
+    - Pure tribal profile → 37 lands ✓
+    - Storm 60% + tribal 40% → 34 lands (32×0.6 + 37×0.4 = 34) ✓
+    - Three-way blend (tribal 0.6 + recursion 0.3 + value 0.1) → 36 lands ✓
+  - **Integration into Pillar E optimizers deferred** to keep this phase scoped to the data + blender. The blender is exported and ready; mana_base_optimizer + card_advantage_optimizer can call `blend_targets_for_profile(intent_analysis.theme_profile)` in a follow-up wiring pass when their internal target-count assumptions get refactored to accept theme-aware overrides.
+  - **8 new unit tests** cover: matrix loading + canonical themes present, pure single-theme profile returns theme row, hybrid blending (storm 60% + tribal 40%), unknown-theme fallback to default, empty-profile default, three-way blend.
+- next phase: Phase 8 — user-intent-preservation validation check.
+
+---
