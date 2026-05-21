@@ -486,6 +486,19 @@ def compute_agent_build_deck_v1(
             "message": f"{exc.__class__.__name__}: {exc}",
         })
 
+    # ---- Iter 5 mega-task v4 Phase 13 retro: structural safety net ----
+    # Defensive guarantee that iter1 invariants hold by the time the
+    # response is composed. User must-includes MUST be present + deck
+    # MUST be exactly 100 + no non-basic singleton violations.
+    # If a downstream phase (C2.1/C2.2/D2) dropped a must-include via
+    # a flaky swap, restore it here by replacing the lowest-priority
+    # non-locked card. Also re-deduplicate any singleton violations.
+    deck = _enforce_structural_invariants(
+        deck=deck, must_include_cards=must_include_cards,
+        color_identity=set(pool.get("color_identity") or []),
+        warnings=warnings,
+    )
+
     # ---- Summary ----
     body = deck[1:]  # may have been swapped during Phase D
     user_picks_present = sum(1 for c in body if c.get("source") == "user_intent")
@@ -1189,6 +1202,133 @@ def _count_existing_combo_pairs(
     return len(seen)
 
 
+def _enforce_structural_invariants(
+    *,
+    deck: List[Dict[str, str]],
+    must_include_cards: List[str],
+    color_identity: set,
+    warnings: List[Dict[str, str]],
+) -> List[Dict[str, str]]:
+    """Iter 5 mega-task v4 patch: defensive guarantee that iter1
+    structural invariants hold post-D2.
+
+    Three checks:
+      1. Every user must-include is still in the deck (force-restore
+         if dropped).
+      2. No non-basic singleton violations (de-dup the duplicate by
+         replacing one copy with a basic).
+      3. Deck size is exactly 100 (pad/trim with basics).
+
+    Each enforcement action emits a STRUCTURAL_SAFETY_NET warning so
+    the user / validation sweep can see when the safety net fired.
+    """
+    if not isinstance(deck, list):
+        return deck
+    must_include_cards = list(must_include_cards or [])
+    deck = list(deck)
+    basic_names_lower = {n.lower() for n in _BASIC_LAND_NAMES}
+
+    # 1. Restore dropped must-includes.
+    deck_names_lower = {(c.get("card_name") or "").strip().lower() for c in deck}
+    for mi in must_include_cards:
+        mi_lower = mi.strip().lower()
+        if not mi_lower or mi_lower in deck_names_lower:
+            continue
+        # Find a low-priority slot to replace. Prefer the LAST basic-land
+        # slot (mana-base will get rebalanced via Pillar E critique).
+        replace_idx = None
+        for i in range(len(deck) - 1, -1, -1):
+            cname = (deck[i].get("card_name") or "").strip()
+            if cname.lower() in basic_names_lower or deck[i].get("source") == "mana_base":
+                replace_idx = i
+                break
+        if replace_idx is None:
+            # No basic to swap; replace the last agent-pick slot.
+            for i in range(len(deck) - 1, -1, -1):
+                if deck[i].get("source") != "user_intent":
+                    replace_idx = i
+                    break
+        if replace_idx is None:
+            continue
+        deck[replace_idx] = {
+            "card_name": mi,
+            "reason": (
+                f"Structural safety net: must-include {mi!r} restored "
+                "after a downstream phase dropped it."
+            ),
+            "source": "user_intent",
+        }
+        deck_names_lower.add(mi_lower)
+        warnings.append({
+            "code": "STRUCTURAL_SAFETY_NET_MUST_INCLUDE_RESTORED",
+            "message": (
+                f"Must-include {mi!r} was dropped by a downstream phase "
+                f"and restored to slot {replace_idx} via the structural "
+                "safety net."
+            ),
+        })
+
+    # 2. De-duplicate non-basic singletons.
+    from collections import Counter
+    counts: Counter = Counter()
+    for card in deck:
+        n = (card.get("card_name") or "").strip()
+        if n and n not in _BASIC_LAND_NAMES:
+            counts[n] += 1
+    duplicates = {n: c for n, c in counts.items() if c > 1}
+    if duplicates:
+        ci_list = sorted(color_identity) if color_identity else []
+        for dup_name, dup_count in duplicates.items():
+            extras = dup_count - 1
+            # Find indexes of the duplicate (skip the first occurrence).
+            indexes = [i for i, c in enumerate(deck)
+                       if (c.get("card_name") or "").strip() == dup_name]
+            for i in indexes[1:1 + extras]:
+                basic = _fill_mana_base(ci_list, 1)[0]
+                basic["reason"] = (
+                    f"Structural safety net: singleton violation on "
+                    f"{dup_name!r} → replaced duplicate with basic land."
+                )
+                deck[i] = basic
+            warnings.append({
+                "code": "STRUCTURAL_SAFETY_NET_SINGLETON_FIXED",
+                "message": (
+                    f"Singleton violation: {dup_name!r} appeared "
+                    f"{dup_count}× → reduced to 1 + {extras} basic(s)."
+                ),
+            })
+
+    # 3. Force deck size to exactly 100.
+    if len(deck) > 100:
+        # Trim the extras from the END preferring non-user-intent + basics first.
+        # Simple approach: drop excess basics.
+        excess = len(deck) - 100
+        new_deck: List[Dict[str, str]] = []
+        dropped = 0
+        for c in reversed(deck):
+            if dropped < excess and c.get("source") == "mana_base":
+                dropped += 1
+                continue
+            new_deck.append(c)
+        deck = list(reversed(new_deck))
+        # If we still have excess (no basics to drop), drop from end.
+        deck = deck[:100]
+        warnings.append({
+            "code": "STRUCTURAL_SAFETY_NET_DECK_TRIMMED",
+            "message": f"Deck had {100 + excess} cards; trimmed to 100.",
+        })
+    elif len(deck) < 100:
+        deficit = 100 - len(deck)
+        ci_list = sorted(color_identity) if color_identity else []
+        deck.extend(_fill_mana_base(ci_list, deficit))
+        warnings.append({
+            "code": "STRUCTURAL_SAFETY_NET_DECK_PADDED",
+            "message": f"Deck had {100 - deficit} cards; padded {deficit} basics.",
+        })
+
+    return deck
+
+
 def _fill_mana_base(color_identity: List[str], count: int) -> List[Dict[str, str]]:
     """Generate `count` basic lands, evenly distributed across the commander's
     color identity. Wastes covers the colorless case.
@@ -1782,12 +1922,27 @@ _INTENT_INTERPRETER_SYSTEM_PROMPT = (
     "Output `theme_profile` with three keys: `primary`, `secondary`, "
     "`tertiary`. Each entry is `{theme: <theme-name>, weight: <0.0-1.0>}` "
     "and the three weights sum to 1.0 (~0.6 / ~0.3 / ~0.1 is the "
-    "default split for a well-defined deck). Theme names should be "
-    "compact lowercase identifiers like `dragon_tribal`, "
-    "`graveyard_recursion`, `counters_matter`, `aristocrats`, "
-    "`storm_combo`, `voltron`, `landfall`, `control`, etc. Honor user "
-    "intent — do NOT pivot toward the corpus-typical archetype if the "
-    "user signaled a different direction.\n"
+    "default split for a well-defined deck).\n\n"
+    "**Theme names MUST come from the following closed vocabulary. "
+    "Using any name outside this list will cause the build to reject "
+    "your output:**\n"
+    "  - tribal (covers vampire/goblin/dragon/ninja/elf/zombie/etc. "
+    "tribal — choose `tribal` and let the must-include cards specify "
+    "the tribe)\n"
+    "  - voltron\n"
+    "  - storm\n"
+    "  - aristocrats\n"
+    "  - counters_matter (proliferate, +1/+1, charge, loyalty, energy)\n"
+    "  - control\n"
+    "  - combo (Thoracle, Kiki, Heliod-Ballista, etc.)\n"
+    "  - blink (ETB + flicker chains)\n"
+    "  - reanimator (graveyard recursion of fatties)\n"
+    "  - landfall\n"
+    "  - tokens (go-wide swarm with anthems)\n"
+    "  - stax (lock-down / global restrictions)\n"
+    "  - value_engine (durdle, card advantage, drift-late wincon)\n\n"
+    "Honor user intent — do NOT pivot toward the corpus-typical "
+    "archetype if the user signaled a different direction.\n"
 )
 
 
@@ -1946,16 +2101,61 @@ def _normalize_theme_profile(
     to sum to 1.0 if the LLM's output drifts. Falls back to a
     deterministic default profile when the LLM output is missing or
     invalid (cards-only/hint-led/hybrid/bare_commander all handled).
+
+    Iter 5 mega-task v4 retro: theme names get canonicalized to the
+    closed vocabulary the classifier uses via the alias map in
+    `agent_intent_preservation_check_v1._THEME_ALIASES`. B2 is
+    instructed to emit from a closed set; this is the belt-and-
+    suspenders defense if it slips.
     """
     theme_hints = theme_hints or []
     must_include_cards = must_include_cards or []
+
+    # Pull the canonical-theme set + alias map from the intent-
+    # preservation checker to avoid drift between B2 emissions and the
+    # downstream drift-classifier.
+    try:
+        from api.engine.layers.agent_intent_preservation_check_v1 import (
+            _THEME_ALIASES, _THEME_PRIMITIVE_SIGNALS,
+        )
+        canonical_themes = set(_THEME_PRIMITIVE_SIGNALS.keys())
+        alias_map = dict(_THEME_ALIASES)
+    except Exception:
+        canonical_themes = set()
+        alias_map = {}
+
+    def _canonicalize(name: str) -> str:
+        name = name.strip().lower().replace(" ", "_")
+        if not name:
+            return ""
+        if name in canonical_themes:
+            return name
+        if name in alias_map:
+            return alias_map[name]
+        # Tier-1 fuzzy match: drop common suffix tokens like "_tribal",
+        # "_combo", "_engine" and re-check.
+        for suffix in ("_tribal", "_combo", "_engine", "_payoff"):
+            if name.endswith(suffix):
+                stem = name[: -len(suffix)]
+                if stem in canonical_themes:
+                    return stem
+                if stem + "_combo" in canonical_themes:
+                    return stem + "_combo"
+        # Last resort: if the name's first token matches a canonical
+        # theme (e.g. "tribal_aggro" → "tribal"), use it.
+        for token in name.replace("-", "_").split("_"):
+            if token in canonical_themes:
+                return token
+        # Unknown — leave as-is so the classifier records the gap.
+        return name
 
     if isinstance(raw, dict):
         slots = {}
         for slot_name in ("primary", "secondary", "tertiary"):
             entry = raw.get(slot_name)
             if isinstance(entry, dict):
-                theme = str(entry.get("theme") or "").strip().lower().replace(" ", "_")
+                raw_theme = str(entry.get("theme") or "")
+                theme = _canonicalize(raw_theme)
                 weight_raw = entry.get("weight")
                 try:
                     weight = float(weight_raw)
@@ -3100,18 +3300,28 @@ def _build_wild_combo_user_prompt(
 
     priority_block = ""
     if n_semantic_in_pool > 0:
+        # Iter 5 mega-task v4 retro (post-Phase 13): pool ranking score
+        # alone doesn't shift LLM picking — the LLM reads the full
+        # candidate list and decides on its own. The +0.15 score boost
+        # is preserved as a secondary signal but the LOAD-BEARING lever
+        # is an explicit REQUIREMENT in the prompt. Saved as feedback
+        # memory `feedback_pool_score_does_not_drive_llm_picking`.
         priority_block = (
-            "\n\nPRIORITY GUIDANCE — semantic neighbors:\n"
-            f"  The pool above contains {n_semantic_in_pool} cards tagged "
-            "[VOYAGE_SEMANTIC_NEIGHBOR]. These are cards Voyage AI "
-            "identified as semantically similar to your anchor cards via "
-            "card-text embedding. They are where novel synergies hide "
-            "that the corpus baselines don't surface.\n"
-            "  WHEN A SEMANTIC NEIGHBOR FITS COMPARABLY TO A CORPUS "
-            "STAPLE, PREFER THE SEMANTIC NEIGHBOR. That's where the "
-            "creativity edge lives. Add a `\"is_semantic_neighbor_pick\""
-            ": true` flag on suggestions where the chosen add_card came "
-            "from the [VOYAGE_SEMANTIC_NEIGHBOR] tier."
+            "\n\nPRIORITY GUIDANCE — semantic neighbors (LOAD-BEARING):\n"
+            f"  The pool above contains {n_semantic_in_pool} cards "
+            "tagged [VOYAGE_SEMANTIC_NEIGHBOR]. These are cards Voyage "
+            "AI identified as semantically similar to your anchor "
+            "cards via card-text embedding — the iter-4-shipped "
+            "creativity unlock.\n"
+            "  **YOU MUST SELECT AT LEAST 3 SEMANTIC-NEIGHBOR CARDS** "
+            "in your final picks (set `is_semantic_neighbor_pick: "
+            "true` on those swap entries). Under-selecting them "
+            "defeats the purpose of the semantic-retrieval layer. If "
+            "fewer than 3 semantic neighbors genuinely fit the deck, "
+            "explicitly state which 3 you considered and why each was "
+            "rejected — in a `semantic_neighbor_evaluation_notes` "
+            "field at the top of your output JSON. Empty list is NOT "
+            "an acceptable answer when semantic neighbors are available."
         )
     return (
         f"Commander: {commander}\n"

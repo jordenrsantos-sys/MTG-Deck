@@ -45,6 +45,9 @@ class InferModeTests(unittest.TestCase):
 
 class NormalizeThemeProfileTests(unittest.TestCase):
     def test_well_formed_llm_output_passes_through(self) -> None:
+        # Iter 5 mega-task v4 Phase 13 retro: out-of-vocab themes are
+        # now canonicalized to the classifier's closed set
+        # (`dragon_tribal` → `tribal`, etc.) to keep drift-checks honest.
         raw = {
             "primary":   {"theme": "dragon_tribal", "weight": 0.6},
             "secondary": {"theme": "graveyard_recursion", "weight": 0.3},
@@ -53,7 +56,11 @@ class NormalizeThemeProfileTests(unittest.TestCase):
         }
         result = _normalize_theme_profile(raw, theme_hints=["dragons"],
                                           must_include_cards=["Ur-Dragon"])
-        self.assertEqual(result["primary"]["theme"], "dragon_tribal")
+        # dragon_tribal canonicalizes to tribal; graveyard_recursion
+        # canonicalizes to reanimator; value_engine is already canonical.
+        self.assertEqual(result["primary"]["theme"], "tribal")
+        self.assertEqual(result["secondary"]["theme"], "reanimator")
+        self.assertEqual(result["tertiary"]["theme"], "value_engine")
         self.assertAlmostEqual(result["primary"]["weight"], 0.6, places=3)
         self.assertEqual(result["mode"], "hybrid")
 

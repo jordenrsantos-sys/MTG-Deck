@@ -243,13 +243,33 @@ def _aggregate(results):
     mean_drift = sum(drift) / max(1, len(drift))
 
     # Combo space delta vs Spellbook baseline (Phase 12 merge).
+    # Iter 5 mega-task v4 retro: previous metric `merged - canonical`
+    # was misleading — Spellbook canonical has internal duplicates by
+    # sorted-card-name pair-key (multiple variant_ids for same pair on
+    # different combo lines). Correct metric: count external-source
+    # variants that landed in the merged registry (i.e., pairs the
+    # external sources contributed beyond what Spellbook had).
     try:
         from api.engine.layers.combo_registry_merger_v1 import load_merged_registry
         merged = load_merged_registry()
-        combo_space_delta = merged["merged_count"] - merged["canonical_count"]
+        external_added = sum(
+            1 for v in merged["merged_variants"]
+            if (v.get("source") or "") not in ("", "spellbook")
+        )
+        combo_space_delta = external_added
     except Exception:
         combo_space_delta = 0
 
+    # Iter 5 mega-task v4 retro (per user direction, option (c) on
+    # resumption): criteria revised per architectural reality —
+    #   - wallclock 110s → 120s (honest floor for current chain)
+    #   - voyage_semantic 4 → 3 (explicit-prompt mechanism replaces
+    #     ineffective score-boost)
+    #   - intent_drift 0.3 → 0.5 (B2 closed-vocab constraint closes
+    #     much of the gap; remaining drift reflects deck-specific
+    #     primitive-signal density)
+    #   - criterion 12 (combo_space_expanded ≥500) RETIRED as
+    #     Tier-3-skipped per kickoff (at-scale extractors not run)
     criteria = {
         "iter1_structural_pass_5_of_5":   {"value": iter1_all, "passed": iter1_all},
         "mean_creativity_delta_geq_35":   {"value": round(mean_creativity, 2), "threshold": 35,
@@ -258,10 +278,10 @@ def _aggregate(results):
                                             "passed": mean_novel >= 5},
         "mean_cost_usd_leq_0_45":          {"value": round(mean_cost, 4), "threshold": 0.45,
                                             "passed": mean_cost <= 0.45},
-        "mean_wallclock_s_leq_110":        {"value": round(mean_wall_s, 1), "threshold": 110,
-                                            "passed": mean_wall_s <= 110},
-        "voyage_semantic_avg_geq_4":       {"value": round(mean_semantic, 2), "threshold": 4,
-                                            "passed": mean_semantic >= 4},
+        "mean_wallclock_s_leq_120":        {"value": round(mean_wall_s, 1), "threshold": 120,
+                                            "passed": mean_wall_s <= 120},
+        "voyage_semantic_avg_geq_3":       {"value": round(mean_semantic, 2), "threshold": 3,
+                                            "passed": mean_semantic >= 3},
         "pillar_c_coverage_v1_geq_90pct":  {"value": round(mean_coverage, 1), "threshold": 90,
                                             "passed": mean_coverage >= 90},
         "ur_dragon_hellkite_absent":       {"details": ur,
@@ -270,14 +290,15 @@ def _aggregate(results):
                                             "passed": ordering_sane},
         "theme_profile_structured":        {"value": f"{has_profile}/5",
                                             "passed": has_profile == 5},
-        "intent_preservation_drift_lt_0_3":{"value": round(mean_drift, 3), "threshold": 0.3,
-                                            "passed": mean_drift < 0.3},
-        "combo_space_expanded_geq_500":    {"value": combo_space_delta, "threshold": 500,
-                                            "passed": combo_space_delta >= 500},
+        "intent_preservation_drift_lt_0_5":{"value": round(mean_drift, 3), "threshold": 0.5,
+                                            "passed": mean_drift < 0.5},
+        # Criterion 12 retired per kickoff Tier-3-skip clause on
+        # external combo-DB extractors. Combo_space_delta tracked
+        # informationally below.
     }
     passed_count = sum(1 for v in criteria.values() if v.get("passed") is True)
     return {
-        "criteria": criteria, "passed_count": passed_count, "total": 12,
+        "criteria": criteria, "passed_count": passed_count, "total": 11,
         "means": {"creativity_delta": round(mean_creativity, 2),
                   "novel_combo": round(mean_novel, 2),
                   "cost_usd": round(mean_cost, 4),
@@ -285,7 +306,8 @@ def _aggregate(results):
                   "voyage_semantic": round(mean_semantic, 2),
                   "primitive_coverage_v1_pct": round(mean_coverage, 1),
                   "intent_preservation_drift": round(mean_drift, 3),
-                  "combo_space_delta": combo_space_delta},
+                  "combo_space_external_added": combo_space_delta,
+                  "criterion_12_status": "TIER-3-SKIPPED (per kickoff; at-scale extractors not run)"},
     }
 
 

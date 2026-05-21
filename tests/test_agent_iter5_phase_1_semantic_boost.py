@@ -55,6 +55,10 @@ class WildComboPromptSemanticTagTests(unittest.TestCase):
         self.assertNotIn("[VOYAGE_SEMANTIC_NEIGHBOR]", corpus_line)
 
     def test_priority_guidance_present_when_neighbors_in_pool(self) -> None:
+        # Iter 5 mega-task v4 Phase 13 retro: soft "PREFER" guidance
+        # didn't shift LLM selection (iter 4 + iter 5 sweeps both
+        # showed voyage_semantic_avg = 1.8). Replaced with explicit
+        # "YOU MUST SELECT AT LEAST 3" requirement.
         pool = [
             _cand("Sem A", source="semantic_neighbor"),
             _cand("Sem B", source="semantic_neighbor"),
@@ -66,7 +70,7 @@ class WildComboPromptSemanticTagTests(unittest.TestCase):
         )
         self.assertIn("PRIORITY GUIDANCE", prompt)
         self.assertIn("semantic neighbor", prompt.lower())
-        self.assertIn("PREFER THE SEMANTIC NEIGHBOR", prompt)
+        self.assertIn("YOU MUST SELECT AT LEAST 3", prompt)
         # Mentions the count of semantic neighbors.
         self.assertIn("2", prompt)   # 2 neighbors in this pool
 

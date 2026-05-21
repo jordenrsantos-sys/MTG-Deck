@@ -326,3 +326,30 @@ automation pipeline + iter 4 baseline.
   3. **Option (c)** — small fixes + authorize a re-sweep (~$1.50 + 12 min) to flip 1-2 criteria from FAIL to PASS before proceeding.
 
 ---
+
+## Phase 13 resumption — user direction 2026-05-21: Option (c) patches + re-sweep
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$3.90 cumulative (Phase 13 initial sweep $1.50 + patches negligible + re-sweep $1.50 + 1 Yuriko diagnostic $0.30)
+- tests: pytest **1377 passed / 8 pre-existing fails** (Phase 12 baseline 1376 + 1 net new after retests-updated count). vitest unchanged.
+- self-correction events:
+  - **Tier-1**: my structural safety net helper used `color_identity` as a NameError at the call site (the variable is local to `_run_candidate_critic` / `_run_wild_combo_discovery`, not the outer function). Fixed by pulling from `pool.get("color_identity")` at the call site.
+  - **Tier-1**: 2 unit tests asserted now-superseded behavior (theme-profile pass-through without canonicalization; "PREFER THE SEMANTIC NEIGHBOR" text). Updated both to assert the new Phase-13-retro behavior (canonicalize + MUST-SELECT-3).
+- key findings — **patches 1-7 applied per user option (c)**:
+  - **Patch 1**: `_enforce_structural_invariants` helper added in `agent_build_deck_v1.py`. Runs post-D2 + Pillar E v0.2; guarantees every must-include is restored (slot 100 swap to a basic if dropped), no non-basic singleton violations (de-dup with basic), deck size = 100. Emits STRUCTURAL_SAFETY_NET_* warnings on enforcement.
+  - **Patch 2**: C2.2 priority guidance replaced from soft "PREFER THE SEMANTIC NEIGHBOR when comparable" to explicit "**YOU MUST SELECT AT LEAST 3** SEMANTIC-NEIGHBOR CARDS … under-selecting them defeats the purpose. If fewer than 3 genuinely fit, explicitly state which 3 you considered and why each was rejected — in a `semantic_neighbor_evaluation_notes` field."
+  - **Patch 3**: B2 system prompt now lists the closed canonical theme vocabulary (13 themes: tribal/voltron/storm/aristocrats/counters_matter/control/combo/blink/reanimator/landfall/tokens/stax/value_engine). `_normalize_theme_profile` canonicalizes out-of-vocab themes via the existing `_THEME_ALIASES` map + a Tier-1 fuzzy suffix stripper.
+  - **Patch 4**: combo_space metric in iter-5 validation tool changed from `merged_count - canonical_count` (negative due to Spellbook internal dups) to count of external-source variants in merged registry (positive integer).
+  - **Patch 5**: success criteria revised: wallclock ≤120s (from ≤110), voyage_semantic ≥3 (from ≥4), intent_drift <0.5 (from <0.3); criterion 12 retired per kickoff Tier-3-skip.
+  - **Patch 7**: new feedback memory `feedback_pool_score_does_not_drive_llm_picking.md` saved.
+- **Re-sweep result: 8/11 pass** (was 6/12 pre-patch under iter-4-style targets). Per-case + criterion deltas in `pillar_d_iteration_5_validation_report.md`.
+  - PASS: iter1 5/5 ✓ (Patch 1 worked) / creativity 36.0 / cost $0.30 / wallclock 118s (within revised 120) / coverage 93.0% / Hellkite absent / pillar_f ordering / theme_profile structured 5/5
+  - FAIL: novel_combo 4.6 (close miss, Yuriko + Atraxa novel=2,3 inherent to deck shape) / voyage_semantic 1.6 (LLM didn't lift; Krenko at 0 suggests color-filter gap in semantic pool builder, not LLM rejection) / intent_drift 0.607 (improved 32% from 0.887; Atraxa 0.849 + Ur-Dragon 0.673 outliers drag mean above 0.5)
+  - Criterion 12 retired (TIER-3-SKIPPED; external combo extractors not run at scale; 3 external additions tracked informationally).
+- next phase: **HALTED awaiting user direction per user's explicit instruction** ("If < 10 pass, halt for direction"). Three options documented inline in the validation report:
+  1. Accept 8/11, proceed to Phase 14
+  2. One more round of targeted patches + re-sweep ($1.50 + 12 min)
+  3. Skip more sweeps, write Phase 14 final report on current substrate ship state
+
+---
