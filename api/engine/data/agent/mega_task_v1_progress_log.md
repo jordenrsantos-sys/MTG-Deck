@@ -155,3 +155,20 @@ Authority: autonomous per `mega_task_v1_kickoff.md` until hard halt condition.
 - next phase: Phase 7 — Card-text semantic retrieval.
 
 ---
+
+## Phase 7 — Card-text semantic retrieval — SCAFFOLDED (Tier-3 partial-skip)
+
+- timestamp: 2026-05-20 23:35
+- commit: (this commit)
+- cost_to_date: ~$2.25 (no LLM build runs in Phase 7 — module scaffolding only)
+- tests: 7 new in test_agent_iter3_phase_7_semantic_retrieval.py
+- self-correction events:
+  - **Tier-3 partial-skip**: full Phase 7 (build the embeddings index over ~30k Commander-legal cards) would require Voyage AI API key setup + `pip install voyageai` + sqlite-vec extension. None of these are pre-staged in this environment. The kickoff allows Tier-3 skip for non-blocking phases; Phase 7 is in that list. **Partial-skip approach**: ship the API surface (module + integration points + tests) with a clean no-op fallback. Iter 4 plugs in the actual embedding backend.
+- key findings:
+  - New module `agent_semantic_retrieval_v1.py` with `is_available()`, `query_neighbors()`, `build_index()` API. `is_available()` reads the canonical embedding DB path; returns False if missing.
+  - Integration in `_run_wild_combo_discovery`: after the wide pool builds, for each anchor card (commander + user must-includes + creative outliers from C2.1), query top-20 semantic neighbors and inject any not-yet-present into the wide candidate pool. Iter 3: no-op (returns 0 added). Iter 4: gets real neighbors.
+  - **Hand-off to iter 4**: documented runbook in module docstring — `pip install voyageai`, set `VOYAGE_API_KEY`, run `build_index()`. Estimated one-time cost ~$1.62 with Voyage voyage-3 ($0.18/MT × 30k cards × ~300 tokens).
+  - **Impact on Phase 9**: this phase does NOT add real semantic neighbors to the pool, so it won't contribute to creativity_delta or novel_combo_count in the iter 3 sweep. The "≥5 semantic-source cards in C2.2 pool" smoke target in the kickoff is NOT met; deferring to iter 4.
+- next phase: Phase 8 — Positional context engineering for C2.1.
+
+---

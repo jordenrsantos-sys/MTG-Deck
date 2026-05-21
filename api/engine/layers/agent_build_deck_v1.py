@@ -2479,6 +2479,70 @@ def _run_wild_combo_discovery(
             "code": f"WIDE_POOL_{w.get('code', 'WARNING')}",
             "message": w.get("message", ""),
         })
+
+    # Iter 3 Phase 7: semantic-retrieval augmentation. For each anchor
+    # card (commander + user must-includes + creative outliers from
+    # C2.1), query top-k semantic neighbors and inject any that aren't
+    # already in the pool. Graceful no-op when the embeddings index
+    # isn't populated (iter 3 ships the scaffolding; iter 4 plugs in
+    # actual embeddings — see agent_semantic_retrieval_v1 module
+    # docstring).
+    semantic_added = 0
+    try:
+        from api.engine.layers.agent_semantic_retrieval_v1 import (
+            is_available as _sem_avail,
+            query_neighbors as _sem_query,
+        )
+        if _sem_avail():
+            anchor_names: List[str] = [commander]
+            for c in deck:
+                src = c.get("source") or ""
+                if src == "user_intent" and c.get("card_name") != commander:
+                    anchor_names.append(c.get("card_name", ""))
+                elif "creative_outlier" in src:
+                    anchor_names.append(c.get("card_name", ""))
+            seen_in_pool = {c["name"].strip().lower() for c in wide_candidates}
+            for anchor in anchor_names:
+                neighbors = _sem_query(
+                    anchor, k=20, color_identity_filter=sorted(color_identity),
+                ) or []
+                for nb in neighbors:
+                    nb_name = (nb.get("name") or "").strip()
+                    if not nb_name or nb_name.strip().lower() in seen_in_pool:
+                        continue
+                    # Convert to the wide-pool candidate shape.
+                    wide_candidates.append({
+                        "name": nb_name,
+                        "type_line": nb.get("type_line", ""),
+                        "cmc": nb.get("cmc"),
+                        "primitives": nb.get("primitives") or [],
+                        "color_identity": nb.get("color_identity") or [],
+                        "oracle_text": nb.get("oracle_text") or "",
+                        "score": float(nb.get("similarity") or 0.0),
+                        "is_recent_set": False,
+                        "released_at": nb.get("released_at") or "",
+                        "source": "semantic_neighbor",
+                    })
+                    seen_in_pool.add(nb_name.strip().lower())
+                    semantic_added += 1
+            if semantic_added > 0:
+                warnings.append({
+                    "code": "WILD_POOL_SEMANTIC_AUGMENTED",
+                    "message": (
+                        f"Added {semantic_added} cards to the C2.2 wide pool "
+                        f"via semantic retrieval."
+                    ),
+                })
+    except Exception as exc:
+        # Defensive — semantic retrieval should never block the build.
+        warnings.append({
+            "code": "SEMANTIC_RETRIEVAL_FAILED",
+            "message": (
+                f"Semantic retrieval failed: {exc.__class__.__name__}: {exc}. "
+                f"Continuing without semantic augmentation."
+            ),
+        })
+
     if not wide_candidates:
         warnings.append({
             "code": "WILD_COMBO_SKIPPED_EMPTY_WIDE_POOL",
