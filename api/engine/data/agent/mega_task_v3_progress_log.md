@@ -62,3 +62,23 @@ approximator + outer-chain parallel + Pillar E v0.2 card-advantage.
 - next phase: Phase 2 — set data ingestion + diff detection.
 
 ---
+
+## Phase 2 — Set data ingestion + diff detection (BLOCKING) — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: $0.00 (Scryfall API is free)
+- tests: pytest **1218 passed / 8 pre-existing fails** (Phase 1 baseline 1211 + 7 new ingestion tests).
+- self-correction events: none
+- key findings:
+  - **`api/engine/integrations/scryfall_set_ingest_v1.py`** (260 lines):
+    - `fetch_set_cards(set_code, http_get)` — paginated Scryfall `/cards/search?q=set:<code>&unique=cards` with 100ms inter-page delay + exponential backoff on 429/5xx + 404 → `[]` (set doesn't exist).
+    - `diff_against_corpus(cards, db_path, target_snapshot_id)` — buckets `cards` into `new_cards` / `reprints` / `errata` by oracle_id presence + oracle_text comparison. Chunked IN-list query to avoid massive SQL parameter lists.
+    - `ingest_new_set(set_code, db_path, target_snapshot_id, cards=None, update_ledger=True)` — orchestrates fetch + diff + transactional INSERT OR REPLACE into both cards + cards_raw. Atomic per-snapshot: any mid-transaction failure rolls back fully. Idempotent: re-runs classify everything as reprints → 0 inserts.
+    - `update_ledger=True` (default) appends the ingested code to `known_set_codes_v1.json` on success.
+  - **`tools/ingest_new_set.py`** CLI: `<set_code>` positional + `--snapshot` + `--db` + `--dry-run` + `--no-ledger`. Prints summary JSON to stdout.
+  - **7 unit tests** in `test_scryfall_set_ingest_v1.py` cover: single-page + multi-page pagination, 404 handling, diff bucketing (new vs reprint vs errata via in-memory sqlite fixture), insert-new-and-errata, idempotency on re-run, atomic rollback on mid-transaction failure.
+  - **Live smoke on `blb` (Bloomburrow)** (--dry-run, 280 cards fetched in ~3s): 280 classified as reprints (corpus has them all), 0 new, 0 errata. Confirms the diff path against the production cards table works correctly without writing.
+- next phase: Phase 3 — pipeline orchestration upgrade.
+
+---
