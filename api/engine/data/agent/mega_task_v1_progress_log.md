@@ -270,3 +270,23 @@ Authority: autonomous per `mega_task_v1_kickoff.md` until hard halt condition.
 - next phase: Phase 12 — Pillar F v0.1 statistical approximator scaffolding.
 
 ---
+
+## Phase 12 — Pillar F v0.1 statistical approximator — COMPLETED
+
+- timestamp: 2026-05-21 02:15
+- commit: (this commit)
+- cost_to_date: ~$3.65 (no LLM calls in Pillar F approximator — pure pattern matching)
+- tests: 19 new in test_agent_statistical_approximator_v1.py.
+- self-correction events: none.
+- key findings:
+  - New module `agent_statistical_approximator_v1.py` — fully independent from the Phase 5b MPA substrate (per kickoff: "Pillar F v0.1 is a SEPARATE statistical layer that does NOT depend on or interact with the MPA").
+  - `WIN_PATHS` catalog: 12 win-paths encoded (Thoracle+DC, Kiki combo, Heliod+Ballista, Sanguine+Exquisite, Mikaeus+Trike, aristocrats engine, storm kill, Dragon Tempest combat, infinite-mana+extra-combat, Edgar swarm, Krenko goblin swarm, proliferate counters). Each has required card names + optional any-of fallbacks + primitives + speed_score + category.
+  - `_match_win_paths(deck)` returns per-path armed/not-armed + missing_pieces.
+  - `_matchup_winrate(own_speed, own_interaction, own_resilience, opp_speed, opp_interaction)` is the heads-up matchup heuristic — clamped to [0.05, 0.95]. Speed delta worth ±0.10/turn; interaction-vs-resilience worth ±0.03/unit.
+  - `approximate_pod_winrate(deck, opponents=None)` returns PodWinrateReport. Default opponents are first B2 + first B3 + first B4 from opposition_decks_v1.json — spans the bracket range.
+  - Smoke checks pass: Thoracle+DC deck out-winrates an Atraxa-B2 deck against the same opponents. cEDH-tier decks > 0.25 baseline.
+  - 12 win-paths > 10-paths kickoff target.
+  - Iter 4+: extend the catalog with primitive_tags_v1 from Pillar C's extractor (when shipped); add multi-card chain matching (3+ card combos) and mana stochasticity. v0.1 stubs only 2-3-card patterns.
+- next phase: Phase 13 — Track 5 new-set pipeline scaffolding.
+
+---
