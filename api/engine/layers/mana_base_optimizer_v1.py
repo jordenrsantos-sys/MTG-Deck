@@ -362,14 +362,21 @@ def reconcile_deck_lands(
         for color, target in recommendation.color_source_targets.items()
     }
 
+    # Iter 5 Phase 9: per `feedback_mana_base_serves_spells_not_reverse`,
+    # reconciliation should be AGGRESSIVE: any non-zero discrepancy is
+    # worth flagging because the mana base recomputes fresh based on
+    # final spell composition every build. The conservative ">2 delta"
+    # gate (iter 3 default) preserved an implicit baseline. Now any
+    # mismatch fires the critique so the LLM can either justify the
+    # deviation or propose swaps.
     discrepancies: List[str] = []
-    if abs(land_delta) > 2:
+    if land_delta != 0:
         discrepancies.append(
             f"Land count: actual={actual_count}, target={recommendation.target_land_count} "
             f"(delta {land_delta:+d})"
         )
     for color, delta in color_deltas.items():
-        if abs(delta) > 2:
+        if delta != 0:
             target = recommendation.color_source_targets[color]
             discrepancies.append(
                 f"{color} sources: actual={actual_sources[color]}, "
@@ -383,4 +390,8 @@ def reconcile_deck_lands(
         "color_source_deltas": color_deltas,
         "discrepancies": discrepancies,
         "significant": bool(discrepancies),
+        # Iter 5 Phase 9: indicate the strict reconciliation policy so
+        # downstream callers can distinguish iter-3-conservative from
+        # iter-5-aggressive behavior.
+        "policy": "aggressive_recompute_fresh",
     }

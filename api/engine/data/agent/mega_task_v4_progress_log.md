@@ -225,3 +225,20 @@ automation pipeline + iter 4 baseline.
 - next phase: Phase 9 — aggressive Pillar E mana base reconciliation.
 
 ---
+
+## Phase 9 — Aggressive Pillar E v0.1 mana base reconciliation — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$0.90
+- tests: pytest **1357 passed / 8 pre-existing fails** (Phase 8 baseline 1353 + 4 new aggressive-reconciliation tests).
+- self-correction events: none
+- key findings:
+  - **`reconcile_deck_lands()` threshold tightened** from `abs(delta) > 2` to `delta != 0` on both land count and per-color sources. Per `feedback_mana_base_serves_spells_not_reverse`: reconciliation should be aggressive because the mana base recomputes fresh against the final spell composition every build; any drift from the deterministic Karsten recommendation deserves an LLM critique pass (either to justify it or propose swaps).
+  - **`policy: "aggressive_recompute_fresh"`** field added to the reconciliation result for downstream traceability.
+  - **All 26 existing mana_base_optimizer tests still pass** — none relied on the >2-gate behavior explicitly; the tightening is forward-compatible.
+  - **4 new tests** verify: delta-of-1 land triggers significant=True (was False in iter 3), delta-of-0 yields no discrepancies, delta-of-1 color source triggers significant, policy field present.
+  - **Cross-color swap behavior**: with the strict gate firing on every delta, the LLM critique pass fires after any composition change that shifts mana requirements. Since v0.1 doesn't block cross-color spell swaps on mana-base grounds, the chain now reflects the "lands are computed last, mana base adjusts to spell base" architectural rule.
+- next phase: Phase 10 — mana-cost-aware Voyage downgrade pass.
+
+---
