@@ -63,3 +63,29 @@ automation pipeline + iter 4 baseline.
 - next phase: Phase 2 — C2.1 prompt trim for wallclock reduction.
 
 ---
+
+## Phase 2 — C2.1 prompt trim (BLOCKING) — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$0.90 (Phase 1 $0.30 + Phase 2 ~$0.60 across two Yuriko smokes)
+- tests: pytest **1294 passed / 8 pre-existing fails** (Phase 1 baseline 1288 + 6 new Phase 2 tests). 1 iter-3 test (`test_positional_block_when_index_provided`) updated to reflect the explainer's move from user→system prompt.
+- self-correction events:
+  - **Tier-1**: first Yuriko smoke after the input-side trim showed C2.1 still at 51s — input compressed 16k→7.1k but **output token generation** (2855 tokens for 28 swap rationales) was dominating latency. Tier-1 self-correct: added "CONCISE 1-sentence reason (≤120 chars)" guidance to system prompt + reduced output budget 5000→3000. Re-smoke: C2.1 now 38.1s (-13s), output 2422 tokens.
+- key findings:
+  - **Pool size 100 → 70** (within kickoff 60-80 target).
+  - **Oracle text cap 180 → 150 chars** per candidate.
+  - **Input token budget 16k → 10k**; output token budget 5k → 3k.
+  - **Verbose POSITIONAL CONTEXT explainer moved from user prompt to system prompt** (cached at the model level via the system role; no per-call cost). Candidate annotations (tag=, interacts_with=, pairs_with=) remain in the user prompt where the data is per-candidate.
+  - **Concise-rationale guidance added** to system prompt: "≤120 chars per reason, cite ONE specific other deck card by name, no fillers".
+  - **Yuriko smoke** (B5 cEDH case, the original kickoff smoke target):
+    - Before trim (iter 4 baseline ~50s C2.1): wall 126.4s
+    - After trim (Phase 2 v1, input-only): wall 121.7s (C2.1 still 51.1s — minimal latency drop)
+    - After Tier-1 output trim: wall **118.1s**, **C2.1 38.1s** (down from 51.1s — 13s savings, ~25%)
+    - Cost stable at $0.30, creativity_delta 34 (matches iter 4 Yuriko's 34 — no quality regression)
+    - C2.1 input tokens 16k → 7.1k (-56%); output 2855 → 2422 (-15%)
+  - **Residual gap vs kickoff smoke**: target was 30-35s C2.1; achieved 38s. The 3-8s gap is the floor where short rationales × 28 slots × output-token-per-second rate intersects. Phase 13 sweep mean will measure across-case impact (some cases — Atraxa, Edgar — may benefit more than Yuriko which had lower-output baseline).
+  - **6 new unit tests** (`test_agent_iter5_phase_2_c21_trim.py`) cover: pool size in 60-80 band, input budget ≤10k, system prompt has the moved POSITIONAL CONTEXT explainer, oracle text trimmed to 150 chars, user prompt no longer has the verbose explainer, full-pool prompt fits in ~32k chars (~8k tokens).
+- next phase: Phase 3 — Pillar C ontology v1 + rules-modifier dimension + LLM extractor.
+
+---

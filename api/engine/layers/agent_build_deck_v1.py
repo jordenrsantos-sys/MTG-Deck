@@ -1923,11 +1923,18 @@ def _as_list_of_dicts(v: Any) -> List[Dict[str, Any]]:
 # substituted from a deterministic fallback list. Iteration 1's deck
 # was already valid; the worst case is we keep iteration-1's pick.
 
-# Budget targets (Sonnet 4.6 pricing): ~15k input × $3/MT + ~5k output ×
-# $15/MT = $0.045 + $0.075 = $0.12 per call. We pad the input budget
-# to 16k to accommodate full card text for ~80-120 candidates.
-_CANDIDATE_CRITIC_INPUT_TOKEN_BUDGET = 16000
-_CANDIDATE_CRITIC_OUTPUT_TOKEN_BUDGET = 5000
+# Iter 5 Phase 2: trim C2.1 to drop wallclock from ~50s to ~30-35s.
+# Pool size 100 -> 70 (within kickoff 60-80 band).
+# Oracle text cap 180 -> 150 chars.
+# Verbose positional-context explanation moved into system prompt
+# (cached at model level) instead of repeated in every user prompt.
+# Input budget 16k -> 10k.
+_CANDIDATE_CRITIC_INPUT_TOKEN_BUDGET = 10000
+# Iter 5 Phase 2 Tier-1: reduce output budget from 5000 -> 3000. With
+# the concise-rationale guidance in the system prompt, ~80 chars × 28
+# slots ≈ 1800-2000 tokens fits comfortably. Lower budget pressures the
+# LLM to stay terse, dropping latency proportionally.
+_CANDIDATE_CRITIC_OUTPUT_TOKEN_BUDGET = 3000
 
 # How many flex/low-priority slots the LLM gets to re-pick. Iteration 1
 # fills 99 slots; we want the LLM to influence the bottom 25-30. The
@@ -1935,42 +1942,37 @@ _CANDIDATE_CRITIC_OUTPUT_TOKEN_BUDGET = 5000
 # deterministic picks.
 _CANDIDATE_CRITIC_SWAPPABLE_SLOTS = 28
 
-# How many candidates we surface to the LLM. Trade-off: more = more
-# room for creativity but more tokens; fewer = tighter pool but less
-# semantic exploration. 100 is a balanced default.
-_CANDIDATE_CRITIC_POOL_SIZE = 100
+# Iter 5 Phase 2: 100 -> 70.
+_CANDIDATE_CRITIC_POOL_SIZE = 70
 
 
 _CANDIDATE_CRITIC_SYSTEM_PROMPT = (
-    "You are an expert MTG Commander deck-builder. Iteration 1 of the "
-    "deck-building agent has produced a structurally-correct 99-card "
-    "deck (lands, ramp, draw, removal, must-includes are in place). Your "
-    "job is to re-pick the {n_swappable} lowest-priority FLEX slots by "
-    "choosing the most synergistic cards from a pre-filtered candidate "
-    "pool. You are biased toward INTERESTING over SAFE — pick cards that "
-    "reinforce the deck's stated direction in non-obvious ways.\n\n"
-    "RULES — these are hard:\n"
-    "1. Your replacement cards MUST come from the supplied candidate "
-    "pool. Do NOT propose cards outside the pool (they'll be dropped).\n"
-    "2. Color identity is enforced — every pick's CI must be a subset of "
-    "the commander's CI (already filtered in the pool, just don't reverse "
-    "that).\n"
-    "3. Bracket constraint policy — your picks must NOT form 2-card combo "
-    "pairs that violate the deck's target bracket. The combo policy will "
-    "be applied after your output, but you should already avoid known "
-    "early-game 2-card kills if the bracket is B1/B2/B3.\n"
-    "4. Substantive rationale — each pick gets a one-sentence reason "
-    "that references specific OTHER cards in the deck or specific play "
-    "patterns. NO generic 'great fit for X tribal' fillers.\n"
-    "5. is_creative_outlier=true is reserved for cards that are NOT top "
-    "corpus staples but fit the deck's direction. Use sparingly (0-3 per "
-    "deck).\n"
-    "6. combo_lines_noted: 0-5 entries. Each entry is a 2-card combo the "
-    "deck composition would enable. in_spellbook=true if it's a well-"
-    "documented combo from MTG resources; false if you noticed a novel "
-    "interaction. Honest assessment only.\n"
-    "7. Output VALID JSON ONLY. No prose around it. Card names must be "
-    "EXACT printed names."
+    "You are an expert MTG Commander deck-builder. Iteration 1 has "
+    "produced a structurally-correct 99-card deck (lands/ramp/draw/"
+    "removal/must-includes are in place). Re-pick the {n_swappable} "
+    "lowest-priority FLEX slots from the supplied candidate pool. Bias "
+    "toward INTERESTING over SAFE — pick cards that reinforce the deck's "
+    "stated direction in non-obvious ways.\n\n"
+    "RULES (hard):\n"
+    "1. Replacements MUST come from the supplied pool.\n"
+    "2. Color identity is pre-filtered.\n"
+    "3. Don't form 2-card combos that violate the bracket policy.\n"
+    "4. Each pick gets a CONCISE 1-sentence reason (≤120 chars) citing "
+    "ONE specific other deck card by name. Stay terse — long reasons "
+    "burn output budget without improving quality.\n"
+    "5. is_creative_outlier=true is for non-staple picks that fit "
+    "direction (0-3 per deck).\n"
+    "6. combo_lines_noted: 0-5 entries. in_spellbook=true for "
+    "documented combos, false for novel observations.\n"
+    "7. Output VALID JSON ONLY. Card names EXACT printed names.\n\n"
+    "POSITIONAL CONTEXT: candidate lines include `tag=...` (compact "
+    "primitive role: ramp-mana / draw-engine / sac-outlet / etc.), "
+    "`interacts_with=[...]` (deck cards sharing primitives — likely "
+    "synergies), `pairs_with=[...]` (pool cards with 2+-primitive "
+    "overlap — strong interaction leads). Use these to reason about "
+    "positional value: a candidate with 3 interacts_with deck cards is "
+    "usually stronger than one with 0. Cite the interacting card by "
+    "name in your reason field when interaction drives the pick."
 )
 
 
@@ -2112,10 +2114,9 @@ def _build_candidate_critic_user_prompt(
         cprim = ", ".join((cand.get("primitives") or [])[:4])
         rc = " | ".join((cand.get("rationale_components") or [])[:2])
         oracle_text = cand.get("oracle_text") or ""
-        # Trim oracle text to keep tokens in budget; the first ~150 chars
-        # carry the essential mechanic in 95% of cases.
-        if oracle_text and len(oracle_text) > 180:
-            oracle_text = oracle_text[:177] + "..."
+        # Iter 5 Phase 2: trim oracle text 180 -> 150 chars.
+        if oracle_text and len(oracle_text) > 150:
+            oracle_text = oracle_text[:147] + "..."
         line = f"  - {cname} | {ctype} | CMC={ccmc} | primitives=[{cprim}] | {rc}"
         if oracle_text:
             line += f"\n      text: {oracle_text}"
@@ -2173,19 +2174,11 @@ def _build_candidate_critic_user_prompt(
         + f"\nReturn AT MOST {len(swappable_slots)} selected_cards. You may "
         + "return fewer if you genuinely think iteration 1's picks for "
         + "some swappable slots are already optimal — that's a valid signal.\n"
-        + (
-            "\nPOSITIONAL CONTEXT (iter 3 Phase 8): each candidate is "
-            "annotated with `tag=...` (e.g. ramp-mana, draw-engine, "
-            "sac-outlet), `interacts_with=[...]` (deck cards sharing "
-            "primitives — likely synergies), and `pairs_with=[...]` "
-            "(pool cards with strong 2+-primitive overlap). Use these "
-            "to reason about positional value: a card that interacts "
-            "with 3 existing deck cards is usually a stronger pick "
-            "than one that interacts with 0. Cite the specific "
-            "interacting card by name in your reason field when the "
-            "interaction is the reason for the pick.\n"
-            if deck_primitive_index is not None else ""
-        )
+        # Iter 5 Phase 2: the verbose POSITIONAL CONTEXT explainer that
+        # iter 3 Phase 8 added to every user prompt has moved into the
+        # system prompt (cached at model level). The candidate lines
+        # still carry the tag/interacts_with/pairs_with annotations
+        # when deck_primitive_index is provided.
     )
 
 

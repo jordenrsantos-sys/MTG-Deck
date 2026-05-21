@@ -168,9 +168,14 @@ class PromptBuilderIncludesPositionalContextTests(unittest.TestCase):
         prompt = _build_candidate_critic_user_prompt(**self._build_args(None))
         self.assertNotIn("interacts_with=", prompt)
         self.assertNotIn("pairs_with=", prompt)
-        self.assertNotIn("POSITIONAL CONTEXT", prompt)
 
     def test_positional_block_when_index_provided(self) -> None:
+        # Iter 5 Phase 2: the verbose "POSITIONAL CONTEXT (iter 3
+        # Phase 8): ..." explainer was moved from the user prompt to
+        # the system prompt (cached at the model level for token
+        # efficiency). The per-candidate annotations (tag=, interacts_with=,
+        # pairs_with=) remain in the user prompt when an index is
+        # provided.
         index = [
             {"card_name": "Sanguine Bond", "primitives": ["LIFEGAIN_PAYOFF"]},
         ]
@@ -180,7 +185,6 @@ class PromptBuilderIncludesPositionalContextTests(unittest.TestCase):
         self.assertIn("tag=lifegain-payoff", prompt)
         self.assertIn("interacts_with=", prompt)
         self.assertIn("Sanguine Bond", prompt)
-        self.assertIn("POSITIONAL CONTEXT", prompt)
 
 
 if __name__ == "__main__":
