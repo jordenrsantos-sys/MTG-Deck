@@ -132,3 +132,26 @@ Authority: autonomous per `mega_task_v1_kickoff.md` until hard halt condition.
 - next phase: Phase 6 — Per-theme C2.2 prompts.
 
 ---
+
+## Phase 6 — Per-theme C2.2 prompts — COMPLETED
+
+- timestamp: 2026-05-20 23:20
+- commit: (this commit)
+- cost_to_date: ~$2.25 (no LLM build runs in Phase 6 — pure-string changes; the C2.2 archetype detection runs locally)
+- tests: 18 new in test_agent_iter3_phase_6_c22_archetypes.py; full agent test set still green.
+- self-correction events:
+  - Test fixup: my own test assertion expected "general" (lowercase) but the fragment is uppercase. Updated test, no behavior change.
+- key findings:
+  - New module `agent_c22_prompt_templates_v1.py` with 12 archetype keys (tribal, voltron, storm, aristocrats, control, combo, blink, reanimator, landfall, group_hug, tokens, default) + per-archetype prompt fragments.
+  - Detection is regex-based and weighted: win-condition text gets ×3, implicit themes ×2, commander/theme hints ×1. Tiebreaker is the archetype's order in the ARCHETYPES tuple (earlier wins, e.g. tribal beats voltron).
+  - Verified on the 5 iter-2 cases via unit tests:
+    - Edgar Markov → tribal (correct)
+    - Krenko + Kiki/Snoop → tribal (Kiki/Snoop is a combo signal, but tribal scores higher because of the goblin tribal signals)
+    - Atraxa Proliferate → default (no tribal/voltron/storm signals; "proliferate" doesn't match any archetype heuristic)
+    - Yuriko + Thoracle → combo (Thassa's Oracle in win condition is a strong combo signal)
+    - The Ur-Dragon → tribal (correct)
+  - Archetype detection surfaces in llm_metrics.calls[C2_2_wild_combo_discovery].archetype for Phase 9 audit.
+  - Each archetype fragment is unique (no copy-paste) and references archetype-specific card-text patterns the LLM should look for.
+- next phase: Phase 7 — Card-text semantic retrieval.
+
+---

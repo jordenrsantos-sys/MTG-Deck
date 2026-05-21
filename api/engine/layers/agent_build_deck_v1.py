@@ -2489,6 +2489,16 @@ def _run_wild_combo_discovery(
     # Call the LLM.
     system = _WILD_COMBO_SYSTEM_PROMPT.format(n_max=_WILD_COMBO_MAX_SUGGESTIONS)
     system += (forbidden_prompt_block or "")
+    # Iter 3 Phase 6: per-archetype guidance fragment.
+    from api.engine.layers.agent_c22_prompt_templates_v1 import (
+        detect_archetype, prompt_fragment_for,
+    )
+    archetype = detect_archetype(
+        intent_analysis=intent_analysis,
+        theme_hints=theme_hints,
+        commander=commander,
+    )
+    system += prompt_fragment_for(archetype)
     user = _build_wild_combo_user_prompt(
         commander=commander, bracket=bracket, theme_hints=theme_hints,
         intent_analysis=intent_analysis, deck=deck, wide_pool=wide_candidates,
@@ -2508,6 +2518,9 @@ def _run_wild_combo_discovery(
         "latency_ms": result.latency_ms,
         "error_code": result.error_code,
         "retries": result.retries,
+        # Iter 3 Phase 6: surface the detected archetype so Phase 9
+        # validation can compare per-archetype creativity behaviors.
+        "archetype": archetype,
     })
     if not result.ok:
         warnings.append({
