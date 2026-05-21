@@ -82,3 +82,25 @@ approximator + outer-chain parallel + Pillar E v0.2 card-advantage.
 - next phase: Phase 3 — pipeline orchestration upgrade.
 
 ---
+
+## Phase 3 — Pipeline orchestration upgrade (BLOCKING) — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: $0.00 (test path uses skip_embedding; real ingest will hit Voyage when Phase 10 fires)
+- tests: pytest **1228 passed / 8 pre-existing fails** (Phase 2 baseline 1218 + 10 new pipeline v1 tests).
+- self-correction events: none
+- key findings:
+  - **`tools/new_set_pipeline_v1.py`** (~310 lines): upgrades the v0 scaffolding. Same 5 step names but with the 2 stubs filled:
+    - **Step 1 `tag_with_primitives`** — calls `primitive_extractor_v1.extract_primitives` for each card, writes to `cards.primitives_v1_json`. v0 returned empty lists; v1 produces real tags.
+    - **Step 2 `score_for_themes`** — lightweight per-card theme signal counter via a hand-curated `_PRIMITIVE_TO_THEMES` lookup (covers all 64 ontology tags across the 30 themes in the v2 catalog vocabulary: THEME_RAMP / THEME_CARD_DRAW / THEME_ARISTOCRATS / THEME_VOLTRON / THEME_STORM / THEME_TRIBAL / etc.). Returns `{card_name: {theme_id: signal_count}}`. v0 returned empty dicts.
+    - **Step 3 `update_corpus_metadata`** — passthrough from v0 (already functional).
+    - **Step 4 `update_embedding_index`** — wraps `agent_semantic_retrieval_v1.build_index()` with the active snapshot. The existing build_index has incremental logic: it computes `pending = [c for c in cards if c["name"] not in already_indexed]` and embeds only those (so re-runs of the pipeline embed only truly-new cards). v0 returned 0.
+    - **Step 5 `flag_potential_combo_pairs`** — passthrough from v0 (heuristic regex). Phase 4 of v3 layers primitive-graph discovery on top.
+  - **Orchestrator `ingest_new_cards_v1`**: reorders steps so corpus rows are written FIRST (the primitive tagger uses UPDATE; it needs rows to update). Per-step try/except; failures logged but don't block subsequent steps. Atomic transaction is in the corpus-write step (delegated to v0/Phase 2 ingest path).
+  - **`PipelineResultV1`** dataclass surfaces per-step status strings + warnings + counts so the LLM report writer (Phase 6) can quote operational status.
+  - **`skip_embedding` test escape hatch** added: test path bypasses Voyage. Production path embeds.
+  - **10 new unit tests** cover: sac-outlet + ETB-trigger primitive recognition, primitives_v1_json DB writes, theme mapping for sac-outlet/death-trigger/mana-rock/empty-prim, embedding-step calls build_index with the snapshot, full 5-card integration (no errors, all 5 status lines present), idempotency on re-run.
+- next phase: Phase 4 — new-combo-pair discovery via primitive interaction graph.
+
+---
