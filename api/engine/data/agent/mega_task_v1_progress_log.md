@@ -172,3 +172,23 @@ Authority: autonomous per `mega_task_v1_kickoff.md` until hard halt condition.
 - next phase: Phase 8 — Positional context engineering for C2.1.
 
 ---
+
+## Phase 8 — Positional context engineering for C2.1 — COMPLETED
+
+- timestamp: 2026-05-21 00:00
+- commit: (this commit)
+- cost_to_date: ~$2.25 (no LLM build runs in Phase 8 — pure-Python positional-context computation)
+- tests: 18 new in test_agent_iter3_phase_8_positional.py + 17 existing C2.1 tests still green.
+- self-correction events: none
+- key findings:
+  - Three new helpers in agent_build_deck_v1:
+    - `_primitive_tag_hint(primitives)` — deterministic mapping from primitive list → compact tag (ramp-mana, draw-engine, sac-outlet, removal-mass, wincon-combo, tribal-anchor, etc.). 14 hand-coded tag mappings; falls back to "value".
+    - `_compute_positional_context(candidate, deck, pool)` — returns interacts_with_in_deck (≥1 shared primitive, capped at 5) + pairs_with_not_yet_picked (≥2 shared primitives, capped at 4) + primitive_tag_hint.
+    - `_build_candidate_critic_user_prompt` now accepts `deck_primitive_index` — when provided, each candidate's line in the pool gets `tag=` / `interacts_with=` / `pairs_with=` annotations. The prompt also gains a POSITIONAL CONTEXT explainer telling the LLM how to use those fields.
+  - Backwards compat: `deck_primitive_index=None` (default) produces the iter-2 prompt shape unchanged.
+  - Call-site integration: `_run_candidate_critic` builds the primitive index from the parent pool — joins locked deck names against pool by-name to hydrate primitives. Cards not in the pool (basics, etc.) default to empty primitives — no false-positive interactions.
+  - **Token impact**: each annotated candidate line adds ~30-50 tokens. With 100 candidates, the prompt grows ~3-5k tokens. C2.1's input budget is currently 16000; previous usage ~10000 → headroom for the additional context.
+  - **Expected quality impact**: per the kickoff Phase 8 smoke target, C2.1 rationales should reference another card by name in ≥80% of selections. The annotations explicitly surface the interaction targets the LLM should cite. Phase 9's rationale samples will verify.
+- next phase: Phase 9 — Iter 3 final validation sweep [BLOCKING].
+
+---

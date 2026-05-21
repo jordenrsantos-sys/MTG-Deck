@@ -1838,6 +1838,103 @@ _CANDIDATE_CRITIC_SYSTEM_PROMPT = (
 )
 
 
+def _primitive_tag_hint(primitives: List[str]) -> str:
+    """Iter 3 Phase 8: condense a card's primitives into a 1-3 word tag
+    hint for the LLM. Deterministic, no LLM call.
+
+    Maps Pillar A primitive names to short readable tags. Falls back to
+    "value" if no specific marker matches.
+    """
+    p_set = set(primitives or [])
+    # Priority order — strongest signal wins.
+    if p_set & {"MANA_ROCK", "MANA_RAMP_LAND_SEARCH", "MANA_RAMP_CREATURE_DORK", "MANA_RAMP_SPELL"}:
+        return "ramp-mana"
+    if p_set & {"CARD_DRAW_BURST", "CARD_DRAW", "DRAW_REPLACEMENT"}:
+        return "draw-burst"
+    if p_set & {"CARD_DRAW_REPEATABLE"}:
+        return "draw-engine"
+    if p_set & {"COUNTERSPELL_GENERIC", "COUNTERSPELL_CREATURE"}:
+        return "counterspell"
+    if p_set & {"BOARDWIPE_CREATURES"}:
+        return "removal-mass"
+    if p_set & {"TARGETED_REMOVAL_CREATURE", "TARGETED_REMOVAL_ARTIFACT",
+                "TARGETED_REMOVAL_ENCHANTMENT", "TARGETED_REMOVAL_PLANESWALKER"}:
+        return "removal-targeted"
+    if p_set & {"WINCON_COMBO", "INFINITE_COMBO"}:
+        return "wincon-combo"
+    if p_set & {"WINCON_COMBAT"}:
+        return "wincon-combat"
+    if p_set & {"WINCON_ALT"}:
+        return "wincon-alt"
+    if p_set & {"TUTOR_NARROW", "TUTOR_BROAD"}:
+        return "tutor"
+    if p_set & {"RECURSION_GRAVEYARD"}:
+        return "recursion"
+    if p_set & {"ETB_TRIGGER", "ETB_VALUE"}:
+        return "etb-trigger"
+    if p_set & {"SACRIFICE_OUTLET", "SAC_OUTLET"}:
+        return "sac-outlet"
+    if p_set & {"DEATH_TRIGGER"}:
+        return "death-trigger"
+    if p_set & {"FLICKER_EFFECT"}:
+        return "flicker"
+    if p_set & {"LIFEGAIN_PAYOFF"}:
+        return "lifegain-payoff"
+    if any(p.startswith("TYPAL_") or p.startswith("TRIBAL_") for p in p_set):
+        return "tribal-anchor"
+    return "value"
+
+
+def _compute_positional_context(
+    *,
+    candidate: Dict[str, Any],
+    deck_in_context: List[Dict[str, Any]],
+    candidate_pool: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Iter 3 Phase 8: compute positional context for one candidate.
+
+    Returns dict with:
+      - interacts_with_in_deck: list of deck card names this candidate
+        shares ≥1 primitive with.
+      - pairs_with_not_yet_picked: list of pool candidate names that
+        share ≥2 primitives (stronger signal — 2+ shared primitives is
+        a meaningful interaction lead).
+      - primitive_tag_hint: condensed tag from `_primitive_tag_hint`.
+    """
+    cand_prims = set(candidate.get("primitives") or [])
+    cand_name_lower = (candidate.get("name") or "").strip().lower()
+
+    interacts_with: List[str] = []
+    if cand_prims:
+        for deck_card in deck_in_context:
+            other_name = deck_card.get("card_name") or deck_card.get("name") or ""
+            if not other_name or other_name.strip().lower() == cand_name_lower:
+                continue
+            other_prims = set(deck_card.get("primitives") or [])
+            if cand_prims & other_prims:
+                interacts_with.append(other_name)
+                if len(interacts_with) >= 5:
+                    break
+
+    pairs_with: List[str] = []
+    if cand_prims:
+        for other in candidate_pool:
+            other_name = other.get("name") or ""
+            if not other_name or other_name.strip().lower() == cand_name_lower:
+                continue
+            other_prims = set(other.get("primitives") or [])
+            if len(cand_prims & other_prims) >= 2:
+                pairs_with.append(other_name)
+                if len(pairs_with) >= 4:
+                    break
+
+    return {
+        "interacts_with_in_deck": interacts_with,
+        "pairs_with_not_yet_picked": pairs_with,
+        "primitive_tag_hint": _primitive_tag_hint(list(cand_prims)),
+    }
+
+
 def _build_candidate_critic_user_prompt(
     *,
     commander: str,
@@ -1848,10 +1945,19 @@ def _build_candidate_critic_user_prompt(
     swappable_slots: List[Dict[str, str]],
     candidate_pool: List[Dict[str, Any]],
     bracket_policy_summary: str,
+    deck_primitive_index: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """Compose the user prompt. Card text is included for candidates so
     the model can reason semantically (which is the whole point of
-    iteration 2 — corpus frequency alone misses non-obvious synergies)."""
+    iteration 2 — corpus frequency alone misses non-obvious synergies).
+
+    Iter 3 Phase 8: each candidate gets a positional-context block
+    showing which deck cards it interacts with by primitive overlap,
+    which pool cards it pairs with, and a compact primitive_tag_hint.
+    `deck_primitive_index` is the (deck + pool merged) primitive view
+    used for interaction computation — must include `primitives` per
+    entry. If None, positional context is omitted (backwards-compat).
+    """
     import json as _j
     deck_summary_lines = [
         f"  - {c['card_name']} ({c.get('source', 'agent')})"
@@ -1877,6 +1983,22 @@ def _build_candidate_critic_user_prompt(
         line = f"  - {cname} | {ctype} | CMC={ccmc} | primitives=[{cprim}] | {rc}"
         if oracle_text:
             line += f"\n      text: {oracle_text}"
+        # Iter 3 Phase 8: positional context block.
+        if deck_primitive_index is not None:
+            ctx = _compute_positional_context(
+                candidate=cand,
+                deck_in_context=deck_primitive_index,
+                candidate_pool=candidate_pool,
+            )
+            iw = ctx["interacts_with_in_deck"]
+            pw = ctx["pairs_with_not_yet_picked"]
+            tag = ctx["primitive_tag_hint"]
+            if iw or pw or tag != "value":
+                line += (
+                    f"\n      tag={tag} | "
+                    f"interacts_with={iw[:3]} | "
+                    f"pairs_with={pw[:3]}"
+                )
         pool_lines.append(line)
 
     intent_block = ""
@@ -1915,6 +2037,19 @@ def _build_candidate_critic_user_prompt(
         + f"\nReturn AT MOST {len(swappable_slots)} selected_cards. You may "
         + "return fewer if you genuinely think iteration 1's picks for "
         + "some swappable slots are already optimal — that's a valid signal.\n"
+        + (
+            "\nPOSITIONAL CONTEXT (iter 3 Phase 8): each candidate is "
+            "annotated with `tag=...` (e.g. ramp-mana, draw-engine, "
+            "sac-outlet), `interacts_with=[...]` (deck cards sharing "
+            "primitives — likely synergies), and `pairs_with=[...]` "
+            "(pool cards with strong 2+-primitive overlap). Use these "
+            "to reason about positional value: a card that interacts "
+            "with 3 existing deck cards is usually a stronger pick "
+            "than one that interacts with 0. Cite the specific "
+            "interacting card by name in your reason field when the "
+            "interaction is the reason for the pick.\n"
+            if deck_primitive_index is not None else ""
+        )
     )
 
 
@@ -2083,6 +2218,26 @@ def _run_candidate_critic(
         })
         return deck, warnings
 
+    # Iter 3 Phase 8: build a primitive index over the locked deck portion
+    # by hydrating primitives from the parent pool. This lets the
+    # candidate critic compute positional context (interacts_with /
+    # pairs_with) for each pool candidate. We attach primitives only
+    # to deck cards whose names match a parent-pool candidate — for
+    # cards that came from outside the pool (e.g. basics) primitives
+    # default to empty (no false-positive matches).
+    pool_by_name_lower = {
+        (c.get("name") or "").strip().lower(): c
+        for c in pool.get("candidates") or []
+    }
+    deck_primitive_index: List[Dict[str, Any]] = []
+    for deck_card in locked:
+        name = deck_card.get("card_name") or ""
+        match = pool_by_name_lower.get(name.strip().lower())
+        deck_primitive_index.append({
+            "card_name": name,
+            "primitives": (match.get("primitives") if match else []) or [],
+        })
+
     # Make the call.
     system = _CANDIDATE_CRITIC_SYSTEM_PROMPT.format(n_swappable=len(swappable))
     system += (forbidden_prompt_block or "")
@@ -2093,6 +2248,7 @@ def _run_candidate_critic(
         swappable_slots=swappable,
         candidate_pool=critic_pool,
         bracket_policy_summary=_summarize_bracket_policy(bracket),
+        deck_primitive_index=deck_primitive_index,
     )
 
     result = llm_client.call_with_budget(
