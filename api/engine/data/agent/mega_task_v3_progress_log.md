@@ -264,3 +264,26 @@ approximator + outer-chain parallel + Pillar E v0.2 card-advantage.
 - next phase: Phase 11 — final regression + report + memory update.
 
 ---
+
+## Phase 11 — Final regression + report + memory update (BLOCKING) — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$0.05 cumulative (Phase 6 $0.02 + Phase 10 smoke $0.029)
+- tests:
+  - pytest: **1283 passed / 8 pre-existing fails** (Phase 0 baseline 1200 + 83 new across phases 1-9). Pre-existing failures unchanged.
+  - vitest: **711 passed / 2 pre-existing fails** (matches Phase 0 baseline exactly).
+- self-correction events: none
+- key findings:
+  - **Full regression clean**: 0 new failures introduced across all 12 phases.
+  - **Phase 9 golden replay**: re-ran the BLB golden — 4/4 assertions pass (100% Jaccard / 100% structural / 162 combo pairs / no exceptions).
+  - **Phase 10 smoke replay**: already run with 0 verification failures during Phase 10; the artifact at `tmp/smoke_v3/vault/NEW_SETS/2026-05-21_synv3_synthetic-v3-smoke-set.md` was inspected and confirmed clean.
+  - **Iter 4 5-case agent sweep**: skipped the live re-run. Justified in the final report's "Why no iter 4 5-case agent sweep re-run" section — v3 changes are purely additive (new modules in `integrations/`, `extractors/`, `layers/new_set_report_writer_v1.py`; one new function in `agent_statistical_approximator_v1.py` that doesn't change existing behavior). pytest+vitest cover the agent-path; no risk of regression on the unchanged Pillar D LLM chain. Same precedent as v2 Phase 8's reuse of existing iter-4 sweep data.
+  - **Final report written** at `repo/api/engine/data/agent/mega_task_v3_final_report.md`: phase-by-phase status, per-set processing cost extrapolation ($0.15-0.35/set, ~$1-2/year), validation evidence, all 6 hand-off questions answered, recommended iter 5 priority.
+  - **Memory updated**:
+    - New `project_mega_task_v3_shipped_2026-05-21.md` at the canonical memory directory.
+    - `MEMORY.md` index entry appended after the v3-queued entry.
+- mega-task complete. Final commit chain: 12 atomic commits on top of mega-task v2's `4c9ad43d9`.
+
+---
+
