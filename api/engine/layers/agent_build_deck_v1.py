@@ -288,6 +288,10 @@ def compute_agent_build_deck_v1(
     # aware text. Generate a summary_narrative paragraph and 0-3
     # consider_adding callouts. Skipped cleanly when LLM unavailable
     # (per-card reasons fall back to iteration-1 template-fill text).
+    #
+    # Iter 3 Phase 1: D2 only rewrites a priority-30 subset (must-includes,
+    # commander, creative outliers, combo participants, corpus-delta fillers).
+    # The other ~65 cards keep their iter-2 rationales (already substantive).
     if llm_client.is_available():
         deck, final_critic_warnings = _run_final_critic(
             llm_client=llm_client,
@@ -298,6 +302,9 @@ def compute_agent_build_deck_v1(
             intent_analysis=intent_analysis,
             last_findings=last_findings,
             llm_metrics=llm_metrics,
+            must_include_cards=must_include_cards,
+            novel_combo_flags=novel_combo_flags,
+            archetype_brief=pool.get("archetype_brief") or {},
         )
         warnings.extend(final_critic_warnings)
 
@@ -2551,8 +2558,15 @@ def _run_wild_combo_discovery(
 #   3. Suggest 0-3 "consider adding..." cards that the build pipeline
 #      ruled out (NOT added to the deck — surfaced only).
 
+# Iter 3 Phase 1: D2 only rewrites 30 priority cards (down from ~95 in
+# iter 2). Output tokens drop, but the Edgar smoke test hit the 2500
+# ceiling exactly (Tier-1 self-correction during Phase 1): 30 rewrites
+# at ~80-100 tokens + summary_narrative + consider_adding peaked at
+# ~2900. Bumped to 3500 for headroom. Phase 3 batched rewrites will
+# divide this further across 3 calls, so the per-call ceiling will drop
+# again at that point.
 _FINAL_CRITIC_INPUT_TOKEN_BUDGET = 12000
-_FINAL_CRITIC_OUTPUT_TOKEN_BUDGET = 5000
+_FINAL_CRITIC_OUTPUT_TOKEN_BUDGET = 3500
 
 _FINAL_CRITIC_SYSTEM_PROMPT = (
     "You are reviewing a finalized 100-card MTG Commander deck. Your job "
@@ -2585,15 +2599,24 @@ def _build_final_critic_user_prompt(
     theme_hints: List[str],
     intent_analysis: Optional[Dict[str, Any]],
     deck: List[Dict[str, str]],
+    priority_cards: List[Dict[str, str]],
     classified_themes: List[Dict[str, Any]],
     strength_check_summary: Optional[Dict[str, Any]],
 ) -> str:
+    # Iter 3 Phase 1: only the priority cards get sent for rewriting.
+    # The full-deck list (all 100) still ships as context so the LLM can
+    # ground rationales in what's actually around the priority card —
+    # but the OUTPUT contract is "rewrite ONLY the priority list."
+    priority_names_lower = {
+        (c.get("card_name") or "").strip().lower() for c in priority_cards
+    }
     deck_lines = []
     for c in deck:
         name = c["card_name"]
         src = c.get("source", "")
         reason = (c.get("reason") or "")[:80]
-        deck_lines.append(f"  - {name} | source={src} | iter1_reason='{reason}'")
+        marker = " [PRIORITY]" if (name or "").strip().lower() in priority_names_lower else ""
+        deck_lines.append(f"  - {name}{marker} | source={src} | iter1_reason='{reason}'")
 
     theme_block = ""
     if classified_themes:
@@ -2617,12 +2640,16 @@ def _build_final_critic_user_prompt(
                 f"implicit_themes={themes}"
             )
 
+    priority_names = [c.get("card_name", "") for c in priority_cards]
+
     return (
         f"Commander: {commander}\n"
         f"Bracket: {bracket}\n"
         f"User themes: {theme_hints}{theme_block}{sc_block}{intent_block}\n"
-        f"\nFINAL 100-CARD DECK:\n"
+        f"\nFINAL 100-CARD DECK (cards tagged [PRIORITY] are the ones to rewrite):\n"
         + "\n".join(deck_lines)
+        + f"\n\nPRIORITY REWRITE LIST ({len(priority_cards)} cards):\n"
+        + "\n".join(f"  - {n}" for n in priority_names)
         + "\n\nOutput JSON exactly:\n"
         + "{\n"
         + '  "card_rationales": [\n'
@@ -2633,11 +2660,116 @@ def _build_final_critic_user_prompt(
         + '    {"card": "Card not in deck", "why": "one sentence reason to consider"}\n'
         + "  ]\n"
         + "}\n"
-        + "\nNotes:\n"
-        + "- You don't need to rewrite every card — skip basics and any "
-        + "card whose iter1_reason is already specific.\n"
-        + "- consider_adding entries must NOT already be in the deck."
+        + "\nRULES:\n"
+        + f"- Rewrite EXACTLY the {len(priority_cards)} [PRIORITY] cards listed above. "
+        + "Do NOT rewrite any other deck card — those keep their existing rationale.\n"
+        + "- Each rewrite is one substantive sentence grounded in specific other cards in this deck.\n"
+        + "- consider_adding entries must NOT already be in the deck.\n"
+        + "- summary_narrative is 3-5 sentences covering primary plan + secondary plan + notable tech."
     )
+
+
+def _select_priority_rewrite_cards(
+    *,
+    deck: List[Dict[str, str]],
+    must_include_cards: List[str],
+    novel_combo_flags: List[Dict[str, Any]],
+    archetype_brief: Dict[str, Any],
+    cap: int = 30,
+) -> List[Dict[str, str]]:
+    """Iter 3 Phase 1 priority selection for D2 rationale rewrites.
+
+    Priority order (highest first):
+      1. Commander (always)
+      2. Must-include cards (typically 2-5)
+      3. Cards flagged as creative_outlier (source contains 'creative_outlier')
+      4. Cards participating in novel_combo_flags (cards: [a, b], applied_swap)
+      5. Cards with the highest corpus-delta (cards NOT in top-30 staples;
+         we fill remaining slots with these because they're the most "this
+         deck specifically" picks — exactly where deck-context rationale
+         adds the most signal)
+
+    Returns a list of deck card dicts; len <= cap. The other (~65) cards
+    keep their iteration-2 rationales.
+    """
+    selected: List[Dict[str, str]] = []
+    selected_names_lower: set = set()
+
+    def _add(card: Dict[str, str]) -> bool:
+        n = (card.get("card_name") or "").strip().lower()
+        if not n or n in selected_names_lower:
+            return False
+        selected.append(card)
+        selected_names_lower.add(n)
+        return True
+
+    if not deck:
+        return selected
+
+    # 1. Commander (always the first deck entry).
+    _add(deck[0])
+
+    # 2. Must-includes.
+    mi_lower = {(m or "").strip().lower() for m in (must_include_cards or [])}
+    for card in deck:
+        if (card.get("card_name") or "").strip().lower() in mi_lower:
+            _add(card)
+            if len(selected) >= cap:
+                return selected
+
+    # 3. Creative outliers.
+    for card in deck:
+        src = card.get("source") or ""
+        if "creative_outlier" in src:
+            _add(card)
+            if len(selected) >= cap:
+                return selected
+
+    # 4. Cards participating in novel_combo_flags.
+    combo_card_names: set = set()
+    for flag in novel_combo_flags or []:
+        for n in flag.get("cards") or []:
+            if isinstance(n, str) and n.strip():
+                combo_card_names.add(n.strip().lower())
+    for card in deck:
+        if (card.get("card_name") or "").strip().lower() in combo_card_names:
+            _add(card)
+            if len(selected) >= cap:
+                return selected
+
+    # 5. Highest-corpus-delta cards (not in top-30 corpus staples, not
+    #    basics, not already selected).
+    staples_sorted = sorted(
+        (archetype_brief or {}).get("staple_cards") or [],
+        key=lambda s: float(s.get("usage_pct") or 0.0),
+        reverse=True,
+    )
+    top30_staple_names_lower = {
+        (s.get("name") or "").strip().lower() for s in staples_sorted[:30]
+    }
+    basic_names_lower = {n.lower() for n in _BASIC_LAND_NAMES}
+    # Fill in deck order (Phase C2.1 + C2.2 already put high-priority
+    # picks near the top of the body section).
+    for card in deck[1:]:
+        cname_lower = (card.get("card_name") or "").strip().lower()
+        if not cname_lower or cname_lower in basic_names_lower:
+            continue
+        if cname_lower in top30_staple_names_lower:
+            continue
+        if _add(card) and len(selected) >= cap:
+            return selected
+
+    # 6. Backstop — if we still haven't hit the cap, fill with any non-
+    #    basic deck cards not already selected.
+    if len(selected) < cap:
+        for card in deck[1:]:
+            cname_lower = (card.get("card_name") or "").strip().lower()
+            if not cname_lower or cname_lower in basic_names_lower:
+                continue
+            if _add(card) and len(selected) >= cap:
+                break
+
+    return selected
 
 
 def _run_final_critic(
@@ -2650,19 +2782,37 @@ def _run_final_critic(
     intent_analysis: Optional[Dict[str, Any]],
     last_findings: Dict[str, Any],
     llm_metrics: Dict[str, Any],
+    must_include_cards: Optional[List[str]] = None,
+    novel_combo_flags: Optional[List[Dict[str, Any]]] = None,
+    archetype_brief: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
     """Run the final critic. Returns (deck_with_rewritten_reasons, warnings).
-    Mutates `last_findings` to add `summary_narrative` + `consider_adding`."""
+    Mutates `last_findings` to add `summary_narrative` + `consider_adding`.
+
+    Iter 3 Phase 1: D2 only rewrites a priority-30 subset of the deck
+    instead of the full ~95 non-basic cards. The other cards keep their
+    iteration-2 rationales (which were already substantive).
+    """
     warnings: List[Dict[str, str]] = []
 
     classified_themes = last_findings.get("themes_classified") or []
     strength_check_summary = last_findings.get("strength_check_summary")
 
+    # Iter 3 Phase 1: select priority-30 cards for rewriting.
+    priority_cards = _select_priority_rewrite_cards(
+        deck=deck,
+        must_include_cards=must_include_cards or [],
+        novel_combo_flags=novel_combo_flags or [],
+        archetype_brief=archetype_brief or {},
+        cap=30,
+    )
+
     system = _FINAL_CRITIC_SYSTEM_PROMPT
     user = _build_final_critic_user_prompt(
         commander=commander, bracket=bracket,
         theme_hints=theme_hints, intent_analysis=intent_analysis,
-        deck=deck, classified_themes=classified_themes,
+        deck=deck, priority_cards=priority_cards,
+        classified_themes=classified_themes,
         strength_check_summary=strength_check_summary,
     )
 

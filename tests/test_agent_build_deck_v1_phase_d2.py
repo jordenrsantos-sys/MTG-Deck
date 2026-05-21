@@ -222,12 +222,14 @@ class FinalCriticTests(unittest.TestCase):
 
 class PromptShapeTests(unittest.TestCase):
     def test_prompt_includes_deck_themes_and_intent(self) -> None:
+        deck = [{"card_name": "Vito", "source": "user_intent", "reason": "x"}]
         prompt = _build_final_critic_user_prompt(
             commander="Edgar Markov", bracket="B3",
             theme_hints=["TYPAL_VAMPIRES"],
             intent_analysis={"likely_win_condition": "Drain via lifegain",
                               "implicit_themes": ["lifegain_payoffs"]},
-            deck=[{"card_name": "Vito", "source": "user_intent", "reason": "x"}],
+            deck=deck,
+            priority_cards=deck,
             classified_themes=[{"theme_id": "TYPAL_VAMPIRES"}],
             strength_check_summary={"bracket_signal": "B3", "mean_similarity": 0.6},
         )
@@ -237,6 +239,9 @@ class PromptShapeTests(unittest.TestCase):
         self.assertIn("Drain via lifegain", prompt)
         self.assertIn("bracket_signal", prompt)
         self.assertIn("card_rationales", prompt)
+        # Iter 3 Phase 1 — priority rewrite list explicit in prompt.
+        self.assertIn("PRIORITY REWRITE LIST", prompt)
+        self.assertIn("[PRIORITY]", prompt)
         self.assertIn("summary_narrative", prompt)
 
 

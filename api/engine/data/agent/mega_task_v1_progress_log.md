@@ -30,3 +30,21 @@ Authority: autonomous per `mega_task_v1_kickoff.md` until hard halt condition.
 - next phase: Phase 1 — D2 prompt cap to 30 priority cards.
 
 ---
+
+## Phase 1 — D2 prompt cap to 30 priority cards — COMPLETED
+
+- timestamp: 2026-05-20 20:55
+- commit: (this commit)
+- cost_to_date: ~$0.51 (two Edgar smoke runs: $0.25 v1 + $0.26 v2)
+- tests: pytest 1011 passed / 8 pre-existing fails (+10 new tests vs Phase 0's 1001). vitest unchanged.
+- self-correction events:
+  - **Tier-1**: First smoke run on Edgar showed `FINAL_CRITIC_INVALID_JSON` — D2 hit the new 2500 output token ceiling I'd set and truncated mid-JSON. The 30-card rewrites averaged ~80-100 tokens each + summary_narrative + consider_adding peaked at ~2900. Bumped `_FINAL_CRITIC_OUTPUT_TOKEN_BUDGET` from 2500 → 3500 and re-ran. Second run succeeded cleanly with output=3111 (under the new ceiling).
+- key findings:
+  - `_select_priority_rewrite_cards` selects 30 cards in the documented priority order; all 10 unit tests pass.
+  - D2 latency: 89.2s (iter-2 Edgar) → 63.1s (Phase 1 Edgar) = ~29% reduction. D2 output tokens: 4221 → 3111 = ~26% reduction. The latency improvement matches the output token cut.
+  - Total wallclock: 197.9s (iter-2 Edgar) → 176.6s (Phase 1 Edgar) = 11% improvement. Smoke target was ≤150s rough; Phase 3 batched rewrites are expected to close the remaining 17% gap (the spec explicitly notes "Phase 3 will close the rest").
+  - creativity_delta stayed at 35 (unchanged); novel_combo_count 6 (vs iter-2 6 baseline). Phase 1 didn't regress either metric.
+  - The first run's truncation-then-valid-on-rerun signals that the LLM's actual output for 30 priority cards is in the 2700-3200 token range — sometimes verbose enough to clip 2500. 3500 gives ~10% headroom.
+- next phase: Phase 2 — B2 combo-anchor hard guard.
+
+---
