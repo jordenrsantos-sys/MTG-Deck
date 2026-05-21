@@ -2495,6 +2495,112 @@ async def agent_build_deck_v1(req: AgentBuildDeckV1Request):
     return AgentBuildDeckV1Response(**result)
 
 
+@app.post("/agent/build_deck_v1/stream")
+async def agent_build_deck_v1_stream(req: AgentBuildDeckV1Request):
+    """Mega-task v5 Phase 3: SSE-streaming variant of /agent/build_deck_v1.
+
+    Emits one Server-Sent Event per phase boundary so the UI can show the
+    build's current phase + elapsed time + cumulative LLM cost during the
+    110-150s wallclock. The final "complete" event carries the full
+    AgentBuildDeckV1Response payload — clients render the deck from it.
+
+    The non-streaming endpoint at /agent/build_deck_v1 still exists for
+    Python tools / programmatic callers that don't need progress streaming.
+
+    Event format (per SSE spec):
+        data: {"phase": "...", "status": "started", "elapsed_s": 0.0, ...}\n\n
+        data: {"phase": "complete", "status": "completed", "response": {...}}\n\n
+
+    Cancellation: closing the connection aborts the SSE stream but the
+    background build keeps running on the server (next iteration will add a
+    cancel-token; this is acceptable for v5 since the build is bounded by
+    ENDPOINT_CALL_BUDGET=30 anyway).
+    """
+    import asyncio
+    import json
+    import queue as _queue
+    import threading
+
+    from sse_starlette.sse import EventSourceResponse
+
+    from api.engine.layers.agent_build_deck_v1 import compute_agent_build_deck_v1
+
+    # Use a synchronous queue.Queue (NOT asyncio.Queue) because the build runs
+    # in a thread via asyncio.to_thread; the producer is the sync callback in
+    # that thread, the consumer is the async generator. A simple thread-safe
+    # queue is the cleanest bridge.
+    event_q: "_queue.Queue[dict]" = _queue.Queue()
+    SENTINEL = object()
+    error_holder: dict = {}
+
+    def _on_progress(event: dict) -> None:
+        event_q.put(event)
+
+    def _run_build() -> None:
+        try:
+            compute_agent_build_deck_v1(
+                db_snapshot_id=req.db_snapshot_id,
+                commander=req.commander,
+                bracket=req.bracket,
+                theme_hints=req.theme_hints,
+                must_include_cards=req.must_include_cards,
+                max_iterations=req.max_iterations,
+                seed=req.seed,
+                progress_callback=_on_progress,
+            )
+        except Exception as exc:
+            error_holder["error"] = f"{exc.__class__.__name__}: {exc}"
+        finally:
+            event_q.put(SENTINEL)
+
+    # Kick off the build in a worker thread.
+    build_task = asyncio.create_task(asyncio.to_thread(_run_build))
+
+    async def event_generator():
+        try:
+            while True:
+                # Drain the queue with a short timeout so the async loop stays
+                # responsive (heartbeats / disconnect detection). We don't
+                # currently emit heartbeats; uvicorn's idle timeout is generous
+                # enough for 240s builds, but the loop structure leaves room.
+                try:
+                    item = await asyncio.to_thread(event_q.get, True, 1.0)
+                except _queue.Empty:
+                    # Could send a keep-alive comment here. For now just loop.
+                    if build_task.done():
+                        # The thread finished; drain anything left.
+                        while True:
+                            try:
+                                item = event_q.get_nowait()
+                            except _queue.Empty:
+                                break
+                            if item is SENTINEL:
+                                break
+                            yield {"event": "progress", "data": json.dumps(item)}
+                        if error_holder.get("error"):
+                            yield {"event": "error", "data": json.dumps({"error": error_holder["error"]})}
+                        return
+                    continue
+
+                if item is SENTINEL:
+                    # Build thread finished. If error, send error event.
+                    if error_holder.get("error"):
+                        yield {"event": "error", "data": json.dumps({"error": error_holder["error"]})}
+                    return
+                yield {"event": "progress", "data": json.dumps(item)}
+        finally:
+            # Best-effort: ensure the background task is awaited (it cannot be
+            # cancelled mid-LLM-call, but at least we wait for it so the worker
+            # thread doesn't leak).
+            try:
+                if not build_task.done():
+                    await build_task
+            except Exception:
+                pass
+
+    return EventSourceResponse(event_generator())
+
+
 @app.post("/corpus/batch_ingest_v1", response_model=CorpusBatchIngestV1Response)
 async def corpus_batch_ingest_v1(req: CorpusBatchIngestV1Request):
     """Phase 5a — batch-ingest external decks (EDHREC, cEDH-DB, etc.) into the

@@ -21,7 +21,62 @@ is testable end-to-end before the selection algorithm exists in Phases B-D.
 from __future__ import annotations
 
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+
+
+# Mega-task v5 Phase 3: progress callback signature. compute_agent_build_deck_v1
+# accepts an optional ProgressCallback that receives one event dict per phase
+# boundary. The streaming /agent/build_deck_v1/stream endpoint passes a
+# callback that pushes events into a queue for the SSE generator to drain.
+# Non-streaming callers leave it None and pay no overhead.
+#
+# Event schema:
+#   {
+#     "phase": "intent_interpreter" | "candidate_pool" | "select_deck" |
+#              "c21_c22_parallel" | "validate_swap" | "final_critic" |
+#              "mana_base" | "card_advantage" | "structural_safety_net" |
+#              "complete",
+#     "status": "started" | "completed",
+#     "elapsed_s": float,        # seconds since compute start
+#     "cost_usd": float,         # cumulative LLM cost so far
+#     "calls_so_far": int,       # cumulative endpoint-call count
+#     # For status="completed" on the "complete" phase, also includes:
+#     "response": {...}          # full AgentBuildDeckV1Response
+#   }
+ProgressCallback = Callable[[Dict[str, Any]], None]
+
+
+def _emit_progress(
+    callback: Optional[ProgressCallback],
+    *,
+    phase: str,
+    status: str,
+    t_start: float,
+    llm_metrics: Optional[Dict[str, Any]] = None,
+    call_counter: Optional[Dict[str, int]] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Emit a progress event if a callback is registered. Never raises."""
+    if callback is None:
+        return
+    try:
+        cumulative_cost = 0.0
+        if llm_metrics is not None:
+            for c in llm_metrics.get("calls") or []:
+                cumulative_cost += float(c.get("cost_usd") or 0.0)
+        event: Dict[str, Any] = {
+            "phase": phase,
+            "status": status,
+            "elapsed_s": round(perf_counter() - t_start, 2),
+            "cost_usd": round(cumulative_cost, 4),
+            "calls_so_far": int((call_counter or {}).get("calls") or 0),
+        }
+        if extra:
+            event.update(extra)
+        callback(event)
+    except Exception:
+        # Progress reporting must never break the build.
+        pass
 
 
 AGENT_BUILD_DECK_VERSION = "agent_build_deck_v1.0"
@@ -60,6 +115,7 @@ def compute_agent_build_deck_v1(
     max_iterations: int = 5,
     seed: Optional[int] = None,
     skip_strength_check: bool = False,
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> Dict[str, Any]:
     """Build a 99-card deck for `commander` honoring user intent.
 
@@ -85,7 +141,7 @@ def compute_agent_build_deck_v1(
     warnings: List[Dict[str, str]] = []
 
     if bracket not in VALID_BRACKETS:
-        return {
+        early_response = {
             "version": AGENT_BUILD_DECK_VERSION,
             "status": "FAILED",
             "deck": [],
@@ -96,9 +152,14 @@ def compute_agent_build_deck_v1(
             }],
             "elapsed_ms": int((perf_counter() - t_start) * 1000),
         }
+        _emit_progress(
+            progress_callback, phase="complete", status="completed",
+            t_start=t_start, extra={"response": early_response},
+        )
+        return early_response
 
     if not isinstance(commander, str) or not commander.strip():
-        return {
+        early_response = {
             "version": AGENT_BUILD_DECK_VERSION,
             "status": "FAILED",
             "deck": [],
@@ -109,6 +170,11 @@ def compute_agent_build_deck_v1(
             }],
             "elapsed_ms": int((perf_counter() - t_start) * 1000),
         }
+        _emit_progress(
+            progress_callback, phase="complete", status="completed",
+            t_start=t_start, extra={"response": early_response},
+        )
+        return early_response
 
     call_counter: Dict[str, int] = {"calls": 0}
     phase_timings_ms: Dict[str, int] = {"pool": 0, "select": 0, "validate": 0}
@@ -169,6 +235,10 @@ def compute_agent_build_deck_v1(
     # and a likely_win_condition. Augments theme_hints (without forcing)
     # and gives suggested_extensions a non-locked score boost in the
     # candidate pool. Skipped cleanly when LLM unavailable.
+    _emit_progress(
+        progress_callback, phase="intent_interpreter", status="started",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
     intent_analysis: Optional[Dict[str, Any]] = None
     augmented_theme_hints = list(theme_hints)
     suggested_extension_names: List[str] = []
@@ -227,7 +297,16 @@ def compute_agent_build_deck_v1(
                     ),
                 })
 
+    _emit_progress(
+        progress_callback, phase="intent_interpreter", status="completed",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
+
     # ---- Phase B: build the candidate pool ----
+    _emit_progress(
+        progress_callback, phase="candidate_pool", status="started",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
     t_pool = perf_counter()
     try:
         pool = _build_candidate_pool(
@@ -242,7 +321,7 @@ def compute_agent_build_deck_v1(
             forbidden_set=forbidden_set,
         )
     except Exception as exc:
-        return {
+        early_response = {
             "version": AGENT_BUILD_DECK_VERSION,
             "status": "FAILED",
             "deck": [],
@@ -253,8 +332,18 @@ def compute_agent_build_deck_v1(
             }],
             "elapsed_ms": int((perf_counter() - t_start) * 1000),
         }
+        _emit_progress(
+            progress_callback, phase="complete", status="completed",
+            t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+            extra={"response": early_response},
+        )
+        return early_response
     phase_timings_ms["pool"] = int((perf_counter() - t_pool) * 1000)
     warnings.extend(pool.get("warnings", []))
+    _emit_progress(
+        progress_callback, phase="candidate_pool", status="completed",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
 
     if call_counter["calls"] >= ENDPOINT_CALL_BUDGET:
         warnings.append({
@@ -263,12 +352,20 @@ def compute_agent_build_deck_v1(
         })
 
     # ---- Phase C: greedy slot-filling selection ----
+    _emit_progress(
+        progress_callback, phase="select_deck", status="started",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
     t_select = perf_counter()
     body, select_warnings = _select_deck(
         pool=pool, bracket=bracket, commander=commander.strip(),
     )
     phase_timings_ms["select"] = int((perf_counter() - t_select) * 1000)
     warnings.extend(select_warnings)
+    _emit_progress(
+        progress_callback, phase="select_deck", status="completed",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
 
     deck: List[Dict[str, str]] = [{
         "card_name": commander.strip(),
@@ -286,6 +383,10 @@ def compute_agent_build_deck_v1(
     # logged. The result is max(C2.1, C2.2) wallclock instead of sum.
     novel_combo_flags: List[Dict[str, Any]] = []
     if llm_client.is_available():
+        _emit_progress(
+            progress_callback, phase="c21_c22_parallel", status="started",
+            t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+        )
         deck, parallel_warnings = _run_c21_c22_parallel(
             llm_client=llm_client,
             deck=deck,
@@ -302,12 +403,20 @@ def compute_agent_build_deck_v1(
             guard_fire_events=guard_fire_events,
         )
         warnings.extend(parallel_warnings)
+        _emit_progress(
+            progress_callback, phase="c21_c22_parallel", status="completed",
+            t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+        )
 
     # ---- Phase D: validation + swap iteration (≤12 iters, total ≤30 calls) ----
     # Note: we validate against the USER-STATED theme_hints, not the
     # LLM-augmented ones. Theme coherence is a "did we honor what the
     # user asked for" check; the LLM's inferred themes are bonuses, not
     # requirements.
+    _emit_progress(
+        progress_callback, phase="validate_swap", status="started",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
     t_validate = perf_counter()
     deck, last_findings, validate_warnings = _validate_and_iterate(
         deck=deck, pool=pool,
@@ -318,6 +427,10 @@ def compute_agent_build_deck_v1(
     )
     phase_timings_ms["validate"] = int((perf_counter() - t_validate) * 1000)
     warnings.extend(validate_warnings)
+    _emit_progress(
+        progress_callback, phase="validate_swap", status="completed",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
 
     # ---- Iteration 2 Phase D2: final critic + rationale rewrite ----
     # Replace per-card `reason` fields with LLM-generated, deck-context-
@@ -329,6 +442,10 @@ def compute_agent_build_deck_v1(
     # commander, creative outliers, combo participants, corpus-delta fillers).
     # The other ~65 cards keep their iter-2 rationales (already substantive).
     if llm_client.is_available():
+        _emit_progress(
+            progress_callback, phase="final_critic", status="started",
+            t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+        )
         deck, final_critic_warnings = _run_final_critic(
             llm_client=llm_client,
             deck=deck,
@@ -346,6 +463,10 @@ def compute_agent_build_deck_v1(
             guard_fire_events=guard_fire_events,
         )
         warnings.extend(final_critic_warnings)
+        _emit_progress(
+            progress_callback, phase="final_critic", status="completed",
+            t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+        )
 
     # ---- Phase 10 (Pillar E v0.1): mana base reconciliation ----
     # Compute Karsten-compliant mana-base recommendation from the deck's
@@ -355,6 +476,10 @@ def compute_agent_build_deck_v1(
     # available. The optimizer is deterministic; the LLM only critiques
     # discrepancies (e.g. "storm runs fewer lands — this deviation is
     # justified" or "deck is 4 lands short — swap X for Forest").
+    _emit_progress(
+        progress_callback, phase="mana_base", status="started",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
     mana_base_block: Dict[str, Any] = {
         "active": False,
         "recommendation": None,
@@ -433,11 +558,19 @@ def compute_agent_build_deck_v1(
             "code": "MANA_BASE_OPTIMIZER_FAILED",
             "message": f"{exc.__class__.__name__}: {exc}",
         })
+    _emit_progress(
+        progress_callback, phase="mana_base", status="completed",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
 
     # ---- Iter 4 Phase 4: Pillar E v0.2 card-advantage optimizer ----
     # Compute target draw count + mix vs the deck's actual draw shape.
     # Same hybrid pattern as mana base: deterministic recommendation,
     # LLM critique on significant discrepancy.
+    _emit_progress(
+        progress_callback, phase="card_advantage", status="started",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
     card_advantage_block: Dict[str, Any] = {
         "active": False,
         "recommendation": None,
@@ -485,6 +618,10 @@ def compute_agent_build_deck_v1(
             "code": "CARD_ADVANTAGE_OPTIMIZER_FAILED",
             "message": f"{exc.__class__.__name__}: {exc}",
         })
+    _emit_progress(
+        progress_callback, phase="card_advantage", status="completed",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
 
     # ---- Iter 5 mega-task v4 Phase 13 retro: structural safety net ----
     # Defensive guarantee that iter1 invariants hold by the time the
@@ -493,10 +630,18 @@ def compute_agent_build_deck_v1(
     # If a downstream phase (C2.1/C2.2/D2) dropped a must-include via
     # a flaky swap, restore it here by replacing the lowest-priority
     # non-locked card. Also re-deduplicate any singleton violations.
+    _emit_progress(
+        progress_callback, phase="structural_safety_net", status="started",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
     deck = _enforce_structural_invariants(
         deck=deck, must_include_cards=must_include_cards,
         color_identity=set(pool.get("color_identity") or []),
         warnings=warnings,
+    )
+    _emit_progress(
+        progress_callback, phase="structural_safety_net", status="completed",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
     )
 
     # ---- Summary ----
@@ -596,7 +741,7 @@ def compute_agent_build_deck_v1(
         "card_advantage": card_advantage_block,
     }
 
-    return {
+    response = {
         "version": AGENT_BUILD_DECK_VERSION,
         "status": "OK",
         "deck": deck,
@@ -604,6 +749,12 @@ def compute_agent_build_deck_v1(
         "warnings": warnings,
         "elapsed_ms": int((perf_counter() - t_start) * 1000),
     }
+    _emit_progress(
+        progress_callback, phase="complete", status="completed",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+        extra={"response": response},
+    )
+    return response
 
 
 def _empty_summary(bracket: str, must_include_cards: List[str]) -> Dict[str, Any]:

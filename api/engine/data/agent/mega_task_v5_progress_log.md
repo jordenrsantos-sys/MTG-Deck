@@ -113,6 +113,63 @@ The full "/health is fast WHILE a build is in flight" property is implied by:
 - **pytest**: 1386 passed (1384 prior + 2 new). 8 pre-existing failures unchanged.
 - **vitest**: 722 passed (711 prior + 11 new). 2 pre-existing failures unchanged.
 
-### Phase 2 commit pending
+### Phase 2 commit
+
+`83270d3c6` — "Phase 2 (mega-task v5): auto-default snapshot_id + UI placeholder/help text".
+
+---
+
+## Phase 3 — Build progress streaming via SSE (BLOCKING)
+
+**Started**: 2026-05-21 (immediately after Phase 2 commit)
+
+### Implementation
+
+**Backend (`agent_build_deck_v1.py`)**:
+- New `ProgressCallback = Callable[[Dict[str, Any]], None]` type + `_emit_progress` helper. Helper swallows callback errors so progress reporting can never break the build. Event shape: `{phase, status, elapsed_s, cost_usd, calls_so_far, [response]}`.
+- New `progress_callback` parameter added to `compute_agent_build_deck_v1` (keyword-only, defaults to None — non-streaming callers pay zero overhead).
+- Sprinkled `_emit_progress` calls at every phase boundary: intent_interpreter, candidate_pool, select_deck, c21_c22_parallel (conditional on LLM availability), validate_swap, final_critic (conditional on LLM availability), mana_base, card_advantage, structural_safety_net, and a final "complete" event carrying the full response.
+- All early-return failure paths (INVALID_BRACKET, MISSING_COMMANDER, POOL_BUILD_FAILED) also emit a "complete" event so SSE clients always learn the stream is done.
+
+**Backend (`api/main.py`)**:
+- New `POST /agent/build_deck_v1/stream` endpoint returning `EventSourceResponse` from `sse-starlette` (already installed at 3.4.4).
+- Bridges sync compute → async generator via a `queue.Queue` + `asyncio.to_thread()`. Worker thread runs the build with a callback that pushes events to the queue; the async generator drains the queue and yields SSE-formatted events. SENTINEL marks end-of-stream.
+- The existing non-streaming `POST /agent/build_deck_v1` is unchanged (backward-compat for Python tools / programmatic clients).
+
+**UI (`ui_harness/src/hooks/useBuildStreaming.ts`)**:
+- New hook. Uses `fetch` + `ReadableStream` (NOT `EventSource`, which is GET-only and can't carry the build request body). Manual SSE parser handles `\r\n\r\n` block separation + comment lines.
+- Returns `{ isStreaming, currentPhase, currentStatus, elapsedSeconds, cumulativeCostUsd, events, finalResponse, errorMessage, start, cancel, reset }`.
+- `AbortController` wires `cancel()` to the underlying fetch; on unmount the stream is aborted automatically.
+- Exports `__testing = { _parseSseBuffer }` so the buffer parser is unit-testable without DOM.
+
+**UI (`AIBuildView.tsx`)**:
+- Imports + instantiates the hook. `building` derives from `stream.isStreaming`.
+- `_build()` now calls `stream.start({...})` instead of the synchronous fetch.
+- Two `useEffect`s mirror `stream.finalResponse` → local `response` (preserves existing deck-render JSX) and `stream.errorMessage` → local `errorMessage` (preserves existing error banner).
+- New build progress panel renders below the Build button while streaming. Shows humanized phase label, elapsed seconds, cumulative LLM cost, and a collapsible phase log. `aria-live="polite"` for screen readers.
+- New `_PHASE_LABELS` record maps each server-emitted phase to a human-readable label. Unknown phases fall back to the raw identifier.
+
+### Tests
+
+- **Backend**: `tests/test_agent_build_deck_v1_stream.py` — 10 tests:
+  - 4 emit-helper tests (None callback no-op, populates fields, includes extra payload, swallows callback errors)
+  - 3 progress-callback integration tests (all phase boundaries emit, INVALID_BRACKET early-return emits complete, MISSING_COMMANDER early-return emits complete)
+  - 3 SSE-endpoint TestClient tests (content-type, progress→complete, non-streaming backward-compat)
+  - Tests mock out the LLM client to keep runtime at ~3s (vs ~83s for real-LLM mode confirmed during debugging).
+- **UI**: `ui_harness/src/hooks/__tests__/useBuildStreaming.test.ts` — 13 tests:
+  - 7 SSE-buffer parser tests (single event, multiple events, `\r\n` normalization, incomplete trailing block, comment skipping, empty buffer, default event type)
+  - 6 source-contract tests on the hook (exports, AbortController, callbacks, endpoint URL+Accept header, complete-event short-circuit, unmount cleanup)
+- **UI**: `ui_harness/src/views/__tests__/AIBuildViewPhase3Streaming.test.ts` — 12 tests covering import, hook instantiation, `building = stream.isStreaming`, `_build` payload, finalResponse mirroring, errorMessage surfacing, progress panel testids + aria-live + cost display, phase-label mapping coverage for all 10 phases, and that the old non-streaming fetch is gone from `_build`.
+
+### Backend smoke (real LLM, debug-only)
+
+Ran the SSE endpoint end-to-end with real Anthropic + Voyage calls (no mocks). Stream emitted 18+ events over 83s including all phase boundaries plus periodic keep-alive `: ping - ...` comments from sse-starlette. Final "complete" event carried the full response with `version=agent_build_deck_v1.0`. Confirms the streaming path works against a live build (this is what the Phase 5 chrome-devtools walk will re-verify in the browser).
+
+### Regression baselines (after Phase 3)
+
+- **pytest**: 1396 passed (1386 prior + 10 new). 8 pre-existing failures unchanged.
+- **vitest**: 747 passed (722 prior + 25 new). 2 pre-existing failures unchanged.
+
+### Phase 3 commit pending
 
 ---

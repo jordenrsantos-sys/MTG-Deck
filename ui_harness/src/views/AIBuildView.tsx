@@ -19,6 +19,7 @@ import Badge from "../ui/primitives/Badge";
 import Chip from "../ui/primitives/Chip";
 import Input from "../ui/primitives/Input";
 import Select from "../ui/primitives/Select";
+import { useBuildStreaming } from "../hooks/useBuildStreaming";
 
 const API_BASE_URL =
   ((import.meta as ImportMeta).env?.VITE_API_BASE_URL as string | undefined) ??
@@ -162,6 +163,27 @@ function _formatPct(x: number | undefined): string {
   return `${(x * 100).toFixed(0)}%`;
 }
 
+// Mega-task v5 Phase 3: humanize the SSE phase identifiers for the progress
+// panel. Falls back to the raw identifier if the phase is unrecognized so a
+// future server-side phase addition doesn't break the UI.
+const _PHASE_LABELS: Record<string, string> = {
+  intent_interpreter: "Inferring intent (LLM #1)",
+  candidate_pool: "Building candidate pool",
+  select_deck: "Selecting slots",
+  c21_c22_parallel: "Refining picks (LLM #2 + #3 in parallel)",
+  validate_swap: "Validating + swap-iterating",
+  final_critic: "Rewriting rationales (LLM #4)",
+  mana_base: "Reconciling mana base",
+  card_advantage: "Reconciling card advantage",
+  structural_safety_net: "Enforcing structural invariants",
+  complete: "Complete",
+};
+
+function _formatPhaseLabel(phase: string | null): string {
+  if (!phase) return "Starting build…";
+  return _PHASE_LABELS[phase] ?? phase;
+}
+
 type AIBuildViewProps = {
   onBack?: () => void;
 };
@@ -179,9 +201,31 @@ export default function AIBuildView(props: AIBuildViewProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [snapshotAutoLoaded, setSnapshotAutoLoaded] = useState(false);
 
-  const [building, setBuilding] = useState(false);
   const [response, setResponse] = useState<BuildResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Mega-task v5 Phase 3: SSE build progress streaming. The hook handles the
+  // stream lifecycle (open, parse, abort on unmount) and exposes phase /
+  // elapsed_s / cost_usd / finalResponse. Builds always go through the
+  // streaming endpoint; the non-streaming endpoint is still available for
+  // Python/programmatic callers.
+  const stream = useBuildStreaming({ apiBaseUrl: API_BASE_URL });
+  const building = stream.isStreaming;
+
+  // Push the final response (when stream completes) into the local response
+  // state so the existing deck-render JSX picks it up unchanged.
+  useEffect(() => {
+    if (stream.finalResponse != null) {
+      setResponse(stream.finalResponse as BuildResponse);
+    }
+  }, [stream.finalResponse]);
+
+  // Surface stream errors into the existing errorMessage banner.
+  useEffect(() => {
+    if (stream.errorMessage) {
+      setErrorMessage(stream.errorMessage);
+    }
+  }, [stream.errorMessage]);
 
   // Mega-task v5 Phase 2: auto-default the snapshot id from /snapshots/active
   // so the user never has to know this internal db identifier exists. If the
@@ -234,32 +278,15 @@ export default function AIBuildView(props: AIBuildViewProps) {
       setErrorMessage("Snapshot ID is required. (Tip: see the workspace toolbar for the active snapshot.)");
       return;
     }
-    setBuilding(true);
     setErrorMessage(null);
     setResponse(null);
-    try {
-      const res = await fetch(`${API_BASE_URL}/agent/build_deck_v1`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          db_snapshot_id: snap,
-          commander: cmdr,
-          bracket,
-          theme_hints: themeHints,
-          must_include_cards: mustIncludes,
-        }),
-      });
-      if (!res.ok) {
-        setErrorMessage(`Build failed: HTTP ${res.status} ${res.statusText}`);
-        return;
-      }
-      const data = (await res.json()) as BuildResponse;
-      setResponse(data);
-    } catch (exc) {
-      setErrorMessage(`Request error: ${(exc as Error).message ?? String(exc)}`);
-    } finally {
-      setBuilding(false);
-    }
+    await stream.start({
+      db_snapshot_id: snap,
+      commander: cmdr,
+      bracket,
+      theme_hints: themeHints,
+      must_include_cards: mustIncludes,
+    });
   }
 
   function _applyToWorkspace() {
@@ -491,6 +518,54 @@ export default function AIBuildView(props: AIBuildViewProps) {
                   </Button>
                 ) : null}
               </div>
+
+              {/* Mega-task v5 Phase 3: build progress display. Shows the
+                  current phase + cumulative elapsed + cumulative LLM cost
+                  while the SSE stream is running. Once the complete event
+                  arrives, isStreaming flips false and the deck section
+                  below renders the result. */}
+              {building || (stream.events.length > 0 && stream.currentPhase !== "complete") ? (
+                <div
+                  className="mt-token-2 rounded border border-glass-border-subtle bg-glass-bg-subtle p-token-3 text-sm"
+                  data-testid="build-progress-panel"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <div className="flex items-baseline justify-between gap-token-2 mb-token-1">
+                    <span className="font-medium">
+                      {_formatPhaseLabel(stream.currentPhase)}
+                    </span>
+                    <span className="text-xs text-text-muted" data-testid="build-progress-elapsed">
+                      {stream.elapsedSeconds.toFixed(1)}s
+                    </span>
+                  </div>
+                  <div className="text-text-muted text-xs flex gap-token-2 flex-wrap">
+                    <span>
+                      LLM cost so far:{" "}
+                      <strong className="text-text-primary">
+                        ${stream.cumulativeCostUsd.toFixed(4)}
+                      </strong>
+                    </span>
+                    <span>typical 110-130s</span>
+                  </div>
+                  {stream.events.length > 1 ? (
+                    <details className="mt-token-1">
+                      <summary className="cursor-pointer text-xs text-text-muted">
+                        Phase log ({stream.events.length})
+                      </summary>
+                      <ul className="mt-token-1 text-xs text-text-muted space-y-token-1">
+                        {stream.events.map((ev, i) => (
+                          <li key={i}>
+                            <code>
+                              [{ev.elapsed_s.toFixed(1)}s] {ev.phase} {ev.status}
+                            </code>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  ) : null}
+                </div>
+              ) : null}
 
               {errorMessage ? (
                 <p className="text-sm text-red-400 mt-token-2" role="alert">
