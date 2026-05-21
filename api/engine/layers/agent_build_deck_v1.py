@@ -3039,6 +3039,11 @@ def _run_wild_combo_discovery(
         source = "llm_wild_combo_discovery"
         if is_outlier:
             source += "|creative_outlier"
+        # Iter 4 Phase 1: tag picks that came from the Voyage semantic-
+        # neighbor augmentation so the validation sweep can count them.
+        added_cand = pool_by_lower.get(add_lower)
+        if added_cand and added_cand.get("source") == "semantic_neighbor":
+            source += "|from_semantic_neighbor"
         deck[remove_idx] = {
             "card_name": add_name,
             "reason": new_reason,

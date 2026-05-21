@@ -45,3 +45,32 @@ Substrate: iter 3 + Pillar E v0.1 + Pillar C ontology v0 + Pillar F v0.1
 - next phase: Phase 1 — Voyage AI semantic retrieval activation.
 
 ---
+
+## Phase 1 — Voyage AI semantic retrieval activation — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$1.92 cumulative ($1.62 one-time Voyage index build + $0.30 Phase 1 smoke). Well clear of the $80 alarm.
+- tests: pytest **1149 passed / 8 pre-existing fails** (Phase 0 baseline 1145 + 4 new). 11 tests in updated test_agent_iter3_phase_7_semantic_retrieval.py (was 7 in iter 3 scaffolding).
+- self-correction events:
+  - **Tier-1**: After the initial Voyage index build succeeded (30,395 cards, 169s, $1.62), a sanity-check query exposed a `color_identity` parser bug — the cards table stores `color_identity` as JSON (`["B", "R", "W"]`) and the first `_commander_legal_cards` implementation naively `split(",")` on the literal JSON string. Fixed the parser to `json.loads`, then ran a one-shot SQL update on `card_embeddings.color_identity` to repair the 30,395 already-indexed rows. No new Voyage API call required. Verified Edgar Markov / Sol Ring / Thassa's Oracle neighbor queries return semantically appropriate matches.
+- key findings:
+  - **Activated `agent_semantic_retrieval_v1.py`**: `build_index()` reads Commander-legal cards from the active snapshot (30,395 cards), batches them into 128-card requests to Voyage `voyage-3` ($0.18/MT), stores float32 vectors as BLOBs in `repo/api/engine/data/embeddings/card_embeddings_v1.sqlite`. Idempotent: re-running with the same snapshot + model + row count short-circuits via the `embeddings_meta` table.
+  - **No sqlite-vec extension dependency**: brute-force cosine over numpy (lazy-loaded into a module-level cache) is ~50ms per top-k query on the 30k×1024-dim matrix (~120MB RAM). Avoids the extension-install complication.
+  - **Index storage**: `card_embeddings(name PK, color_identity, type_line, oracle_text, cmc, released_at, vec BLOB)` + `embeddings_meta(key PK, value)`. The 141MB sqlite file lives at `repo/api/engine/data/embeddings/card_embeddings_v1.sqlite` and is properly gitignored via the existing `*.sqlite` rule.
+  - **Color-identity filter** is honored: passing `color_identity_filter=["W","B","R"]` to `query_neighbors` drops candidates whose CI isn't a subset (verified in unit test + Edgar live sweep).
+  - **Edgar smoke test (1-case, 144.3s wallclock, $0.294 cost)**:
+    - C2.2 wide pool gained **72 semantic-neighbor cards** (target: ≥5).
+    - **2 of those 72 made it into the final deck** (Elenda, the Dusk Rose + Mavren Fein, Dusk Apostle, both surfaced via C2.2 wild-combo discovery picks from the Voyage-augmented pool). Target: ≥2.
+    - novel_combo_count: 10 (target ≥4).
+    - Cost: $0.294 (target ≤$0.35).
+    - Wallclock 144.3s — comparable to iter 3 baseline (143.3s on Edgar). Voyage queries add negligible latency (<100ms total per build).
+  - **Source tagging**: when a C2.2 wild-combo pick comes from a wide-pool entry whose source was `semantic_neighbor`, the final source string gets a `|from_semantic_neighbor` suffix. This makes the Phase 7 sweep tooling able to count Voyage's contribution per case without instrumentation hacks.
+  - **Module change set**:
+    - `api/engine/layers/agent_semantic_retrieval_v1.py` — full activation (was no-op scaffolding).
+    - `api/engine/layers/agent_build_deck_v1.py` — `from_semantic_neighbor` source-tag preservation in `_run_wild_combo_discovery`.
+    - `tests/test_agent_iter3_phase_7_semantic_retrieval.py` — 11 tests (was 7) covering `is_available`/`query_neighbors`/`build_index` idempotency/`EMBEDDING_DB_PATH`.
+    - `requirements.txt` — voyageai>=0.3.0 + numpy>=1.24.0.
+- next phase: Phase 2 — counters-matter archetype + Phase 6 detector refinement.
+
+---
