@@ -205,3 +205,23 @@ automation pipeline + iter 4 baseline.
 - next phase: Phase 8 — user-intent-preservation validation check.
 
 ---
+
+## Phase 8 — User-intent-preservation validation — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$0.90
+- tests: pytest **1353 passed / 8 pre-existing fails** (Phase 7 baseline 1345 + 8 new intent-preservation tests).
+- self-correction events:
+  - **Tier-1**: initial L1-distance drift metric over-penalized aligned decks because primitive signals overlapped across many themes (anthem-effect appeared in 6+ themes, etc.). Replaced with a directional **missed-intent** drift: sum of (expected_weight - actual_weight) per profile theme, only counting where actual < expected. Hitting OTHER themes beyond the profile doesn't penalize.
+  - **Tier-1**: tribal_anchor + anthem-effect signals matched 7 themes simultaneously, diluting tribal weight even on tribal decks. Restructured `_THEME_PRIMITIVE_SIGNALS` to use disjoint signal sets per theme. Added `_THEME_ALIASES` to canonicalize sub-tribal themes (`dragon_tribal`, `vampire_tribal`, `ninja_tempo`, etc.) → `tribal` since primitives don't distinguish sub-tribes.
+- key findings:
+  - **`api/engine/layers/agent_intent_preservation_check_v1.py`** (~150 lines):
+    - `classify_deck_archetype_mix(deck, primitives_lookup)` returns normalized `{theme: weight}` map computed from per-card v1 primitive tags. Sums each card's primitives' theme contributions, normalizes to 1.0.
+    - `check_intent_preservation(theme_profile, final_deck, primitives_lookup, drift_threshold=0.3)` returns `IntentPreservationReport(drift, drifted_themes, deck_archetype_mix, profile_themes, warning_triggered)`. Drift = sum of missed expected weight (capped 1.0). Warning fires when drift > 0.3 per kickoff.
+    - Missing-profile path: returns drift=0, warning=False (no expectation = no drift). This is the user-intent-honest behavior — without a stated theme_profile there's nothing to preserve.
+  - **8 new unit tests** cover: empty-deck baseline (yields {}), tribal-deck top-ranks tribal in classifier, aristocrats-deck top-ranks aristocrats, aligned-tribal-deck stays sub-0.3 drift, drifted-deck triggers warning + lists drifted themes, no-profile yields no warning, empty-deck against profile yields high drift, report contains deck_archetype_mix + profile_themes.
+  - **Module exports a clean integration point** for the agent build flow — callers compute the report and add an INTENT_DRIFT warning when `warning_triggered`. Wiring into compute_agent_build_deck_v1 is deferred (the integration is a single import + post-D2 call; small enough to land in a smaller follow-up).
+- next phase: Phase 9 — aggressive Pillar E mana base reconciliation.
+
+---
