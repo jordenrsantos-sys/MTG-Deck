@@ -127,3 +127,26 @@ approximator + outer-chain parallel + Pillar E v0.2 card-advantage.
 - next phase: Phase 5 — Pillar F new-card archetype-impact scoring.
 
 ---
+
+## Phase 5 — Pillar F new-card archetype-impact scoring — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: $0.00 (pure-Python scoring; no LLM/API calls)
+- tests: pytest **1250 passed / 8 pre-existing fails** (Phase 4 baseline 1239 + 11 new archetype-impact tests).
+- self-correction events: none
+- key findings:
+  - **New functions on `agent_statistical_approximator_v1.py`**:
+    - `score_card_archetype_impact(new_card, archetypes=None, primitives_field='primitives')` — for each archetype in the 12-archetype catalog (`tribal / voltron / storm / aristocrats / counters_matter / control / combo / blink / reanimator / landfall / group_hug / tokens`), returns `{delta, fits_role, displaces, matched_primitives}`. Vanilla cards score 0.0 delta universally; archetype-aligned cards score up to +0.15 (cap).
+    - `top_archetypes_for_card(new_card, k=3)` — convenience wrapper that ranks by `|delta|`.
+  - **Approach**: per-archetype "preferred primitive" weights in `_ARCHETYPE_PREFERRED_PRIMITIVES`. Each archetype declares which v1 primitives matter (weighted 0.0-1.0). New card's primitives × archetype weights → sum × 0.08 calibration → delta (capped at 0.15). The v0.1 spec stub does NOT run a real substitution sim against a reference deck; `displaces` is always None. Future iter can materialize "typical deck per archetype" snapshots and substitute for a richer signal.
+  - **Smoke checks (unit-tested)**:
+    - `doubler-effect` primitive → top archetype `counters_matter` (weight 1.0).
+    - `sac-outlet` primitive → top archetype `aristocrats` (weight 1.0).
+    - `etb-trigger + flicker-effect` → top archetype `blink` (both weight 1.0).
+    - Vanilla (no primitives) → 0.0 across all archetypes; `fits_role = "vanilla"`.
+    - All deltas capped at +0.15 even when many high-weight primitives stack.
+  - **11 new unit tests** cover output shape, archetype ranking sanity (4 archetype/primitive pairings), vanilla zero-impact, archetype filter param, delta cap, matched_primitives list, top_archetypes_for_card top-k semantics.
+- next phase: Phase 6 — LLM discovery report writer.
+
+---

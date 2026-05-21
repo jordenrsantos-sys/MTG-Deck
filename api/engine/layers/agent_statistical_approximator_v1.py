@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
 STATISTICAL_APPROXIMATOR_VERSION = "agent_statistical_approximator_v1.0"
@@ -617,3 +617,157 @@ def approximate_pod_winrate(
         per_opponent_winrate=per_opp,
         decomposition=decomposition,
     )
+
+
+# ============================================================
+# Iter 5 / mega-task v3 Phase 5 — new-card archetype-impact scoring.
+# ============================================================
+#
+# `score_card_archetype_impact(new_card, archetypes=None)` returns a
+# per-archetype shift score that quantifies how much the new card
+# would change a representative deck's pod_winrate if substituted in.
+#
+# Architectural choice (v0.1): we do not run an actual substitution
+# simulation against a reference deck. Instead, we compute a primitive-
+# matching impact score against per-archetype "preferred primitive"
+# weights. The output `delta` is a calibrated proxy for pod_winrate
+# shift in the [-0.05, +0.15] range (anchored against Phase 6's
+# sweep results). Future iterations may replace this with a real
+# substitution sim once a "typical deck per archetype" snapshot is
+# materialized.
+
+# Per-archetype preferred-primitive weights. Tuned so that a card with
+# all primitives matching a single archetype scores ~+0.10 delta, and
+# a card with mixed signals across archetypes scores partial credit on
+# each.
+_ARCHETYPE_PREFERRED_PRIMITIVES: Dict[str, Dict[str, float]] = {
+    "tribal": {
+        "tribal-anchor": 1.0, "anthem-effect": 0.7, "token-producer": 0.5,
+        "attack-trigger": 0.5, "haste-grant": 0.4, "cost-discount": 0.4,
+    },
+    "voltron": {
+        "voltron-payoff": 1.0, "creature-protection": 0.8, "evasion-grant": 0.7,
+        "haste-grant": 0.5, "extra-combat": 0.6, "vigilance-grant": 0.4,
+    },
+    "storm": {
+        "storm-payoff": 1.0, "cantrip": 0.7, "free-spell": 0.7,
+        "cost-discount": 0.6, "infinite-mana-source": 0.6, "x-spell-payoff": 0.5,
+    },
+    "aristocrats": {
+        "sac-outlet": 1.0, "death-trigger": 1.0, "persist-creature": 0.8,
+        "recursion-graveyard": 0.6, "token-producer": 0.4,
+    },
+    "counters_matter": {
+        "doubler-effect": 1.0, "anthem-effect": 0.6,
+    },
+    "control": {
+        "counterspell-hard": 1.0, "counterspell-soft": 0.7,
+        "free-counter": 0.8, "removal-creature": 0.5,
+        "removal-mass-creatures": 0.7, "removal-mass-board": 0.7,
+        "draw-engine": 0.6, "stax-effect": 0.4,
+    },
+    "combo": {
+        "combo-assembly": 1.0, "tutor-broad": 0.8, "tutor-narrow": 0.5,
+        "combo-protection": 0.6, "free-counter": 0.5,
+        "infinite-mana-source": 0.5, "infinite-untap-source": 0.5,
+        "deck-out": 0.7,
+    },
+    "blink": {
+        "etb-trigger": 1.0, "flicker-effect": 1.0,
+        "creature-protection": 0.4,
+    },
+    "reanimator": {
+        "recursion-graveyard": 1.0, "self-mill": 0.8,
+        "alternative-cost": 0.5,
+    },
+    "landfall": {
+        "landfall-trigger": 1.0, "extra-land-drop": 0.8, "land-ramp": 0.6,
+    },
+    "group_hug": {
+        "draw-engine": 0.6, "extra-land-drop": 0.4,
+    },
+    "tokens": {
+        "token-producer": 1.0, "anthem-effect": 0.7,
+        "infinite-tokens-with-evasion": 0.6, "doubler-effect": 0.6,
+        "sac-outlet": 0.3,
+    },
+}
+
+# Calibration: each unit of primitive-weight match contributes this
+# much to delta. Tuned so a perfect-match (sum_weight=1.0 + extra)
+# scores ~+0.10 - +0.15 delta.
+_IMPACT_CALIBRATION = 0.08
+
+
+def score_card_archetype_impact(
+    new_card: Dict[str, Any],
+    archetypes: Optional[List[str]] = None,
+    *,
+    primitives_field: str = "primitives",
+) -> Dict[str, Dict[str, Any]]:
+    """Score the new card's potential impact on each archetype.
+
+    Args:
+      new_card: dict with at least `name` + a primitives field
+        (`primitives` by default; pass `primitives_field="primitives_v1"`
+        to use a different key).
+      archetypes: optional subset of `_ARCHETYPE_PREFERRED_PRIMITIVES`
+        keys. Default: all 12 archetypes.
+      primitives_field: which key on `new_card` holds the v1 tag list.
+
+    Returns:
+      {archetype: {delta: float, fits_role: str, displaces: None,
+                   matched_primitives: list[str]}}
+      sorted by descending |delta|. Vanilla cards (no primitives)
+      return zero-delta on every archetype.
+    """
+    target_archetypes = archetypes or list(_ARCHETYPE_PREFERRED_PRIMITIVES.keys())
+    card_prims = list(new_card.get(primitives_field) or [])
+    if not card_prims:
+        # Empty primitives → zero impact across the board.
+        return {
+            a: {
+                "delta": 0.0, "fits_role": "vanilla",
+                "displaces": None, "matched_primitives": [],
+            }
+            for a in target_archetypes
+        }
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for arch in target_archetypes:
+        weights = _ARCHETYPE_PREFERRED_PRIMITIVES.get(arch) or {}
+        matched: List[str] = []
+        total_weight = 0.0
+        for p in card_prims:
+            w = weights.get(p, 0.0)
+            if w > 0:
+                total_weight += w
+                matched.append(p)
+        delta = round(total_weight * _IMPACT_CALIBRATION, 4)
+        # Cap delta at +0.15 to avoid hyper-stacking outliers.
+        delta = min(delta, 0.15)
+        if matched:
+            top_match = max(matched, key=lambda p: weights.get(p, 0.0))
+            fits_role = f"primary primitive: {top_match}"
+        else:
+            fits_role = "no archetype-relevant primitives"
+        out[arch] = {
+            "delta": delta,
+            "fits_role": fits_role,
+            "displaces": None,   # v0.1 stub; real sub-sim future work
+            "matched_primitives": matched,
+        }
+    return out
+
+
+def top_archetypes_for_card(
+    new_card: Dict[str, Any],
+    k: int = 3,
+    primitives_field: str = "primitives",
+) -> List[Tuple[str, Dict[str, Any]]]:
+    """Convenience wrapper: return the top-k archetypes by |delta|."""
+    scores = score_card_archetype_impact(
+        new_card, primitives_field=primitives_field,
+    )
+    ranked = sorted(scores.items(), key=lambda kv: -abs(kv[1]["delta"]))
+    return ranked[:k]
