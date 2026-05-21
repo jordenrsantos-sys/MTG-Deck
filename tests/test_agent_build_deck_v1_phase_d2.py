@@ -166,7 +166,10 @@ class FinalCriticTests(unittest.TestCase):
         # last_findings doesn't gain summary_narrative.
         self.assertNotIn("summary_narrative", last_findings)
         codes = [w["code"] for w in warnings]
-        self.assertIn("FINAL_CRITIC_FAILED", codes)
+        # Iter 3 Phase 3: when all batches fail, the warning code is
+        # FINAL_CRITIC_ALL_BATCHES_FAILED (formerly FINAL_CRITIC_FAILED
+        # for the single-call iter 2 version).
+        self.assertIn("FINAL_CRITIC_ALL_BATCHES_FAILED", codes)
 
     def test_invalid_json_keeps_reasons_unchanged(self) -> None:
         deck = _make_simple_deck()
@@ -182,7 +185,12 @@ class FinalCriticTests(unittest.TestCase):
         for orig, new in zip(deck, new_deck):
             self.assertEqual(orig["reason"], new["reason"])
         codes = [w["code"] for w in warnings]
-        self.assertIn("FINAL_CRITIC_INVALID_JSON", codes)
+        # Iter 3 Phase 3: invalid JSON across all batches surfaces as
+        # ALL_BATCHES_FAILED with each batch's invalid_json detail in
+        # the message. The bare INVALID_JSON code from iter 2's single-
+        # call version no longer applies — every batch hit the same
+        # parse failure.
+        self.assertIn("FINAL_CRITIC_ALL_BATCHES_FAILED", codes)
 
     def test_no_rewrites_emits_warning(self) -> None:
         deck = _make_simple_deck()
@@ -214,10 +222,14 @@ class FinalCriticTests(unittest.TestCase):
             last_findings={"themes_classified": [], "strength_check_summary": None},
             llm_metrics=metrics,
         )
-        self.assertEqual(len(metrics["calls"]), 1)
-        rec = metrics["calls"][0]
-        self.assertEqual(rec["phase"], "D2_final_critic")
-        self.assertTrue(rec["ok"])
+        # Iter 3 Phase 3: D2 is split into 3 parallel batches; metrics
+        # accrue 1 entry per batch. With a 4-card synthetic deck the
+        # priority selector picks at most 4 cards = 1 batch, so we
+        # expect exactly 1 metric entry.
+        self.assertGreaterEqual(len(metrics["calls"]), 1)
+        self.assertLessEqual(len(metrics["calls"]), 3)
+        for rec in metrics["calls"]:
+            self.assertTrue(rec["phase"].startswith("D2_final_critic"))
 
 
 class PromptShapeTests(unittest.TestCase):

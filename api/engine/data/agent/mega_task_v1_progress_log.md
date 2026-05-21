@@ -75,3 +75,24 @@ Authority: autonomous per `mega_task_v1_kickoff.md` until hard halt condition.
 - next phase: Phase 3 — D2 batched rewrites.
 
 ---
+
+## Phase 3 — D2 batched rewrites (3 parallel calls) — COMPLETED
+
+- timestamp: 2026-05-20 22:10
+- commit: (this commit)
+- cost_to_date: ~$1.91 (Phase 2 ~$1.32 + Phase 3 ~$0.68 in two Atraxa smokes)
+- tests: 177 agent tests pass (5 new in iter3_phase_3 + 16 from guard); pytest cluster still ~1022 (+ growing).
+- self-correction events:
+  - **Tier-1**: First Atraxa Phase 3 smoke had B2 short-circuit with `INPUT_TOKEN_BUDGET_EXCEEDED` — Phase 2's `forbidden_prompt_block` pushed B2's prompt past the 3000-token budget (Atraxa with Doubling Season + Pir generates a ~30-card forbidden set, adding ~350 prompt tokens). Bumped B2's input budget from 3000 → 5000. Re-run succeeded: B2 25.5s / $0.029.
+- key findings:
+  - D2 batched correctly into 3 parallel calls via ThreadPoolExecutor. Per-batch timings on Atraxa: batch 0 (narrative) 30.6s, batch 1 51.9s, batch 2 18.5s. Parallel max = 51.9s vs iter-2's single-call ~93s = **44% latency reduction on D2 alone**.
+  - Total wallclock on Atraxa: 154.6s (vs iter-2's 180.5s = ~14% improvement). The Phase 3 spec's "≤90s rough" target is a clear miss; structural lower bound is `B2 + C2.1 + C2.2 + max(D2 batches) = ~147s`. These four phases run serially in the outer loop; only D2's internal batching parallelises. Hitting Phase 9's `≤60s mean` target through prompt engineering alone looks structurally unreachable.
+  - Cost on Atraxa: $0.3557 — over the Phase 3 spec's "<$0.30" smoke target, but well under Phase 9's $0.40 target. Cost growth came from the 3x D2 calls (each ~$0.04) compared to iter-2's single $0.08 call. Net change: D2 cost rose ~$0.04 per build.
+  - All 30 priority cards have rewritten rationales across the 3 batches: verified by inspection (none of the rewrites_by_name_lower map entries dropped).
+  - creativity_delta_count: 41 (vs iter-2's 41 on Atraxa = unchanged).
+  - novel_combo_count: 7 (vs iter-2's 8 on Atraxa = -1; within tolerance).
+  - iter1 structural pass: 5/5.
+  - **Phase 9 risk flagged**: the `mean_wallclock_s ≤ 60` criterion may not be reachable. Realistic floor with current architecture is ~120-150s mean. If Phase 9 fails this criterion alone (still 5/6 hit), iter 3 ships per the kickoff's ≥2-fail halt gate. If multiple criteria fail because of this, escalate at Phase 9.
+- next phase: Phase 4 — C2.2 oracle-text trim + pool-size tuning.
+
+---

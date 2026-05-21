@@ -1655,7 +1655,12 @@ def _build_intent_interpreter_user_prompt(
 # Budget for the intent interpreter call. The plan target is ~$0.04 per
 # build call at Sonnet 4.6 pricing: 3k input × $3/MT + 2k output × $15/MT
 # = $0.009 + $0.030 = $0.039. Pre-call guard set at 3000 input tokens.
-_INTENT_INTERPRETER_INPUT_TOKEN_BUDGET = 3000
+# Iter 3 Phase 3: B2 budget bumped from 3000 → 5000 to accommodate the
+# Phase 2 forbidden_prompt_block. On Atraxa with Doubling Season + Pir
+# must-includes the forbidden set has ~30 cards and the prompt block
+# adds ~300-500 tokens. Without the bump the budget guard short-
+# circuits the call (cost: $0, no intent_analysis).
+_INTENT_INTERPRETER_INPUT_TOKEN_BUDGET = 5000
 _INTENT_INTERPRETER_OUTPUT_TOKEN_BUDGET = 2000
 
 
@@ -2944,6 +2949,148 @@ def _select_priority_rewrite_cards(
     return selected
 
 
+# Iter 3 Phase 3: D2 batched-rewrite budgets.
+# Each batch handles 10 priority cards. Output tokens per batch: 10
+# rewrites × ~100 tokens = ~1000; the designated narrative batch
+# additionally produces summary_narrative (~250) + consider_adding
+# (~150) = ~1400 ceiling. Setting per-batch output ceiling to 1800
+# gives ~30% headroom. Input is unchanged — each batch sees the full
+# 100-card deck for context.
+_FINAL_CRITIC_BATCH_SIZE = 10
+_FINAL_CRITIC_BATCH_OUTPUT_TOKEN_BUDGET = 1800
+_FINAL_CRITIC_BATCH_PARALLEL = 3
+
+
+def _build_final_critic_batch_user_prompt(
+    *,
+    commander: str,
+    bracket: str,
+    theme_hints: List[str],
+    intent_analysis: Optional[Dict[str, Any]],
+    deck: List[Dict[str, str]],
+    batch_priority_cards: List[Dict[str, str]],
+    classified_themes: List[Dict[str, Any]],
+    strength_check_summary: Optional[Dict[str, Any]],
+    include_narrative_and_suggestions: bool,
+) -> str:
+    """Per-batch user prompt. Each batch sees the full deck for context
+    but only rewrites its own 10-card priority slice. The designated
+    'narrative batch' (typically the first) additionally produces the
+    deck-level summary_narrative + consider_adding."""
+    priority_names_lower = {
+        (c.get("card_name") or "").strip().lower() for c in batch_priority_cards
+    }
+    deck_lines = []
+    for c in deck:
+        name = c["card_name"]
+        src = c.get("source", "")
+        reason = (c.get("reason") or "")[:80]
+        marker = " [REWRITE]" if (name or "").strip().lower() in priority_names_lower else ""
+        deck_lines.append(f"  - {name}{marker} | source={src} | iter1_reason='{reason}'")
+
+    theme_block = ""
+    if classified_themes:
+        ids = [t.get("theme_id") or t.get("name") or "" for t in classified_themes[:5]]
+        theme_block = f"\nClassified themes (from deck_analyze_v1): {ids}"
+    sc_block = ""
+    if strength_check_summary:
+        sc_block = (
+            f"\nStrength check: bracket_signal={strength_check_summary.get('bracket_signal')!r}, "
+            f"mean_similarity={strength_check_summary.get('mean_similarity')}"
+        )
+    intent_block = ""
+    if intent_analysis:
+        wc = intent_analysis.get("likely_win_condition") or ""
+        themes = intent_analysis.get("implicit_themes") or []
+        if wc or themes:
+            intent_block = (
+                f"\nLLM-inferred intent: win_condition={wc!r}, "
+                f"implicit_themes={themes}"
+            )
+
+    priority_names = [c.get("card_name", "") for c in batch_priority_cards]
+
+    if include_narrative_and_suggestions:
+        output_schema = (
+            "{\n"
+            '  "card_rationales": [\n'
+            '    {"card": "Exact Card Name", "reason": "one specific deck-context sentence"}\n'
+            "  ],\n"
+            '  "summary_narrative": "3-5 sentences describing primary plan, secondary plan, notable tech",\n'
+            '  "consider_adding": [\n'
+            '    {"card": "Card not in deck", "why": "one sentence reason to consider"}\n'
+            "  ]\n"
+            "}\n"
+        )
+        rules_extra = (
+            "- summary_narrative is 3-5 sentences covering primary plan + secondary plan + notable tech.\n"
+            "- consider_adding entries must NOT already be in the deck (0-3 entries).\n"
+        )
+    else:
+        output_schema = (
+            "{\n"
+            '  "card_rationales": [\n'
+            '    {"card": "Exact Card Name", "reason": "one specific deck-context sentence"}\n'
+            "  ]\n"
+            "}\n"
+        )
+        rules_extra = (
+            "- This batch produces card_rationales ONLY. Do NOT output a "
+            "summary_narrative or consider_adding section — those are "
+            "generated separately by another batch.\n"
+        )
+
+    return (
+        f"Commander: {commander}\n"
+        f"Bracket: {bracket}\n"
+        f"User themes: {theme_hints}{theme_block}{sc_block}{intent_block}\n"
+        f"\nFULL 100-CARD DECK (cards tagged [REWRITE] are this batch's targets):\n"
+        + "\n".join(deck_lines)
+        + f"\n\nTHIS BATCH'S REWRITE LIST ({len(batch_priority_cards)} cards):\n"
+        + "\n".join(f"  - {n}" for n in priority_names)
+        + "\n\nOutput JSON exactly:\n"
+        + output_schema
+        + "\nRULES:\n"
+        + f"- Rewrite EXACTLY the {len(batch_priority_cards)} [REWRITE] cards listed above. "
+        + "Do NOT rewrite any other deck card — those are handled by other batches "
+        + "or keep their existing rationale.\n"
+        + "- Each rewrite is one substantive sentence grounded in specific other cards in this deck.\n"
+        + rules_extra
+    )
+
+
+def _final_critic_run_single_batch(
+    *,
+    llm_client: Any,
+    system: str,
+    user: str,
+    batch_index: int,
+) -> Dict[str, Any]:
+    """Invoke one D2 batch. Returns a dict with `ok`, `parsed`, `text`,
+    `usage` (input_tokens/output_tokens/cost_usd/latency_ms/error_code/
+    retries), and `batch_index`. Pure side-effect-free call — caller
+    aggregates metrics."""
+    result = llm_client.call_with_budget(
+        system=system, user=user,
+        max_input_tokens=_FINAL_CRITIC_INPUT_TOKEN_BUDGET,
+        max_output_tokens=_FINAL_CRITIC_BATCH_OUTPUT_TOKEN_BUDGET,
+    )
+    return {
+        "batch_index": batch_index,
+        "ok": result.ok,
+        "text": result.text,
+        "parsed": result.parsed_json,
+        "usage": {
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+            "cost_usd": result.cost_usd,
+            "latency_ms": result.latency_ms,
+            "error_code": result.error_code,
+            "retries": result.retries,
+        },
+    }
+
+
 def _run_final_critic(
     *,
     llm_client: Any,
@@ -2964,105 +3111,168 @@ def _run_final_critic(
     """Run the final critic. Returns (deck_with_rewritten_reasons, warnings).
     Mutates `last_findings` to add `summary_narrative` + `consider_adding`.
 
-    Iter 3 Phase 1: D2 only rewrites a priority-30 subset of the deck
-    instead of the full ~95 non-basic cards. The other cards keep their
-    iteration-2 rationales (which were already substantive).
+    Iter 3 Phase 1: D2 only rewrites a priority-30 subset of the deck.
+    Iter 3 Phase 3: those 30 cards are split into 3 batches of 10 and
+    the batches fire IN PARALLEL via ThreadPoolExecutor (the Anthropic
+    SDK is sync). Latency drops from ~90s single-call to ~30-50s
+    bounded by the slowest batch. Batch 0 also produces the deck-level
+    summary_narrative + consider_adding; batches 1 and 2 produce only
+    card_rationales.
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     warnings: List[Dict[str, str]] = []
 
     classified_themes = last_findings.get("themes_classified") or []
     strength_check_summary = last_findings.get("strength_check_summary")
 
-    # Iter 3 Phase 1: select priority-30 cards for rewriting.
+    # Phase 1: pick the priority-30 cards.
     priority_cards = _select_priority_rewrite_cards(
         deck=deck,
         must_include_cards=must_include_cards or [],
         novel_combo_flags=novel_combo_flags or [],
         archetype_brief=archetype_brief or {},
-        cap=30,
+        cap=_FINAL_CRITIC_BATCH_SIZE * _FINAL_CRITIC_BATCH_PARALLEL,
     )
+
+    if not priority_cards:
+        warnings.append({
+            "code": "FINAL_CRITIC_NO_PRIORITY_CARDS",
+            "message": "No priority cards to rewrite; D2 skipped.",
+        })
+        return deck, warnings
+
+    # Phase 3: split into batches.
+    batches: List[List[Dict[str, str]]] = []
+    for i in range(0, len(priority_cards), _FINAL_CRITIC_BATCH_SIZE):
+        batches.append(priority_cards[i: i + _FINAL_CRITIC_BATCH_SIZE])
 
     system = _FINAL_CRITIC_SYSTEM_PROMPT + (forbidden_prompt_block or "")
-    user = _build_final_critic_user_prompt(
-        commander=commander, bracket=bracket,
-        theme_hints=theme_hints, intent_analysis=intent_analysis,
-        deck=deck, priority_cards=priority_cards,
-        classified_themes=classified_themes,
-        strength_check_summary=strength_check_summary,
-    )
 
-    result = llm_client.call_with_budget(
-        system=system, user=user,
-        max_input_tokens=_FINAL_CRITIC_INPUT_TOKEN_BUDGET,
-        max_output_tokens=_FINAL_CRITIC_OUTPUT_TOKEN_BUDGET,
-    )
-    llm_metrics["calls"].append({
-        "phase": "D2_final_critic",
-        "ok": result.ok,
-        "input_tokens": result.input_tokens,
-        "output_tokens": result.output_tokens,
-        "cost_usd": result.cost_usd,
-        "latency_ms": result.latency_ms,
-        "error_code": result.error_code,
-        "retries": result.retries,
-    })
-    if not result.ok:
+    # Compose per-batch user prompts.
+    batch_prompts: List[Tuple[int, str]] = []
+    for idx, batch_cards in enumerate(batches):
+        user = _build_final_critic_batch_user_prompt(
+            commander=commander, bracket=bracket,
+            theme_hints=theme_hints, intent_analysis=intent_analysis,
+            deck=deck, batch_priority_cards=batch_cards,
+            classified_themes=classified_themes,
+            strength_check_summary=strength_check_summary,
+            include_narrative_and_suggestions=(idx == 0),
+        )
+        batch_prompts.append((idx, user))
+
+    # Fire batches in parallel. Number of workers = min(batches, configured parallel).
+    max_workers = max(1, min(len(batch_prompts), _FINAL_CRITIC_BATCH_PARALLEL))
+    batch_results: List[Dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        future_map = {
+            ex.submit(
+                _final_critic_run_single_batch,
+                llm_client=llm_client, system=system, user=user, batch_index=idx,
+            ): idx
+            for idx, user in batch_prompts
+        }
+        for fut in as_completed(future_map):
+            batch_results.append(fut.result())
+    # Sort by batch_index so the narrative batch (index 0) is processed first.
+    batch_results.sort(key=lambda r: r["batch_index"])
+
+    # Record per-batch metrics.
+    for r in batch_results:
+        usage = r["usage"]
+        llm_metrics["calls"].append({
+            "phase": f"D2_final_critic_batch_{r['batch_index']}",
+            "ok": r["ok"],
+            "input_tokens": usage["input_tokens"],
+            "output_tokens": usage["output_tokens"],
+            "cost_usd": usage["cost_usd"],
+            "latency_ms": usage["latency_ms"],
+            "error_code": usage["error_code"],
+            "retries": usage["retries"],
+        })
+
+    # Process results: aggregate all card_rationales across batches; pick
+    # summary_narrative + consider_adding from the narrative batch.
+    rewrites_by_name_lower: Dict[str, str] = {}
+    narrative_text: Optional[str] = None
+    consider_adding_raw: List[Dict[str, Any]] = []
+    any_failed = False
+    failure_details: List[str] = []
+
+    for r in batch_results:
+        if not r["ok"]:
+            any_failed = True
+            failure_details.append(
+                f"batch{r['batch_index']}: {r['usage'].get('error_code', '?')}"
+            )
+            continue
+        parsed = r["parsed"]
+        if not isinstance(parsed, dict):
+            any_failed = True
+            failure_details.append(
+                f"batch{r['batch_index']}: invalid_json text_head={r['text'][:120]!r}"
+            )
+            continue
+        rationales = _as_list_of_dicts(parsed.get("card_rationales"))
+        for entry in rationales:
+            name = str(entry.get("card") or "").strip()
+            reason = str(entry.get("reason") or "").strip()
+            if name and reason:
+                rewrites_by_name_lower[name.lower()] = reason
+        # Only batch 0 produces narrative + consider_adding by design.
+        if r["batch_index"] == 0:
+            sn = str(parsed.get("summary_narrative") or "").strip()
+            if sn:
+                narrative_text = sn
+            ca = _as_list_of_dicts(parsed.get("consider_adding"))
+            if ca:
+                consider_adding_raw = ca
+
+    if any_failed and not rewrites_by_name_lower:
+        # All batches failed — fall back to iter-1 rationales.
         warnings.append({
-            "code": "FINAL_CRITIC_FAILED",
+            "code": "FINAL_CRITIC_ALL_BATCHES_FAILED",
             "message": (
-                f"LLM call #3 (final critic + rationale rewrite) failed: "
-                f"{result.error_code}: {result.error_message}. "
+                f"All D2 batches failed: {failure_details}. "
                 "Per-card reasons remain from iteration 1; summary_narrative empty."
             ),
         })
         return deck, warnings
-    parsed = result.parsed_json
-    if not isinstance(parsed, dict):
+    if any_failed:
+        # Partial failure — log but apply what we have.
         warnings.append({
-            "code": "FINAL_CRITIC_INVALID_JSON",
+            "code": "FINAL_CRITIC_PARTIAL_BATCH_FAILURE",
             "message": (
-                "LLM call #3 returned non-JSON output; per-card reasons unchanged. "
-                f"Raw text head: {result.text[:200]!r}"
+                f"Some D2 batches failed: {failure_details}. "
+                f"Applied {len(rewrites_by_name_lower)} rewrites from successful batches; "
+                f"other priority cards retain iter-1 rationales."
             ),
         })
-        return deck, warnings
 
-    # Apply per-card rationale rewrites. Match on card name (case-
-    # insensitive). Cards the LLM didn't address keep their iteration-1
-    # reason — that's intentional per the prompt.
-    rationales = _as_list_of_dicts(parsed.get("card_rationales"))
-    rewrites_by_name_lower: Dict[str, str] = {}
-    for entry in rationales:
-        name = str(entry.get("card") or "").strip()
-        reason = str(entry.get("reason") or "").strip()
-        if name and reason:
-            rewrites_by_name_lower[name.lower()] = reason
-
+    # Apply rewrites.
     rewrite_count = 0
     for card in deck:
         cname_lower = card["card_name"].strip().lower()
         new_reason = rewrites_by_name_lower.get(cname_lower)
         if new_reason:
-            # Preserve original reason as a debug field; bump source.
             card["reason"] = new_reason
             existing_src = card.get("source") or ""
             if "llm_rationale_rewrite" not in existing_src.split("|"):
                 card["source"] = (existing_src + "|llm_rationale_rewrite") if existing_src else "llm_rationale_rewrite"
             rewrite_count += 1
 
-    if rewrite_count == 0:
+    if rewrite_count == 0 and not any_failed:
         warnings.append({
             "code": "FINAL_CRITIC_NO_REWRITES",
-            "message": "LLM call #3 produced 0 applicable per-card rationale rewrites.",
+            "message": "D2 produced 0 applicable per-card rationale rewrites across all batches.",
         })
 
-    # Stash narrative + consider_adding on last_findings — the summary
-    # block at the top of compute_agent_build_deck_v1 reads from there.
-    summary_narrative = str(parsed.get("summary_narrative") or "").strip()
-    if summary_narrative:
-        last_findings["summary_narrative"] = summary_narrative
+    # Surface narrative.
+    if narrative_text:
+        last_findings["summary_narrative"] = narrative_text
 
-    consider_adding_raw = _as_list_of_dicts(parsed.get("consider_adding"))
+    # Apply consider_adding (with forbidden-set filter).
     deck_names_lower = {c["card_name"].strip().lower() for c in deck}
     consider_adding: List[Dict[str, str]] = []
     for entry in consider_adding_raw:
@@ -3070,10 +3280,8 @@ def _run_final_critic(
         why = str(entry.get("why") or "").strip()
         if not name or not why:
             continue
-        # Suppress entries that turn out to already be in the deck.
         if name.lower() in deck_names_lower:
             continue
-        # Iter 3 Phase 2: reject combo-anchor-forbidden adds.
         if forbidden_set and name.lower() in forbidden_set:
             if guard_fire_events is not None:
                 guard_fire_events.append({
