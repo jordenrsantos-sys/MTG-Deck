@@ -104,3 +104,26 @@ approximator + outer-chain parallel + Pillar E v0.2 card-advantage.
 - next phase: Phase 4 — new-combo-pair discovery via primitive interaction graph.
 
 ---
+
+## Phase 4 — New combo-pair discovery via primitive interaction graph — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: $0.00
+- tests: pytest **1239 passed / 8 pre-existing fails** (Phase 3 baseline 1228 + 11 new combo-discovery tests).
+- self-correction events: none
+- key findings:
+  - **`api/engine/extractors/new_combo_discovery_v1.py`** (~210 lines):
+    - `discover_new_combo_pairs(new_cards, existing_cards=None, db_path, snapshot_id, min_confidence=0.5)` — for each new card's primitives, scan existing cards' primitives for combo patterns; emit `DiscoveredPair(new_card, paired_with, combo_pattern, confidence, via_primitives)` sorted by descending confidence.
+    - 3-tier confidence:
+      - **1.0** — ontology `combos_with` edge (e.g. `sac-outlet` ↔ `persist-creature` is in the ontology spec).
+      - **0.7** — canonical interaction-graph pair from the 20-edge list in `ontology_v0.md` section "Interaction graph (20 canonical primitive pairs)" (e.g. `cantrip + storm-payoff`).
+      - drops below 0.5 are filtered out (avoid single-primitive overlap noise).
+    - `_CANONICAL_PAIRS` encodes the 20 ontology-spec interaction-graph pairs as frozensets for O(1) lookup.
+    - Lazy + cached ontology load via `_ontology_combos_with()` so the 64-tag parse runs once.
+    - DB-backed `_load_existing_cards_with_primitives(db_path, snapshot_id)` queries `cards.primitives_v1_json` for the active snapshot, excluding the new cards' names.
+    - `append_discovered_pairs(pairs, path)` writes additively to `combo_brackets_v1_set_appended.json` (per kickoff rule: NEVER modify the base `combo_brackets_v1.json`). Dedupes on `(new_card.lower(), paired_with.lower())` to keep re-runs idempotent.
+  - **11 new unit tests** cover: ontology-edge 1.0 (sac+persist, counterspell-hard+combo-protection), canonical-pair 0.7, unrelated primitives produce 0 pairs, empty primitives produce 0, self-pairs excluded by name, multi-card cross-product (2 new × 2 existing → 2 pairs), append-to-new-file + dedupe-on-reappend + base-registry-untouched, and the kickoff smoke (3-card sac/persist/death set → ≥2 pairs).
+- next phase: Phase 5 — Pillar F new-card archetype-impact scoring.
+
+---
