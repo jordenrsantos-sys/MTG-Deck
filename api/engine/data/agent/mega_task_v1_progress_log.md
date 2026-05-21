@@ -252,3 +252,21 @@ Authority: autonomous per `mega_task_v1_kickoff.md` until hard halt condition.
 - next phase: Phase 11 — Pillar C primitive ontology design.
 
 ---
+
+## Phase 11 — Pillar C primitive ontology design — COMPLETED
+
+- timestamp: 2026-05-21 01:55
+- commit: (this commit)
+- cost_to_date: ~$3.65 (design-only phase; no LLM build runs)
+- tests: 8 new in test_primitive_ontology_v0_consistency.py (parses + validates the spec).
+- self-correction events: one undefined `combos_with` reference (`tutor-broad` → `win-condition-tutor`) — replaced with `deck-out` which is the closer-fit existing tag.
+- key findings:
+  - Spec file: `repo/api/engine/data/primitives/ontology_v0.md` — 64 tags across 6 dimensions (10/10/12/8/14/10), well inside the spec's 50-80 range.
+  - Schema per tag: id (kebab-case slug), dimension, definition (1 sentence), extraction_rule (regex/text patterns), examples (3+ printed names), combos_with (cross-references).
+  - 20 canonical interaction-graph edges defined at the bottom (sac-outlet + persist-creature; etb-trigger + flicker-effect; infinite-mana-source + infinite-untap-source; etc.).
+  - 10-Spellbook-pair coverage demo at the bottom shows the ontology can describe every random combo pair sampled — Thoracle, Kiki-Snoop, Heliod-Ballista, Sanguine Bond + Exquisite Blood, Mikaeus+Trike, Splinter Twin combo, Niv-Mizzet+Curiosity, Dramatic Reversal+Isochron, Food Chain+Misthollow, Helm of Obedience+RIP. **10/10 coverage.**
+  - Consistency test (loaded as a pytest unit test) validates: every tag has all required fields, every `combos_with` resolves to an actual tag, no orphan tags (every tag has at least one incoming or outgoing edge), 6 dimensions present, tag count in 50-80 range. All 8 assertions pass.
+  - Iter 4 hand-off documented inline: extractor scope ~1 week (regex extractor + golden tests + 110k-card backfill, no LLM calls needed for extraction).
+- next phase: Phase 12 — Pillar F v0.1 statistical approximator scaffolding.
+
+---
