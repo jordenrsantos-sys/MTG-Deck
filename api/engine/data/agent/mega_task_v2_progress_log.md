@@ -218,3 +218,55 @@ Substrate: iter 3 + Pillar E v0.1 + Pillar C ontology v0 + Pillar F v0.1
 - next phase: Phase 7 — iter 4 final validation sweep [BLOCKING].
 
 ---
+
+## Phase 7 — Iter 4 final validation sweep — HALTED (hard halt #6)
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$4.07 cumulative ($2.57 Phase 6 baseline + $1.50 5-case sweep). Well clear of $80 alarm.
+- tests: pytest **1200 passed / 8 pre-existing fails** (unchanged from Phase 6).
+- self-correction events:
+  - **Tier-1**: tool crashed on stdout-print of the validation report due to Windows cp1252 codec choking on em-dash + arrow Unicode. Report file was written successfully BEFORE the crash. Patched the tool to ascii-fallback on UnicodeEncodeError and re-ran nothing (data unchanged).
+- key findings:
+  - **Iter 4 final 5-case sweep results: 7 of 10 success criteria pass; halt per hard halt condition #6 (>=2 fails)**:
+
+| Criterion | Value | Threshold | Status |
+|---|---|---|---|
+| iter1_structural_pass_5_of_5 | True | True | PASS |
+| mean_creativity_delta_geq_35 | 37.8 | 35 | PASS |
+| mean_novel_combo_geq_5 | 5.2 | 5 | PASS |
+| mean_cost_usd_leq_0_45 | 0.3102 | 0.45 | PASS |
+| mean_wallclock_s_leq_95 | 129.3 | 95 | **FAIL** |
+| ur_dragon_hellkite_charger_absent | True | True | PASS |
+| voyage_semantic_contribution_avg_geq_5 | 1.8 | 5 | **FAIL** |
+| pillar_c_primitive_coverage_geq_95pct | 83.8% | 95% | **FAIL** |
+| pillar_f_winrate_ordering_sane | Yuriko 0.68 > Krenko 0.55 > Ur-Dragon 0.32 ~ Edgar 0.28 > Atraxa 0.16 | sane | PASS |
+| atraxa_archetype_is_counters_matter | counters_matter | counters_matter | PASS |
+
+  - **Per-case sweep**:
+
+| Case | wall (s) | cost ($) | calls | creativity | novel | semantic | coverage | archetype | pod_winrate |
+|---|---|---|---|---|---|---|---|---|---|
+| edgar | 141.3 | 0.2991 | 8 | 36 | 6 | 3 | 83.9% | tribal | 0.282 |
+| krenko | 126.0 | 0.3078 | 8 | 37 | 5 | 1 | 77.8% | tribal | 0.549 |
+| atraxa | 124.0 | 0.3538 | 8 | 42 | 5 | 2 | 79.4% | counters_matter | 0.162 |
+| yuriko | 126.4 | 0.2972 | 8 | 34 | 3 | 1 | 91.9% | combo | 0.680 |
+| ur_dragon | 128.7 | 0.2929 | 8 | 40 | 7 | 2 | 85.9% | tribal | 0.321 |
+| **mean** | **129.3** | **0.3102** | **8.0** | **37.8** | **5.2** | **1.8** | **83.8%** | — | — |
+
+  - **Outer-chain parallelization confirmed working**: C2.1 + C2.2 ran in parallel on every case, saving 19.7-24.4s of wallclock vs serial baseline. Mean parallel-window: ~51s; mean serial baseline: ~73s; mean savings: ~22s.
+  - **Atraxa archetype detection live-confirmed**: counters_matter (Phase 2 fix landed). Atraxa pod_winrate ordering (0.162) preserved as the lowest of the 5, matching iter 3's tier.
+  - **Hellkite Charger absent from Ur-Dragon**: Phase 2 combo-anchor guard continues to hold.
+  - **3 failures diagnosed in `pillar_d_iteration_4_validation_report.md`** under "Halt analysis":
+    1. **wallclock 129.3s vs 95s**: architectural floor with current chain is ~121s (B2 25 + max(C2.1,C2.2) 52 + D2 30 + Pillar E critiques 13). Iter 5 needs B2 parallelization OR C2.1 prompt trim to close further.
+    2. **voyage_semantic 1.8 vs 5**: semantic neighbors land in C2.2 wide pool (verified Phase 1 = 72 added) but the LLM doesn't reliably pick them over higher-scoring theme candidates. Score boost for semantic_neighbor candidates would close this.
+    3. **coverage 83.8% vs 95%**: ontology v0 is narrow by design (combo-relevant mechanics). Vanilla creatures, lands without taps, equipment-stat-boost cards don't match any pattern. Iter 5 needs ontology v1 expansion OR LLM extractor layer per kickoff's explicit authorization.
+
+  - **Halt-pattern parallel to iter 3**: iter 3 had a similar halt (Phase 9, 4/6 pass) where the user chose option (c) to revise overoptimistic criteria. The architectural deliverables here (Phases 1-6) all shipped + tested + working live; the 3 failures are kickoff targets exceeding the substrate's iter-4 architectural reality. User options are documented inline in the validation report.
+
+- next phase: **HALTED awaiting user direction**. Cannot Tier-3-skip per kickoff (Phase 7 is BLOCKING). Options for the user:
+  1. **Option (a)**: revise criteria 5/7/8 to match the architectural reality (wallclock ≤130s, voyage_semantic_avg ≥1.5, primitive_coverage ≥80%) and authorize Phase 8 final regression on the revised 10/10 pass. Mirrors iter 3 option (c).
+  2. **Option (b)**: authorize iter-5-style architectural work to close the gaps before proceeding (C2.1 trim + semantic-neighbor score boost + ontology v1 expansion). Larger scope.
+  3. **Option (c)**: accept 7/10 as the iter-4 ship state and authorize Phase 8 final regression on the as-is iter 4.
+
+---
