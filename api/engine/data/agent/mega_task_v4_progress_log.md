@@ -353,3 +353,29 @@ automation pipeline + iter 4 baseline.
   3. Skip more sweeps, write Phase 14 final report on current substrate ship state
 
 ---
+
+## Phase 14 — Final regression + report + memory update — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$3.90 cumulative (no new spend; Phase 14 is verification + writing)
+- tests:
+  - pytest: **1377 passed / 8 pre-existing fails** (Phase 0 baseline 1283 + 94 new across phases 1-12 + Phase 13 retro)
+  - vitest: **711 passed / 2 pre-existing fails** (matches Phase 0 baseline exactly)
+- self-correction events: none
+- key findings:
+  - **Full regression clean**: 0 new failures introduced across all 14 phases.
+  - **Phase 3 primitive extractor v2 coverage smoke** (100-card sample): 100% on the Commander-legal cards-with-abilities subset within the sample.
+  - **Phase 4 Voyage embeddings integrity**: 30,395 card embeddings + 4 schema columns (source_type, rule_id, ruling_card, raw_text) present. Rules row count = 0 (at-scale embedding Tier-3 deferred, pipeline ready).
+  - **Phase 7 theme-aware Pillar E blender smoke**: storm theme → 32 lands, tribal theme → 37 lands (matches matrix expectations).
+  - **Phase 8 intent-preservation smoke**: aligned-tribal deck drift=0.3 with warning_triggered=False (threshold tunable).
+  - **Phase 12 combo merger integrity**: 49,659 canonical Spellbook variants + 3 external additions in merged registry (the 12 curated seed entries map to 3 fully-novel pairs after Spellbook dedupe).
+  - **Final report written** at `repo/api/engine/data/agent/mega_task_v4_final_report.md` (phase-by-phase status, per-case sweep, iter 5 success criteria 8/11, iter 5 → 6 hand-off priorities).
+  - **Memory updated**:
+    - New `project_mega_task_v4_shipped_2026-05-21.md`
+    - `MEMORY.md` index entry appended after the feedback-pool-score entry.
+    - New feedback memory `feedback_pool_score_does_not_drive_llm_picking.md` (saved during Phase 13 resumption).
+- mega-task complete. Final commit chain: 15 atomic commits on top of mega-task v3's `74d9dcfd1`.
+
+---
+
