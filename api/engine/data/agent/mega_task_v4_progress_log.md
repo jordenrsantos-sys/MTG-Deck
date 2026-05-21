@@ -291,3 +291,38 @@ automation pipeline + iter 4 baseline.
 - next phase: Phase 13 — iter 5 final validation sweep [BLOCKING].
 
 ---
+
+## Phase 13 — Iter 5 final validation sweep — HALTED (hard halt #5)
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$2.40 cumulative (Phases 1-12 ~$0.90 + Phase 13 sweep ~$1.50)
+- tests: pytest **1376 passed / 8 pre-existing fails** (unchanged from Phase 12).
+- self-correction events:
+  - **In-flight diagnostic, not yet a sweep correction** — see report's halt analysis section.
+- key findings (full details in `pillar_d_iteration_5_validation_report.md`):
+  - **6 of 12 success criteria pass**. Per hard halt #5 (>= 3 fails = halt), this is a halt event before proceeding to Phase 14.
+  - **Per-case sweep**:
+    | Case | iter1 | wall | cost | creativity | novel | semantic | coverage_v1 | C2.1 | drift |
+    |---|---|---|---|---|---|---|---|---|---|
+    | edgar | PASS | 112.0s | $0.29 | 37 | 7 | 3 | 90.3% | 38.3s | 0.761 |
+    | krenko | PASS | 102.0s | $0.30 | 37 | 5 | 1 | 90.5% | 35.8s | 1.000 |
+    | atraxa | PASS | 138.6s | $0.28 | 32 | 4 | 2 | 97.1% | **0.0s** | 1.000 |
+    | yuriko | **FAIL** | 113.1s | $0.29 | 33 | 2 | 0 | 96.8% | 39.5s | 0.907 |
+    | ur_dragon | PASS | 113.3s | $0.29 | 40 | 6 | 3 | 92.2% | 37.8s | 0.769 |
+    | **mean** | **4/5** | **115.8s** | **$0.29** | **35.8** | **4.8** | **1.8** | **93.4%** | — | **0.887** |
+  - **6 fails (with severity)**:
+    1. iter1_pass 4/5 (Yuriko failed; cause undiagnosed, likely Phase 2's tighter output budget triggering JSON truncation on Yuriko-specific output)
+    2. novel_combo 4.8 vs ≥5 (close miss; tied to Yuriko's novel=2)
+    3. wallclock 115.8 vs ≤110 (close miss; Atraxa at 138.6 with C2.1=0s anomaly pulls mean up)
+    4. voyage_semantic 1.8 vs ≥4 (Phase 1's score boost + prompt guidance didn't move the LLM's selection; +0.15 boost is too small vs theme-overlap 10+; LLM treats prompt guidance as advisory)
+    5. intent_drift 0.887 vs <0.3 (B2 emits open-vocab themes like `vampire_tribal`/`goblin_tribal`/`proliferate_counters` that don't map to my closed 13-theme classifier — alias gap; fix: constrain B2's system prompt to a closed canonical vocabulary)
+    6. combo_space -33 vs ≥500 (metric bug: `merged - canonical` is negative because Spellbook canonical has internal duplicates by pair-key; correct count is 12 external additions; criterion 12 was Tier-3-skip-eligible per kickoff anyway since at-scale extractors weren't run)
+  - **6 passes**: creativity_delta 35.8 (≥35), cost $0.29 (≤$0.45), pillar_c_coverage 93.4% (≥90%), Hellkite absent on Ur-Dragon, pillar_f ordering Yuriko > Krenko > Edgar ~ Ur-Dragon > Atraxa, theme_profile structured 5/5.
+  - **All Phase 1-12 architectural deliverables shipped + tested**. The sweep gaps are tuning issues + 1 metric bug + 1 (likely) Phase 2 side-effect on Yuriko.
+- next phase: **HALTED awaiting user direction**. Cannot Tier-3-skip per kickoff (Phase 13 is BLOCKING). Three options documented inline in the validation report:
+  1. **Option (a)** — revise criteria + small fixes, accept revised pass count, proceed to Phase 14 (mirrors iter 3 / iter 4 pattern).
+  2. **Option (b)** — Tier-2 fix-without-resweep: patch B2 vocabulary + combo_space metric in-place, accept the sweep numbers, proceed to Phase 14 on the substrate ship state.
+  3. **Option (c)** — small fixes + authorize a re-sweep (~$1.50 + 12 min) to flip 1-2 criteria from FAIL to PASS before proceeding.
+
+---
