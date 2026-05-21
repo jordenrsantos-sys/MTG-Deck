@@ -96,3 +96,30 @@ Substrate: iter 3 + Pillar E v0.1 + Pillar C ontology v0 + Pillar F v0.1
 - next phase: Phase 3 — outer-chain parallelization [BLOCKING].
 
 ---
+
+## Phase 3 — Outer-chain parallelization (BLOCKING) — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$2.27 (Phase 2 baseline $1.92 + Atraxa smoke ~$0.35)
+- tests: pytest **1163 passed / 8 pre-existing fails** (Phase 2 baseline 1153 + 10 new merge tests in `test_agent_iter4_phase_3_outer_chain_parallel.py`).
+- self-correction events: none
+- key findings:
+  - **`_run_c21_c22_parallel` helper** added: fires `_run_candidate_critic` (C2.1) and `_run_wild_combo_discovery` (C2.2) concurrently via `concurrent.futures.ThreadPoolExecutor(max_workers=2)`, each receiving a copy of the iter-1 baseline deck. Per-thread accumulators for `novel_combo_flags` and `guard_fire_events` avoid races; the parent lists are extended after both calls return. `llm_metrics["calls"]` mutation is protected by Python's GIL (list.append is atomic).
+  - **`_merge_c21_c22_decks` helper** implements C2.1-precedence: C2.1's deck is the merge base. C2.2's swap pairs are recovered positionally (since `_run_wild_combo_discovery` applies swaps via `deck[remove_idx] = new_entry`, a slot where `c22_deck[i].name != iter1_deck[i].name` IS a C2.2 swap pair). Conflict cases:
+    1. C2.2 tries to remove a card C2.1 just added → drop C2.2 swap, log `OUTER_CHAIN_C21_C22_CONFLICT`.
+    2. C2.2's add-card duplicates a C2.1 pick (or any other merged-deck card) → drop, log.
+    3. C2.2's remove target is no longer in the merged deck (C2.1 removed it) → drop, log.
+  - **10 new unit tests** cover all three conflict cases + no-op + C2.1-only + C2.2-only + disjoint-swaps + multi-swap + source-string preservation.
+  - **Atraxa smoke (the iter-3 highest-C2.1-latency case)**:
+    - Wall: **124.4s** (iter 3 Atraxa was 137.7s → -13.3s, -10%).
+    - Cost: $0.3537 (iter 3 Atraxa was $0.3374 → +5% from slightly more C2.2 output under the counters_matter fragment).
+    - 7 LLM calls, all OK.
+    - **C2.1 ran in parallel with C2.2**: C2.1 latency 50.0s, C2.2 latency 22.2s. If they had been serial the sum would be 72.2s — parallel max = 50.0s — saves 22.2s of wallclock at this stage. The 13.3s overall improvement is C2.2-overlap savings minus a couple of seconds of thread setup + the slightly-higher C2.2 cost on counters_matter (per-call output ~1500 tokens).
+    - 0 `OUTER_CHAIN_C21_C22_CONFLICT` warnings (the two warnings in the output are pre-existing `INTENT_CONFLICT_WARNING` from B2 — unrelated to this phase).
+    - archetype: **`counters_matter`** ✓ (validates Phase 2 integration live).
+    - novel_combo_count: 10 (target ≥4).
+  - **Known gap**: kickoff Phase 3 smoke target was "wallclock drops by 30-50s vs iter 3 baseline" — actual drop on Atraxa is ~13-22s. Reason: the iter 3 baseline already has D2 internally parallelized, so the remaining serial chain has B2 → max(C2.1, C2.2) → D2 max-batch → Pillar E. The architectural floor with current per-call latencies is ~B2(25) + C2.1(50) + D2_max(40) + Pillar E(15) = 130s. To drop further we'd need to also parallelize B2 against the wide-pool build, or trim per-call latency directly. Phase 7's mean over 5 cases will confirm the magnitude across the sweep.
+- next phase: Phase 4 — Pillar E v0.2 card advantage optimizer.
+
+---

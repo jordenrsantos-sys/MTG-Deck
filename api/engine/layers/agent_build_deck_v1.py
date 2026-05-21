@@ -261,39 +261,17 @@ def compute_agent_build_deck_v1(
         "source": "user_intent",
     }] + body
 
-    # ---- Iteration 2 Phase C2.1: LLM candidate critic (swap flex slots) ----
-    # Iteration 1 produced a structurally-correct 99-card deck. Now the
-    # LLM looks at the BOTTOM-priority N cards (basics first, then lowest-
-    # scored non-essentials) and proposes swaps from the remaining pool.
-    # Color identity + bracket policy are re-checked on every proposed
-    # swap, and hallucinated card names (not in the pool) are dropped.
+    # ---- Iter 4 Phase 3: outer-chain parallelization ----
+    # Iter 3 ran C2.1 → C2.2 serially, costing ~50s + ~22s = ~72s of
+    # wallclock with no shared state between them. Iter 4 fires both
+    # LLM calls concurrently against the SAME iter-1 baseline deck and
+    # merges their proposals afterward with C2.1-precedence semantics:
+    # if C2.2 wants to swap OUT a card C2.1 just picked, the C2.2
+    # swap is dropped and a OUTER_CHAIN_C21_C22_CONFLICT warning is
+    # logged. The result is max(C2.1, C2.2) wallclock instead of sum.
     novel_combo_flags: List[Dict[str, Any]] = []
     if llm_client.is_available():
-        deck, critic_warnings = _run_candidate_critic(
-            llm_client=llm_client,
-            deck=deck,
-            pool=pool,
-            commander=commander.strip(),
-            bracket=bracket,
-            theme_hints=theme_hints,
-            intent_analysis=intent_analysis,
-            llm_metrics=llm_metrics,
-            novel_combo_flags=novel_combo_flags,
-            forbidden_set=forbidden_set,
-            forbidden_prompt_block=forbidden_prompt_block,
-            guard_fire_events=guard_fire_events,
-        )
-        warnings.extend(critic_warnings)
-
-    # ---- Iteration 2 Phase C2.2: wild combo discovery ----
-    # With the near-final 99-card deck assembled, build a WIDER pool
-    # (300-500 cards, color-legal + theme-adjacent, full oracle text)
-    # and ask the LLM to find wild synergies / novel combos the
-    # iteration-1 corpus-driven pool wouldn't surface. Suggestions can
-    # be either a SWAP (drop X, add Y because Y forms combo with Z) or
-    # a FLAG (note combo already present, no swap needed).
-    if llm_client.is_available():
-        deck, wild_warnings = _run_wild_combo_discovery(
+        deck, parallel_warnings = _run_c21_c22_parallel(
             llm_client=llm_client,
             deck=deck,
             pool=pool,
@@ -308,7 +286,7 @@ def compute_agent_build_deck_v1(
             forbidden_prompt_block=forbidden_prompt_block,
             guard_fire_events=guard_fire_events,
         )
-        warnings.extend(wild_warnings)
+        warnings.extend(parallel_warnings)
 
     # ---- Phase D: validation + swap iteration (≤12 iters, total ≤30 calls) ----
     # Note: we validate against the USER-STATED theme_hints, not the
@@ -2252,6 +2230,189 @@ def _candidate_pool_for_critic(pool: Dict[str, Any], db_snapshot_id: str,
             "oracle_text": oracle_text or "",
         })
     return out
+
+
+def _merge_c21_c22_decks(
+    iter1_deck: List[Dict[str, Any]],
+    c21_deck: List[Dict[str, Any]],
+    c22_deck: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
+    """Merge C2.1's and C2.2's deck outputs with C2.1-precedence semantics.
+
+    Both C2.1 and C2.2 ran in parallel against the same iter-1 baseline
+    deck. C2.1 may have swapped some swappable-slot cards; C2.2 may
+    have applied 0-10 add/remove swaps. Conflict resolution:
+
+    - If C2.2 wants to swap OUT a card that C2.1 just picked → drop
+      the C2.2 swap (C2.1 wins) and log OUTER_CHAIN_C21_C22_CONFLICT.
+    - If C2.2's add card is already in the merged deck (either C2.1
+      picked it OR it was already in iter1 and didn't get C2.1-removed)
+      → drop as duplicate.
+    - Else: apply C2.2's swap onto the C2.1-merged base.
+
+    Returns (merged_deck, conflict_warnings).
+
+    NB: C2.2's swap pairing (which removed card corresponds to which
+    added card) is recovered positionally by comparing c22_deck slot-by-
+    slot against iter1_deck. `_run_wild_combo_discovery` applies swaps
+    in-place via `deck[remove_idx] = new_entry`, so a slot that differs
+    between iter1 and c22 IS a swap pair (iter1[i].name → c22[i].name).
+    """
+    iter1_names = {(c.get("card_name") or "").strip().lower() for c in iter1_deck}
+    c21_names_lower = [(c.get("card_name") or "").strip().lower() for c in c21_deck]
+    c21_added = {n for n in c21_names_lower if n not in iter1_names}
+
+    # Recover C2.2 swap pairs from positional comparison against iter1.
+    c22_swap_pairs: List[Tuple[int, str, str, Dict[str, Any]]] = []
+    n = min(len(iter1_deck), len(c22_deck))
+    for i in range(n):
+        n1 = (iter1_deck[i].get("card_name") or "").strip().lower()
+        n2 = (c22_deck[i].get("card_name") or "").strip().lower()
+        if n1 != n2:
+            c22_swap_pairs.append((i, n1, n2, c22_deck[i]))
+
+    merged = list(c21_deck)
+    merged_names_lower = {(c.get("card_name") or "").strip().lower() for c in merged}
+    warnings: List[Dict[str, str]] = []
+
+    for _i, remove_lower, add_lower, c22_entry in c22_swap_pairs:
+        add_name = c22_entry.get("card_name") or ""
+        # Conflict 1: C2.2 wants to remove a card C2.1 picked.
+        if remove_lower in c21_added:
+            warnings.append({
+                "code": "OUTER_CHAIN_C21_C22_CONFLICT",
+                "message": (
+                    f"C2.2 proposed swap (remove={remove_lower!r}, "
+                    f"add={add_name!r}) collides with a C2.1 pick "
+                    f"({remove_lower!r}); C2.1 wins, dropping C2.2 swap."
+                ),
+            })
+            continue
+        # Conflict 2: C2.2 wants to add a card already in the merged deck.
+        if add_lower in merged_names_lower:
+            warnings.append({
+                "code": "OUTER_CHAIN_C21_C22_CONFLICT",
+                "message": (
+                    f"C2.2 proposed adding {add_name!r}, but the card is "
+                    f"already in the merged deck (C2.1 added it or it was "
+                    f"already there); dropping C2.2 swap."
+                ),
+            })
+            continue
+        # Find the remove target in merged. If C2.1 didn't touch it, it
+        # should still be present.
+        target_idx = next(
+            (
+                j for j, c in enumerate(merged)
+                if (c.get("card_name") or "").strip().lower() == remove_lower
+            ),
+            None,
+        )
+        if target_idx is None:
+            warnings.append({
+                "code": "OUTER_CHAIN_C21_C22_CONFLICT",
+                "message": (
+                    f"C2.2 proposed removing {remove_lower!r}, but the card "
+                    f"is not in the merged deck (likely already removed by "
+                    f"C2.1); dropping C2.2 swap."
+                ),
+            })
+            continue
+        merged[target_idx] = c22_entry
+        merged_names_lower.discard(remove_lower)
+        merged_names_lower.add(add_lower)
+
+    return merged, warnings
+
+
+def _run_c21_c22_parallel(
+    *,
+    llm_client: Any,
+    deck: List[Dict[str, str]],
+    pool: Dict[str, Any],
+    commander: str,
+    bracket: str,
+    theme_hints: List[str],
+    db_snapshot_id: str,
+    intent_analysis: Optional[Dict[str, Any]],
+    llm_metrics: Dict[str, Any],
+    novel_combo_flags: List[Dict[str, Any]],
+    forbidden_set: Optional[Set[str]] = None,
+    forbidden_prompt_block: str = "",
+    guard_fire_events: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
+    """Fire C2.1 and C2.2 concurrently against the same iter-1 baseline
+    deck, merge proposals with C2.1-precedence.
+
+    Returns (merged_deck, all_warnings). novel_combo_flags +
+    guard_fire_events are extended in-place with both calls' outputs.
+    """
+    import concurrent.futures as _futures
+    baseline_deck = list(deck)
+    # Per-thread accumulators to avoid races on shared lists. llm_metrics
+    # is mutated by the LLM client's call_with_budget; Python's GIL makes
+    # individual list.append atomic, which is sufficient for the
+    # downstream sum-based aggregation we do over llm_metrics["calls"].
+    c21_novel: List[Dict[str, Any]] = []
+    c22_novel: List[Dict[str, Any]] = []
+    c21_guard: List[Dict[str, Any]] = []
+    c22_guard: List[Dict[str, Any]] = []
+
+    def _call_c21() -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+        return _run_candidate_critic(
+            llm_client=llm_client,
+            deck=list(baseline_deck),
+            pool=pool,
+            commander=commander,
+            bracket=bracket,
+            theme_hints=theme_hints,
+            intent_analysis=intent_analysis,
+            llm_metrics=llm_metrics,
+            novel_combo_flags=c21_novel,
+            forbidden_set=forbidden_set,
+            forbidden_prompt_block=forbidden_prompt_block,
+            guard_fire_events=c21_guard,
+        )
+
+    def _call_c22() -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+        return _run_wild_combo_discovery(
+            llm_client=llm_client,
+            deck=list(baseline_deck),
+            pool=pool,
+            commander=commander,
+            bracket=bracket,
+            theme_hints=theme_hints,
+            db_snapshot_id=db_snapshot_id,
+            intent_analysis=intent_analysis,
+            llm_metrics=llm_metrics,
+            novel_combo_flags=c22_novel,
+            forbidden_set=forbidden_set,
+            forbidden_prompt_block=forbidden_prompt_block,
+            guard_fire_events=c22_guard,
+        )
+
+    with _futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="c21c22") as ex:
+        fut_c21 = ex.submit(_call_c21)
+        fut_c22 = ex.submit(_call_c22)
+        c21_deck, c21_warnings = fut_c21.result()
+        c22_deck, c22_warnings = fut_c22.result()
+
+    merged_deck, merge_warnings = _merge_c21_c22_decks(
+        baseline_deck, c21_deck, c22_deck,
+    )
+
+    # Merge the parallel accumulators back into the caller's lists.
+    novel_combo_flags.extend(c21_novel)
+    novel_combo_flags.extend(c22_novel)
+    if guard_fire_events is not None:
+        guard_fire_events.extend(c21_guard)
+        guard_fire_events.extend(c22_guard)
+
+    all_warnings: List[Dict[str, str]] = []
+    all_warnings.extend(c21_warnings)
+    all_warnings.extend(c22_warnings)
+    all_warnings.extend(merge_warnings)
+    return merged_deck, all_warnings
 
 
 def _run_candidate_critic(
