@@ -40,8 +40,42 @@ Append-only timestamped record of phase execution. Same format as v1-v4 logs.
 - Cowork memory path: `C:\Users\jorde\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\local-agent-mode-sessions\9f2d68e4-6579-41dd-a8ca-3462c3f52398\a461a706-2a03-44fd-8292-3267addb5d29\spaces\d463abef-278c-4a7e-b5e3-34c83dad7ccc\memory\` — MEMORY.md not yet located but individual memory files findable by name.
 - Untracked `engine_path_test.md` and `primitives/llm_supplement_audit_v1.json` predate this session; not touching.
 
-### Phase 0 commit pending
+### Phase 0 commit
 
-Will commit `mega_task_v5_kickoff.md` + this progress log as the Phase 0 atomic commit.
+`74abcc8f8` — "Phase 0 (mega-task v5): pre-flight + progress log scaffold". 2 files, 634 insertions.
+
+---
+
+## Phase 1 — uvicorn workers ≥ 2 (BLOCKING)
+
+**Started**: 2026-05-21 (immediately after Phase 0 commit)
+
+### Implementation
+
+Kickoff said "Update `launch_dev.cmd`" but `launch_dev.cmd` is a thin wrapper that delegates to `launch.cmd` → `launch.py`. The actual uvicorn invocation lives in `launch.py::_start_api_process`. Updated launch.py instead:
+
+- New module-level constants `DEFAULT_API_WORKERS = 2` + `API_WORKERS_ENV = "MTG_ENGINE_API_WORKERS"` for env-var override.
+- New helper `_resolve_api_workers()` resolves env-var → default with int validation + clamping to ≥1.
+- `_start_api_process()` appends `--workers N` to the uvicorn argv when N > 1.
+
+### Verification
+
+- **Boot smoke**: `python -m uvicorn api.main:app --host 127.0.0.1 --port 8099 --workers 2` — parent process PID 35924 spawned two worker processes (44804, 38224); both reported "Application startup complete." within ~5s.
+- **Concurrent /health smoke**: 5 parallel `curl /health` requests via xargs → all 200 in 20-44ms each. 30 parallel requests via Python ThreadPoolExecutor → mean 45ms, max 69ms, min 22ms, 100% 200.
+- **Unit tests**: 7 new tests in `tests/test_launch_worker_resolution.py` covering default, int override, garbage falls back, whitespace falls back, zero/negative clamp to 1.
+
+### Regression baselines (after Phase 1)
+
+- **pytest**: 1384 passed (1377 prior + 7 new), 8 pre-existing failures (matches v4 baseline), 17 skipped. 104s.
+- **vitest**: 711 passed, 2 pre-existing failures (matches v4 baseline). 1.66s.
+
+### Notes
+
+The full "/health is fast WHILE a build is in flight" property is implied by:
+1. Two worker processes confirmed booted independently.
+2. /health responsive under burst load (rules out single-worker bottleneck on the static endpoint).
+3. The agent_build_deck_v1 endpoint is `async def` wrapping a sync 110-150s call; on a single worker it would block the event loop, but with two workers a non-build request lands on the idle worker. This will be live-validated during Phase 5 chrome-devtools walk with a real build in flight.
+
+`launch_dev.cmd` itself was untouched — it remains a 1-line wrapper around `launch.cmd`. The intended behavior is satisfied by the launch.py change (and the env-var override gives an escape hatch).
 
 ---

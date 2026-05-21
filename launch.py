@@ -18,6 +18,15 @@ API_URL = f"http://{API_HOST}:{API_PORT}"
 UI_URL = f"http://{DEV_UI_HOST}:{DEV_UI_PORT}"
 NO_BROWSER_ENV = "MTG_ENGINE_NO_BROWSER"
 
+# Mega-task v5 Phase 1: agent_build_deck_v1 is async def wrapping a 110-150s
+# synchronous build; a single uvicorn worker blocks the event loop for the
+# entire build, freezing /health and every other endpoint. Multiple workers
+# fix this by giving non-build requests their own process. Default 2 workers
+# (one for the in-flight build, one for sidebar/health/snapshot endpoints);
+# override via MTG_ENGINE_API_WORKERS env var if more headroom is desired.
+DEFAULT_API_WORKERS = 2
+API_WORKERS_ENV = "MTG_ENGINE_API_WORKERS"
+
 
 def _print_runtime_paths() -> bool:
     try:
@@ -175,21 +184,36 @@ def _ui_dist_exists(repo_root: str) -> bool:
     return os.path.isdir(ui_dist_path) and os.path.isfile(ui_index_path)
 
 
+def _resolve_api_workers() -> int:
+    raw = os.getenv(API_WORKERS_ENV, "").strip()
+    if not raw:
+        return DEFAULT_API_WORKERS
+    try:
+        n = int(raw)
+    except ValueError:
+        print(f"WARNING: {API_WORKERS_ENV}={raw!r} is not an int; using default {DEFAULT_API_WORKERS}")
+        return DEFAULT_API_WORKERS
+    if n < 1:
+        print(f"WARNING: {API_WORKERS_ENV}={n} < 1; using 1")
+        return 1
+    return n
+
+
 def _start_api_process(repo_root: str) -> subprocess.Popen:
-    return _start_process(
-        [
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "api.main:app",
-            "--host",
-            API_HOST,
-            "--port",
-            str(API_PORT),
-        ],
-        cwd=repo_root,
-        name="API",
-    )
+    workers = _resolve_api_workers()
+    cmd = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "api.main:app",
+        "--host",
+        API_HOST,
+        "--port",
+        str(API_PORT),
+    ]
+    if workers > 1:
+        cmd.extend(["--workers", str(workers)])
+    return _start_process(cmd, cwd=repo_root, name="API")
 
 
 def _start_ui_dev_process(repo_root: str) -> subprocess.Popen:
