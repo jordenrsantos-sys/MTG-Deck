@@ -2006,6 +2006,45 @@ def _infer_theme_profile_mode(
     return "bare_commander"
 
 
+def _render_theme_profile_block(profile: Optional[Dict[str, Any]]) -> str:
+    """Iter 5 Phase 6: render a USER THEME PROFILE block for downstream
+    LLM prompts. Tells each phase to honor user themes over corpus
+    baselines.
+
+    Returns an empty string when profile is missing — backwards-compat
+    so existing builds without a theme_profile see no change.
+    """
+    if not isinstance(profile, dict):
+        return ""
+    primary = profile.get("primary") or {}
+    secondary = profile.get("secondary") or {}
+    tertiary = profile.get("tertiary") or {}
+    mode = profile.get("mode") or "unknown"
+    p_theme = primary.get("theme") or "default"
+    p_weight = primary.get("weight", 0.0)
+    s_theme = secondary.get("theme") or ""
+    s_weight = secondary.get("weight", 0.0)
+    t_theme = tertiary.get("theme") or ""
+    t_weight = tertiary.get("weight", 0.0)
+    lines = [
+        "",
+        f"USER THEME PROFILE (mode: {mode}) — load-bearing; do NOT",
+        "  pivot to the corpus-typical archetype if it conflicts:",
+        f"  - Primary:   {p_theme} (weight {p_weight:.2f})",
+    ]
+    if s_theme:
+        lines.append(f"  - Secondary: {s_theme} (weight {s_weight:.2f})")
+    if t_theme:
+        lines.append(f"  - Tertiary:  {t_theme} (weight {t_weight:.2f})")
+    lines.append(
+        "  Honor these themes in your selections. Your job is to "
+        "MAXIMIZE QUALITY WITHIN THE USER'S DECLARED CONSTRAINTS, "
+        "not to redirect toward the corpus-optimal archetype for "
+        "this commander."
+    )
+    return "\n".join(lines) + "\n"
+
+
 def _as_list_of_strings(v: Any) -> List[str]:
     """Normalize an unknown value into a list of stripped, non-empty strings."""
     if not isinstance(v, list):
@@ -2268,6 +2307,8 @@ def _build_candidate_critic_user_prompt(
             f"  likely_win_condition: {wc}\n"
             f"  implicit_themes: {themes}\n"
         )
+        # Iter 5 Phase 6: cascade B2's structured theme profile.
+        intent_block += _render_theme_profile_block(intent_analysis.get("theme_profile"))
 
     return (
         f"Commander: {commander}\n"
@@ -2983,6 +3024,8 @@ def _build_wild_combo_user_prompt(
         wc = intent_analysis.get("likely_win_condition") or ""
         if wc:
             intent_block = f"\nLikely win condition (from intent interpreter): {wc}\n"
+        # Iter 5 Phase 6: cascade theme profile through C2.2.
+        intent_block += _render_theme_profile_block(intent_analysis.get("theme_profile"))
 
     priority_block = ""
     if n_semantic_in_pool > 0:
@@ -3727,6 +3770,8 @@ def _build_final_critic_batch_user_prompt(
                 f"\nLLM-inferred intent: win_condition={wc!r}, "
                 f"implicit_themes={themes}"
             )
+        # Iter 5 Phase 6: cascade theme profile through D2 rationale rewrites.
+        intent_block += _render_theme_profile_block(intent_analysis.get("theme_profile"))
 
     priority_names = [c.get("card_name", "") for c in batch_priority_cards]
 

@@ -161,3 +161,19 @@ automation pipeline + iter 4 baseline.
 - next phase: Phase 6 — cascade theme profile through C2.1/C2.2/D2.
 
 ---
+
+## Phase 6 — Cascade theme profile through C2.1/C2.2/D2 (BLOCKING) — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: ~$0.90
+- tests: pytest **1337 passed / 8 pre-existing fails** (Phase 5 baseline 1330 + 7 new cascade tests).
+- self-correction events: none
+- key findings:
+  - **`_render_theme_profile_block(profile)`** helper: produces a USER THEME PROFILE block with primary/secondary/tertiary weighted themes + mode + the explicit "MAXIMIZE QUALITY WITHIN THE USER'S DECLARED CONSTRAINTS, not redirect toward corpus-optimal archetype" guidance. Returns empty string when profile is missing — backwards-compat so builds without B2 theme_profile see no change.
+  - **C2.1, C2.2, D2 user prompts** now all call `_render_theme_profile_block(intent_analysis.get("theme_profile"))` and append the result. Each LLM phase sees the same load-bearing user-intent signal.
+  - **C2.2 weighted multi-archetype detection**: the existing `detect_archetype()` still picks 1 of 12 archetypes for its prompt fragment. The theme_profile cascade gives the LLM the full weighted picture; the single-archetype fragment remains as additional context. A full weighted-multi-fragment refactor is deferred (the theme_profile alone is the main load-bearing signal; iter 6 can blend fragments if needed).
+  - **7 new unit tests** cover: full theme-profile block rendering, empty-input backwards-compat (None / non-dict), partial slot omission (empty secondary/tertiary suppress those lines), and integration verification that C2.1 / C2.2 / D2 user prompts include the block when given an intent_analysis with theme_profile.
+- next phase: Phase 7 — theme-aware Pillar E target counts.
+
+---
