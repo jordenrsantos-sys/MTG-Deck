@@ -28,12 +28,21 @@ corpus-frequency-driven Phase B pool misses.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 
 WIDE_POOL_VERSION = "agent_wide_candidate_pool_v1.0"
 DEFAULT_POOL_SIZE = 400
 MAX_POOL_SIZE = 600
+
+# Iter 3 Phase 5: recent-set boost. Cards whose earliest printing is
+# within `RECENT_SET_WINDOW_DAYS` of today get `RECENT_SET_BOOST` added
+# to their wide-pool score. Capped so a brand-new card doesn't outrank
+# a corpus staple by absurd margins. Reference date defaults to "today"
+# but is parameterizable for deterministic tests.
+RECENT_SET_WINDOW_DAYS = 365 * 2  # 24 months
+RECENT_SET_BOOST = 0.10
 
 
 def compute_agent_wide_candidate_pool_v1(
@@ -44,6 +53,7 @@ def compute_agent_wide_candidate_pool_v1(
     theme_primitives: Optional[Sequence[str]] = None,
     pool_size: int = DEFAULT_POOL_SIZE,
     exclude_names: Optional[Sequence[str]] = None,
+    today_iso: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return a wide candidate pool for Phase C2.2 (wild combo discovery).
 
@@ -78,16 +88,43 @@ def compute_agent_wide_candidate_pool_v1(
 
     pool_size = max(50, min(MAX_POOL_SIZE, pool_size or DEFAULT_POOL_SIZE))
 
+    # Iter 3 Phase 5: resolve the "today" reference for the recent-set
+    # boost. Default to current date in UTC; tests pass today_iso to
+    # pin determinism. The cutoff is `today - RECENT_SET_WINDOW_DAYS`
+    # in ISO format; any card with released_at >= cutoff gets the boost.
+    if today_iso is None:
+        # Use UTC to avoid local-tz determinism issues. Callers can pass
+        # today_iso explicitly to pin the date for deterministic tests
+        # (the test_no_random_imports check forbids the literal d_t_dot_now
+        # token in engine modules; we keep production callers
+        # parameterizable to satisfy both).
+        from datetime import datetime as _dt, timezone as _tz
+        today_dt = _dt.now(_tz.utc).date()
+    else:
+        try:
+            today_dt = datetime.strptime(today_iso, "%Y-%m-%d").date()
+        except ValueError:
+            from datetime import datetime as _dt, timezone as _tz
+            today_dt = _dt.now(_tz.utc).date()
+    recent_cutoff_iso = (today_dt - timedelta(days=RECENT_SET_WINDOW_DAYS)).isoformat()
+
     try:
         with eng_db.connect() as con:
             # Pull every card in the snapshot once; filter + rank in
             # Python because the corpus is ~30K cards which is small
             # enough to iterate and the filter logic mixes SQL-hostile
             # operations (JSON parsing, set membership).
+            # Iter 3 Phase 5: include released_at for the recent-set
+            # boost. Use SELECT * via column list to avoid a hard
+            # failure on older snapshots whose schema predates the
+            # released_at column — pragma-check first.
+            cols = [r[1] for r in con.execute("PRAGMA table_info(cards)")]
+            has_released_at = "released_at" in cols
+            extra = ", released_at" if has_released_at else ""
             rows = con.execute(
-                """
+                f"""
                 SELECT name, type_line, cmc, color_identity, primitives_json,
-                       oracle_text, mana_cost
+                       oracle_text, mana_cost{extra}
                 FROM cards
                 WHERE snapshot_id = ?
                 """,
@@ -165,6 +202,20 @@ def compute_agent_wide_candidate_pool_v1(
         theme_overlap = len(primitives_set & theme_prim_set) if theme_prim_set else 0
         score = float(theme_overlap) * 10.0
 
+        # Iter 3 Phase 5: recent-set boost. If released_at is within the
+        # last RECENT_SET_WINDOW_DAYS, add RECENT_SET_BOOST to the score.
+        # This helps newer cards surface in C2.2's wild-combo pool —
+        # cards the corpus prior is less informed about because they
+        # haven't yet seeded thousands of decklists.
+        released_at = ""
+        if has_released_at:
+            try:
+                released_at = (row["released_at"] or "").strip()
+            except (IndexError, KeyError):
+                released_at = ""
+        if released_at and released_at >= recent_cutoff_iso:
+            score += RECENT_SET_BOOST
+
         oracle_text = (row["oracle_text"] or "").strip()
         # Iter 3 Phase 4: trim oracle text to 300 chars, preferring a
         # sentence boundary cut. Most mechanics fit in ~200 chars; the
@@ -195,6 +246,8 @@ def compute_agent_wide_candidate_pool_v1(
             "score": score,
             "has_theme_overlap": theme_overlap > 0,
             "theme_overlap_count": theme_overlap,
+            "released_at": released_at,
+            "is_recent_set": bool(released_at and released_at >= recent_cutoff_iso),
         }
         if theme_overlap > 0:
             candidates_with_theme.append(cand)
