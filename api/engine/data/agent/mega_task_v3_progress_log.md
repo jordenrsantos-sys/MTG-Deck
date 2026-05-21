@@ -150,3 +150,31 @@ approximator + outer-chain parallel + Pillar E v0.2 card-advantage.
 - next phase: Phase 6 — LLM discovery report writer.
 
 ---
+
+## Phase 6 — LLM discovery report writer — COMPLETED
+
+- timestamp: 2026-05-21
+- commit: (this commit)
+- cost_to_date: $0.02 (single smoke call on 10-card synthetic set)
+- tests: pytest **1259 passed / 8 pre-existing fails** (Phase 5 baseline 1250 + 9 new report-writer tests).
+- self-correction events:
+  - **Tier-1**: my own test asserted `Persist Creature` would top the impactful-cards ranking, but the composite score (`max_delta + 0.05 * combo_count`) correctly placed Sac Outlet first (0.08 + 0.10 = 0.18 > 0.14). Fixed the test to assert the documented composite ordering.
+- key findings:
+  - **`api/engine/layers/new_set_report_writer_v1.py`** (~310 lines):
+    - `build_report_inputs(set_code, set_name, pipeline_data)` — pure-Python pre-processor; shapes pipeline data into structured input for the LLM call (ranks cards by impact composite, ranks combo pairs by confidence, aggregates archetype winners/losers, counts primitive coverage by ontology dimension).
+    - `_rank_impactful_cards(k=10)` — composite score = `max_delta + 0.05 * combo_count`.
+    - `_rank_combo_pairs(k=10)` — descending confidence.
+    - `_archetype_winners_losers()` — cumulative archetype-impact delta across all cards; top-3 winners (positive) + top-3 losers (negative, rare).
+    - `_primitive_dimension_coverage()` — counts cards per ontology dimension via `load_ontology()`.
+    - `write_set_report(set_code, set_name, ingest_data, llm_client=None)` — one Claude Sonnet 4.6 call via `call_with_budget(system, user, ≤16k input, ≤4k output)`. Returns `ReportEnvelope(markdown, set_code, set_name, released_at, processed_at, card_count, cost_usd, status, warnings)`.
+    - **Deterministic fallback** (`_fallback_markdown`) preserves all 5 sections when the LLM layer is unavailable (no API key, transient failure, non-JSON return). The structured pipeline data is rendered as markdown tables / bullet lists.
+  - **Prompt design**: system prompt enforces 5-section structure + "reference only cards in the input — do NOT hallucinate" guardrail + JSON envelope output. User prompt embeds the structured inputs as a fenced JSON block.
+  - **Smoke test on 10-card synthetic set**:
+    - Status: `ok`, cost: $0.0202, markdown length: 3,130 chars
+    - All 5 sections present, well-formed markdown tables, no hallucinated card names (verified the LLM only referenced the 10 cards in the input + the 2 partner cards from the combo_pairs list)
+    - Archetype winners correctly ranked (Storm +0.20 / Blink +0.15 / Aristocrats +0.14) matching the synthetic data
+    - "Suggested deck updates" gracefully shows "No DECK_LIBRARY entries to evaluate against." (Phase 7 wires the obsidian-MCP lookup)
+  - **9 new unit tests** cover input shaping (shape + impactful-card composite ranking + combo-pair ranking by confidence), winners/losers aggregation, fallback markdown has all 5 sections + references input cards, end-to-end `write_set_report` paths (LLM unavailable / LLM ok / LLM returns non-JSON → fallback).
+- next phase: Phase 7 — Obsidian integration.
+
+---
