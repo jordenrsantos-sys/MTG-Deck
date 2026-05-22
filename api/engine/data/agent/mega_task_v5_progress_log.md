@@ -444,3 +444,57 @@ Deferred to Phase 13 — the multi-case sweep there computes intent_drift on Atr
 ### Phase 7 commit
 
 `589672661` — "Phase 7 (mega-task v5): theme signal density expansion + archetype-aware drift thresholds". 3 files changed, 245 insertions, 9 deletions.
+
+Progress-log SHA fixup: `735c314de`.
+
+---
+
+## Phase 8 — Atraxa C2.1 silent-failure fix
+
+**Started**: 2026-05-22 (immediately after Phase 7 commit)
+
+### Diagnosis
+
+Iter 5 logged Atraxa C2.1 latency = 0.0s. C2.1 (`_run_candidate_critic`) has a 10000-input-token budget set at module load time. `call_with_budget`'s pre-call guard returns `INPUT_TOKEN_BUDGET_EXCEEDED` if the estimated input exceeds that budget, and that's what fired silently on Atraxa.
+
+Source: `forbidden_prompt_block` from `format_forbidden_block_for_prompt` is injected into the SYSTEM prompt of B2 / C2.1 / C2.2 / D2. For Atraxa (4-color → larger intersection with the combo registry → ~50-150+ cards in the forbidden set), the block grew to ~1500-2500 tokens — enough to push C2.1's total above 10K and trip the guard. A historical comment at line 2142-2146 documents this exact failure mode being fixed for B2 (3000 → 5000 bump) at iter 3 Phase 3, but C2.1 / C2.2 / D2 were never patched.
+
+### Fix
+
+New helper `_budget_with_forbidden_overhead(base, forbidden_prompt_block)` that adds the block's estimated tokens (using the same 3.5 chars/token convention as the LLM-client token estimator) on top of any phase's base budget. Wired into all four phases:
+
+| Phase     | Base budget | After Phase 8                                   |
+|-----------|-------------|-------------------------------------------------|
+| B2        | 5000        | 5000 + ~0-2000 (already worked, defense-in-depth)|
+| C2.1      | 10000       | 10000 + ~0-2500 (THE fix; prior failure mode)   |
+| C2.2      | 35000       | 35000 + ~0-2500 (already worked, defense-in-depth)|
+| D2 batches| 12000       | 12000 + ~0-2500 (per-batch threshold protected) |
+
+The pre-call guard now only fires when the *core content* (system prompt body, deck summary, candidate pool, primitive index, etc.) exceeds the base budget — never on legitimate combo-guard metadata. Empty forbidden_block returns base unchanged.
+
+### Schema-additive changes
+
+- `_final_critic_run_single_batch` now accepts `max_input_tokens` as a parameter (default preserves prior behavior); D2 caller computes it via the helper and passes through.
+
+### Tests
+
+`tests/test_agent_iter6_phase_8_forbidden_budget_overhead.py` — 7 new tests:
+
+- Empty / None forbidden_block returns base budget unchanged.
+- Overhead is exactly `len(block) / 3.5` tokens.
+- Atraxa-scale (~50-card) forbidden_block bumps the budget by >100 tokens.
+- Every phase budget constant is a positive int.
+- Helper works on each of the 4 phase budgets without overflow.
+
+### Live smoke
+
+Deferred to Phase 13 — the iter 6 sweep there explicitly measures Atraxa C2.1 latency > 0 as one of the 12 success criteria.
+
+### Regression baselines after Phase 8
+
+- **pytest**: 1425 passed (Phase 7 was 1418; +7 new Phase 8 tests). 8 pre-existing failures unchanged. 17 skipped. 58 subtests passed.
+- **vitest**: 758 unchanged.
+
+### Phase 8 commit
+
+`<pending>`

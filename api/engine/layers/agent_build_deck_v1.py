@@ -2148,6 +2148,30 @@ _INTENT_INTERPRETER_INPUT_TOKEN_BUDGET = 5000
 _INTENT_INTERPRETER_OUTPUT_TOKEN_BUDGET = 2000
 
 
+def _budget_with_forbidden_overhead(base: int, forbidden_prompt_block: str) -> int:
+    """Mega-task v5 Phase 8: dynamically grow the LLM input token budget by
+    the serialized length of the forbidden_prompt_block.
+
+    Pre-Phase-8 behavior: each phase (B2 / C2.1 / C2.2 / D2) had a fixed
+    `max_input_tokens` set at module-load time. The forbidden_prompt_block
+    is injected into the SYSTEM prompt by every one of those phases. On
+    Atraxa (4-color → larger combo registry intersection → more forbidden
+    cards), the block grows large enough to push the total input over
+    C2.1's 10K budget, the pre-call guard fires, the LLM call is skipped
+    silently, and C2.1's latency is logged as 0ms — exactly the iter 5
+    "Atraxa C2.1 latency = 0.0s" observation.
+
+    Fix: compute the overhead each phase pays for its forbidden block and
+    add it to the base budget, so the budget guard only fires on
+    *genuinely* oversized core content (not on legitimate combo-guard
+    metadata). Matches the token-estimator's 3.5 chars/token convention.
+    """
+    if not forbidden_prompt_block:
+        return base
+    overhead_tokens = max(0, int(len(forbidden_prompt_block) / 3.5))
+    return base + overhead_tokens
+
+
 def _run_intent_interpreter(
     *,
     llm_client: Any,
@@ -2181,7 +2205,9 @@ def _run_intent_interpreter(
     result = llm_client.call_with_budget(
         system=system,
         user=user,
-        max_input_tokens=_INTENT_INTERPRETER_INPUT_TOKEN_BUDGET,
+        max_input_tokens=_budget_with_forbidden_overhead(
+            _INTENT_INTERPRETER_INPUT_TOKEN_BUDGET, forbidden_prompt_block,
+        ),
         max_output_tokens=_INTENT_INTERPRETER_OUTPUT_TOKEN_BUDGET,
     )
 
@@ -3145,7 +3171,9 @@ def _run_candidate_critic(
 
     result = llm_client.call_with_budget(
         system=system, user=user,
-        max_input_tokens=_CANDIDATE_CRITIC_INPUT_TOKEN_BUDGET,
+        max_input_tokens=_budget_with_forbidden_overhead(
+            _CANDIDATE_CRITIC_INPUT_TOKEN_BUDGET, forbidden_prompt_block,
+        ),
         max_output_tokens=_CANDIDATE_CRITIC_OUTPUT_TOKEN_BUDGET,
     )
     llm_metrics["calls"].append({
@@ -3669,7 +3697,9 @@ def _run_wild_combo_discovery(
     )
     result = llm_client.call_with_budget(
         system=system, user=user,
-        max_input_tokens=_WILD_COMBO_INPUT_TOKEN_BUDGET,
+        max_input_tokens=_budget_with_forbidden_overhead(
+            _WILD_COMBO_INPUT_TOKEN_BUDGET, forbidden_prompt_block,
+        ),
         max_output_tokens=_WILD_COMBO_OUTPUT_TOKEN_BUDGET,
     )
     llm_metrics["calls"].append({
@@ -4262,14 +4292,20 @@ def _final_critic_run_single_batch(
     system: str,
     user: str,
     batch_index: int,
+    max_input_tokens: int = _FINAL_CRITIC_INPUT_TOKEN_BUDGET,
 ) -> Dict[str, Any]:
     """Invoke one D2 batch. Returns a dict with `ok`, `parsed`, `text`,
     `usage` (input_tokens/output_tokens/cost_usd/latency_ms/error_code/
     retries), and `batch_index`. Pure side-effect-free call — caller
-    aggregates metrics."""
+    aggregates metrics.
+
+    Mega-task v5 Phase 8: `max_input_tokens` is now caller-supplied so the
+    D2 caller can include the forbidden_prompt_block's overhead. Default
+    preserves prior behavior for any test that constructs this directly.
+    """
     result = llm_client.call_with_budget(
         system=system, user=user,
-        max_input_tokens=_FINAL_CRITIC_INPUT_TOKEN_BUDGET,
+        max_input_tokens=max_input_tokens,
         max_output_tokens=_FINAL_CRITIC_BATCH_OUTPUT_TOKEN_BUDGET,
     )
     return {
@@ -4362,11 +4398,17 @@ def _run_final_critic(
     # Fire batches in parallel. Number of workers = min(batches, configured parallel).
     max_workers = max(1, min(len(batch_prompts), _FINAL_CRITIC_BATCH_PARALLEL))
     batch_results: List[Dict[str, Any]] = []
+    # Mega-task v5 Phase 8: include the forbidden_prompt_block overhead in
+    # the input budget for each D2 batch.
+    d2_budget = _budget_with_forbidden_overhead(
+        _FINAL_CRITIC_INPUT_TOKEN_BUDGET, forbidden_prompt_block,
+    )
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         future_map = {
             ex.submit(
                 _final_critic_run_single_batch,
-                llm_client=llm_client, system=system, user=user, batch_index=idx,
+                llm_client=llm_client, system=system, user=user,
+                batch_index=idx, max_input_tokens=d2_budget,
             ): idx
             for idx, user in batch_prompts
         }
