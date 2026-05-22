@@ -473,7 +473,73 @@ None per kickoff policy ("do NOT delete inline; that's the user's call").
 
 ## Section 9 — External-dep audit (Phase 9)
 
-`<pending — populated during Phase 9>`
+**Verdict: clean.** All 9 production deps + 3 dev deps install on Python 3.10.11 + import without error. Versions match declarations (== pins exact; >= pins are AT or ABOVE the floor). The mega-task v5 sse-starlette gap (Phase 3 didn't pin it; recovered in v5 Phase 5) is now correctly pinned in requirements.txt with the explanatory comment.
+
+### `requirements.txt` (9 production deps)
+
+| Package | Declared | Installed | Status |
+|---|---|---|---|
+| fastapi | `==0.129.0` | 0.129.0 | exact match |
+| pydantic | `==2.12.5` | 2.12.5 | exact match |
+| uvicorn | `==0.41.0` | 0.41.0 | exact match |
+| sse-starlette | `>=3.0.0` | 3.4.4 | OK (v5 Phase 5 added the pin) |
+| mcp | `>=1.0.0` | 1.27.1 | OK |
+| httpx | `>=0.28.0` | 0.28.1 | OK |
+| anthropic | `>=0.50.0` | 0.104.0 | OK |
+| voyageai | `>=0.3.0` | 0.3.7 | OK (requires Python <3.14 — venv is 3.10.11 ✓) |
+| numpy | `>=1.24.0` | 2.2.6 | OK |
+
+All 9 import without error in the current `.venv`. No pulled/yanked versions detected.
+
+### `requirements-dev.txt` (3 dev deps)
+
+| Package | Declared | Installed | Status |
+|---|---|---|---|
+| pytest | `==9.0.2` | 9.0.3 | minor drift (0.0.1 patch — mega-task v5 installed 9.0.3 explicitly) |
+| pytest-cov | `==7.0.0` | 7.0.0 / 7.1.0 | the 7.1.0 from v5 install is newer; original 7.0.0 still present in the resolve tree |
+| httpx | `==0.28.1` | 0.28.1 | exact match (also a transitive dep of anthropic + others) |
+
+**Minor finding**: `pytest==9.0.2` pinned in dev requirements but venv has 9.0.3. This is because mega-task v5 Phase 5's `pip install pytest pytest-cov` (after venv rebuild) didn't read from requirements-dev.txt and got the latest. **Wontfix** (no functional impact; tests pass on 9.0.3).
+
+### UI (node) deps — `ui_harness/package.json`
+
+| Package | Declared | Notes |
+|---|---|---|
+| react | ^18.3.1 | UI framework |
+| react-dom | ^18.3.1 | DOM bindings |
+| @vitejs/plugin-react | ^4.3.3 | build tool integration |
+| vite | ^5.4.10 | dev server + build |
+| vitest | ^2.1.9 | test runner |
+| typescript | ^5.6.3 | type checker |
+| tailwindcss | ^3.4.19 | styling |
+| autoprefixer + postcss | ^10/8 | CSS processing |
+| @types/react + @types/react-dom | ^18.3.x | TS types |
+
+All current major versions. No vitest test regressions in mega-task v5 (still 758 passing).
+
+### Cross-reference: module imports vs requirements
+
+Spot-checked production imports against requirements.txt:
+- `import numpy` (in agent_semantic_retrieval_v1, etc.) — declared ✓
+- `import anthropic` (in agent_llm_client_v1) — declared ✓
+- `import voyageai` (in agent_semantic_retrieval_v1 build path) — declared ✓
+- `from sse_starlette.sse import EventSourceResponse` (in api/main.py:2524) — declared ✓
+- `from fastapi import ...` — declared ✓
+- `from pydantic import ...` — declared ✓
+- `import mcp` (in mcp_server/mtg_engine_mcp.py) — declared ✓
+
+No undeclared imports detected.
+
+### Inline fixes landed
+
+None — Phase 9 is read-only audit and the deps are clean.
+
+### Queued for iter 7 / wontfix
+
+- *Wontfix*: pytest patch drift (9.0.2 declared → 9.0.3 installed). No functional impact.
+- *Out-of-scope*: 92 installed venv packages include many transitive deps not in requirements.txt. They're correctly resolved by pip; declarations-vs-resolved-tree audit is unnecessary unless drift suspected.
+- *Iter 7 watchpoint*: Pillar D's hard pin on `voyageai >= 0.3.0` (which requires Python `<3.14`) is the same constraint that broke mega-task v5 Phase 5. If Python 3.14+ becomes desired in iter 7+, the voyageai pin needs revisiting (or a 3.14-compatible fork).
+
 
 ## Section 10 — Per-pillar smoke tests (Phase 10)
 

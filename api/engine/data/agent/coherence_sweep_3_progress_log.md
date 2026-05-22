@@ -219,6 +219,28 @@ Wrote `tools/_coherence_sweep_3_orphan_scan.py` (AST-walks all 454 .py files, re
 
 ### Phase 8 commit
 
-Pending — includes the new tools/_coherence_sweep_3_orphan_scan.py script.
+`a00fad37e` — "Coherence Sweep #3 Phase 8: orphan code — 2 true orphans queued for iter 7". 3 files changed, 182 insertions, 2 deletions.
+
+---
+
+## Phase 9 — External-dep audit
+
+**Started**: 2026-05-22 (immediately after Phase 8)
+
+### Method
+
+Read requirements.txt + requirements-dev.txt + ui_harness/package.json. Cross-referenced declared versions against installed venv packages via `pip list`. Verified each declared dep imports without error.
+
+### Findings
+
+**Clean.** All 9 production deps + 3 dev deps install + import. Versions match declarations. sse-starlette pin (added in mega-task v5 Phase 5) is in place with explanatory comment. requirements-dev.txt exists with pytest + pytest-cov + httpx pins.
+
+Minor drift: pytest 9.0.2 pinned vs 9.0.3 installed (post-v5 fresh install). Wontfix; tests pass on 9.0.3.
+
+Iter 7 watchpoint: voyageai's <3.14 Python constraint is the same one that broke v5 Phase 5. Future Python upgrades need to revisit.
+
+### Phase 9 commit
+
+Pending.
 
 ---
