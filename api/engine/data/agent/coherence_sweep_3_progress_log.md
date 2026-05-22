@@ -169,6 +169,28 @@ Grep all `fetch(...)` and `EventSource(...)` calls in `ui_harness/src/`. Map eac
 
 ### Phase 6 commit
 
+`b7c7b5292` — "Coherence Sweep #3 Phase 6: UI ↔ endpoint contract drift — clean". 2 files changed, 69 insertions, 1 deletion.
+
+---
+
+## Phase 7 — Documentation drift
+
+**Started**: 2026-05-22 (immediately after Phase 6)
+
+### Method
+
+Audited module docstrings on v5-added modules, the 3 key Obsidian vault docs (DESIGN_DECISIONS, ENGINE_API_GUIDE, MPA_SPEC), Pillar C ontology spec, repo READMEs.
+
+### Findings
+
+- Module docstrings: current. v5 modules all have comprehensive docstrings written during their respective phases.
+- DESIGN_DECISIONS.md (2026-05-21): current. The 4 architectural rules are stable across iterations.
+- ENGINE_API_GUIDE.md (2026-05-17): **drifted across 3 mega-tasks**. ~10 endpoints added post-2026-05-17 not documented. Substantive overhaul needed — queued for iter 7.
+- MPA_SPEC.md: current for Phase 5b maintenance state.
+- Pillar C ontology_v1.md: current.
+
+### Phase 7 commit
+
 Pending.
 
 ---

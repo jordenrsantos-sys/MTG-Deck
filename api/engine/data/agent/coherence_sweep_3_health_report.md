@@ -360,7 +360,51 @@ None — Phase 6 is read-only audit and the contracts are clean.
 
 ## Section 7 — Documentation drift (Phase 7)
 
-`<pending — populated during Phase 7>`
+**Verdict: module docstrings + DESIGN_DECISIONS.md are current; Obsidian vault ENGINE_API_GUIDE.md drifted across 3 mega-tasks (queued for iter 7 doc-overhaul).**
+
+### Module docstrings — current
+
+Spot-checked the v5 modules' docstrings; all comprehensive:
+- `curve_smoother_v1.py` (Phase 9) — full docstring with API, JSON-config reference, "future iter may add LLM critique" note.
+- `interaction_designer_v1.py` (Phase 10) — categories, per-bracket policy, color-gating, primitive-classification table, all documented.
+- `agent_graduated_playtest_v1.py` (Phase 12) — module docstring + dataclass field comments + per-function explanations.
+- `deck_strength_check_v1.py` — `STRENGTH_CHECK_VERSION = "strength_check_v1.4_persistent_vector_cache"` reflects the Phase 5 disk-cache addition.
+- `agent_intent_preservation_check_v1.py` — `INTENT_PRESERVATION_VERSION = "agent_intent_preservation_check_v1.1_archetype_aware"` reflects Phase 7.
+- `agent_build_deck_v1.py` `_budget_with_forbidden_overhead` — full docstring explaining Phase 8 fix context.
+
+### DESIGN_DECISIONS.md — current (last modified 2026-05-21, mega-task v4 era)
+
+Structure verified intact: the 4 architectural rules (1.1 Creativity envelope / 1.2 Speed budget / 1.3 Strength oracle / 1.4 Pilot anti-bias), calibration boundary, deterministic vs AI split, self-learning boundaries. The 4 feedback rules in cowork memory map to these — Phase 3 confirmed all 4 are honored in code. DESIGN_DECISIONS.md doesn't need v5 updates because the rules are stable across iterations; only the implementations change.
+
+### Obsidian vault ENGINE_API_GUIDE.md — drifted (queued for iter 7)
+
+Last modified **2026-05-17** (Pillar A+C ship date). 20 endpoint mentions. **Predates mega-tasks v3 + v4 + v5.** Endpoints added since v3-v5 (`/agent/build_deck_v1/stream`, `/snapshots/active`, `/playtest/opposition_decks_v1` extensions, `/corpus/batch_ingest_v1`, etc.) are not documented in the guide.
+
+This is a substantive doc overhaul (~half day's work to cover the ~10 new endpoints + the SSE streaming surface + the graduated_playtest_report response shape). **Queue for iter 7.**
+
+### Obsidian vault MPA_SPEC.md
+
+Last modified 2026-05-17. The MPA (Pilot) substrate is in maintenance mode (Phase 5b — game engine awaits Pillar F v0.2 multi-month work). Spec is accurate for the current state.
+
+### Pillar C ontology docs
+
+- `ontology_v0.md` — legacy regex-based extractor. Still referenced by v0 primitive tables.
+- `ontology_v1.md` — current Pillar C ontology with 17 rules_modifier tags (mega-task v4 Phase 4 + 5 extraction work). Matches current code.
+
+### README files
+
+- `mtg-engine/repo/README.md` — main README, exists. Did not exhaustively diff against v5 changes.
+- `mtg-engine/repo/README_TESTING.md` — testing notes, exists.
+
+### Inline fixes landed
+
+None — all the docstring drift candidates are within the queue-for-iter-7 threshold rather than 1-2 paragraph fixes. ENGINE_API_GUIDE.md needs a real overhaul, not an inline patch.
+
+### Queued for iter 7 / wontfix
+
+- *Queued for iter 7*: `13_AI_AGENT_SURFACE/ENGINE_API_GUIDE.md` overhaul to cover the ~10 endpoints added across mega-tasks v3-v5 + the SSE streaming contract + the response.summary fields added for Pillar E v0.3/v0.4 + graduated playtest. ~half day of focused doc work.
+- *Wontfix*: `README.md` minor refresh — not blocking anything.
+
 
 ## Section 8 — Orphan code detection (Phase 8)
 
