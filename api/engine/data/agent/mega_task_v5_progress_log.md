@@ -497,4 +497,4 @@ Deferred to Phase 13 — the iter 6 sweep there explicitly measures Atraxa C2.1 
 
 ### Phase 8 commit
 
-`<pending>`
+`be5570809` — "Phase 8 (mega-task v5): Atraxa C2.1 silent-failure fix via dynamic forbidden_block budget overhead". 3 files changed, 214 insertions, 6 deletions.
