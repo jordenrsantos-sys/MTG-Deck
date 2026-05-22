@@ -498,3 +498,75 @@ Deferred to Phase 13 — the iter 6 sweep there explicitly measures Atraxa C2.1 
 ### Phase 8 commit
 
 `be5570809` — "Phase 8 (mega-task v5): Atraxa C2.1 silent-failure fix via dynamic forbidden_block budget overhead". 3 files changed, 214 insertions, 6 deletions.
+
+Progress-log SHA fixup: `0bb8441df`.
+
+---
+
+## Phase 9 — Pillar E v0.3 curve smoother
+
+**Started**: 2026-05-22 (immediately after Phase 8 commit)
+
+### Module shape
+
+New module `api/engine/layers/curve_smoother_v1.py` follows the established Pillar E pattern (parallel to v0.1 mana_base and v0.2 card_advantage):
+
+- Public API: `analyze_curve(*, deck, archetype_hint, pool=None, basic_land_names=None, archetype_curves=None) -> CurveAnalysis`
+- `CurveAnalysis` dataclass: `archetype_hint`, `resolved_archetype`, `archetype_target`, `deck_curve`, `bricks`, `holes`, `significant`, `discrepancies`, `nonland_card_count`, `version`. `.to_dict()` for serialization.
+- Helper `load_archetype_curves()` lazy-reads + caches the JSON config.
+- CMC bucketing into 8 fixed slots: `0`, `1`, `2`, `3`, `4`, `5`, `6`, `7+`.
+
+Pure analysis — Phase 9 does NOT mutate the deck. The output is exposed in `response.summary.pillar_e_v0_3_curve_check`. A future iter can add an LLM critique pass + actual swap recommendations; the kickoff's Phase 13 success criterion only requires `pillar_e_v0_3_curve_check on 5/5 cases` (presence).
+
+### New data file
+
+`api/engine/data/curve_targets_by_archetype_v1.json` — target curves and CMC ceilings per archetype:
+
+| Archetype       | Ceiling | Notes                                                       |
+|-----------------|---------|-------------------------------------------------------------|
+| tribal          | 6       | Aggressive curve, peaks at CMC 2-3                          |
+| combo           | 5       | Very low curve (cheap tutors, assembly)                     |
+| control         | 8       | High-end OK (counterspells + late game finishers)           |
+| value_engine    | 7       | Smooth spread                                               |
+| tokens          | 6       | Low-medium (anthems + producers)                            |
+| aristocrats     | 7       | Smooth low-medium                                           |
+| voltron         | 6       | Medium peak around equipment + commander                    |
+| counters_matter | 7       | Medium-high (proliferate engines)                           |
+| reanimator      | 9       | Late game (heavy creatures intentional)                     |
+| storm           | 5       | Very low (cheap ritual + cantrip + payoff)                  |
+| stax            | 6       | Low (artifact prison + early lockdown)                      |
+| blink           | 7       | Medium (ETB targets)                                        |
+| landfall        | 7       | Medium (ramp + payoffs)                                     |
+| default         | 7       | Fallback for unknown archetype_hints                        |
+
+Each `target` sums to ~60 (the typical nonland nonbasic count: 99 total − ~37 lands − 1 commander − small buffer). `hole_pct=0.5` everywhere — a CMC slot is a hole when its count is below 50% of target.
+
+### Integration
+
+Inserted between `card_advantage` and `structural_safety_net` in `compute_agent_build_deck_v1`:
+
+- New `curve_smoother` SSE progress event (started + completed).
+- Reads `archetype_hint` from the C2.2 LLM metrics (same pattern as mana_base / card_advantage).
+- Catches all exceptions defensively — Pillar E never blocks a build.
+- Emits a `CURVE_DISCREPANCY` warning when `significant=True`.
+- Failure-path response (`_failure_response`) also includes the field with `active=False` so the schema is consistent across success/failure.
+
+### Tests
+
+`tests/test_curve_smoother_v1.py` — 17 tests across 6 classes:
+
+- `CurveTargetLoadingTest` — JSON loads, every archetype has required keys, target sums are sensible.
+- `CurveAnalysisBasicTest` — returns CurveAnalysis instance, unknown/None hint falls back to default, lands excluded, empty deck handled, pool cmc lookup overrides deck field.
+- `CurveBrickDetectionTest` — kickoff invariant cases: tribal flags CMC 7+ as bricks (ceiling 6), control does NOT flag CMC 7 (ceiling 8), storm flags CMC 6 (ceiling 5), multiple bricks listed.
+- `CurveHoleDetectionTest` — empty CMC slots flagged below 50% threshold, full targets not flagged.
+- `CurveSignificanceTest` — significant tracks bricks-or-holes, partial-target deck (missing 7+ slot only) reports correct holes.
+- `CurveAnalysisToDictTest` — to_dict serialization round-trip preserves all fields.
+
+### Regression baselines after Phase 9
+
+- **pytest**: 1442 passed (Phase 8 was 1425; +17 new Phase 9 tests). 8 pre-existing failures unchanged. 17 skipped. 58 subtests passed.
+- **vitest**: 758 unchanged (no UI changes this phase; the new summary field is consumed downstream).
+
+### Phase 9 commit
+
+`<pending>`

@@ -623,6 +623,57 @@ def compute_agent_build_deck_v1(
         t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
     )
 
+    # ---- Mega-task v5 Phase 9: Pillar E v0.3 curve smoother ----
+    # Analyzes the deck's mana-cost distribution against an archetype-
+    # typical curve. Identifies bricks (CMC > archetype ceiling) and
+    # holes (CMC slots under target). Pure analysis — does NOT mutate
+    # the deck. The output is exposed under summary.pillar_e_v0_3_curve_check
+    # for the UI and downstream metrics; downstream iterations may add an
+    # LLM critique pass.
+    _emit_progress(
+        progress_callback, phase="curve_smoother", status="started",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
+    curve_smoother_block: Dict[str, Any] = {
+        "active": False,
+        "analysis": None,
+    }
+    try:
+        from api.engine.layers.curve_smoother_v1 import analyze_curve as _analyze_curve
+        archetype_hint = None
+        for c in llm_metrics.get("calls") or []:
+            if c.get("phase") == "C2_2_wild_combo_discovery":
+                archetype_hint = c.get("archetype")
+                break
+        curve_analysis = _analyze_curve(
+            deck=deck,
+            archetype_hint=archetype_hint,
+            pool=pool,
+            basic_land_names=_BASIC_LAND_NAMES,
+        )
+        curve_smoother_block["active"] = True
+        curve_smoother_block["analysis"] = curve_analysis.to_dict()
+        if curve_analysis.significant:
+            warnings.append({
+                "code": "CURVE_DISCREPANCY",
+                "message": (
+                    f"Curve smoother flagged {len(curve_analysis.bricks)} bricks "
+                    f"and {len(curve_analysis.holes)} holes vs the "
+                    f"{curve_analysis.resolved_archetype} archetype target. "
+                    f"First discrepancy: "
+                    f"{curve_analysis.discrepancies[0] if curve_analysis.discrepancies else '(none)'}"
+                ),
+            })
+    except Exception as exc:
+        warnings.append({
+            "code": "CURVE_SMOOTHER_FAILED",
+            "message": f"{exc.__class__.__name__}: {exc}",
+        })
+    _emit_progress(
+        progress_callback, phase="curve_smoother", status="completed",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
+
     # ---- Iter 5 mega-task v4 Phase 13 retro: structural safety net ----
     # Defensive guarantee that iter1 invariants hold by the time the
     # response is composed. User must-includes MUST be present + deck
@@ -739,6 +790,11 @@ def compute_agent_build_deck_v1(
         # Iter 4 Phase 4 (Pillar E v0.2): card-advantage recommendation
         # + LLM critique (when discrepancy is significant).
         "card_advantage": card_advantage_block,
+        # Mega-task v5 Phase 9 (Pillar E v0.3): curve smoother analysis —
+        # archetype target curve, deck's actual curve, bricks (cards
+        # above archetype CMC ceiling), holes (CMC slots under target).
+        # Pure analysis, no deck mutation.
+        "pillar_e_v0_3_curve_check": curve_smoother_block,
     }
 
     response = {
@@ -804,6 +860,10 @@ def _empty_summary(bracket: str, must_include_cards: List[str]) -> Dict[str, Any
             "active": False,
             "recommendation": None,
             "llm_critique": None,
+        },
+        "pillar_e_v0_3_curve_check": {
+            "active": False,
+            "analysis": None,
         },
     }
 

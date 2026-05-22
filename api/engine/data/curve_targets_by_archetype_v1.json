@@ -1,0 +1,21 @@
+{
+  "version": "curve_targets_v1",
+  "generated_at": "2026-05-22",
+  "note": "Mega-task v5 Phase 9 — Pillar E v0.3 curve smoother target distributions per archetype. Each archetype's `target` sums to ~60 (the typical Commander deck nonland count: 99 total - ~37 lands - 1 commander - small buffer). `ceiling` is the highest CMC slot still considered on-curve for that archetype; cards at CMC > ceiling are flagged as bricks for swap consideration. `hole_pct` is the threshold below which a CMC slot is flagged as a hole (e.g. 0.5 means below 50% of target).",
+  "archetypes": {
+    "tribal":          {"target": {"0":5,  "1":8,  "2":13, "3":14, "4":10, "5":4,  "6":3, "7+":3},  "ceiling": 6, "hole_pct": 0.5},
+    "combo":           {"target": {"0":10, "1":15, "2":15, "3":10, "4":5,  "5":2,  "6":2, "7+":1},  "ceiling": 5, "hole_pct": 0.5},
+    "control":         {"target": {"0":4,  "1":6,  "2":12, "3":12, "4":10, "5":6,  "6":5, "7+":5},  "ceiling": 8, "hole_pct": 0.5},
+    "value_engine":    {"target": {"0":5,  "1":8,  "2":11, "3":12, "4":10, "5":6,  "6":4, "7+":4},  "ceiling": 7, "hole_pct": 0.5},
+    "tokens":          {"target": {"0":4,  "1":8,  "2":12, "3":14, "4":10, "5":5,  "6":4, "7+":3},  "ceiling": 6, "hole_pct": 0.5},
+    "aristocrats":     {"target": {"0":5,  "1":8,  "2":12, "3":13, "4":10, "5":5,  "6":4, "7+":3},  "ceiling": 7, "hole_pct": 0.5},
+    "voltron":         {"target": {"0":4,  "1":9,  "2":14, "3":12, "4":9,  "5":5,  "6":4, "7+":3},  "ceiling": 6, "hole_pct": 0.5},
+    "counters_matter": {"target": {"0":4,  "1":7,  "2":11, "3":12, "4":10, "5":7,  "6":5, "7+":4},  "ceiling": 7, "hole_pct": 0.5},
+    "reanimator":      {"target": {"0":5,  "1":8,  "2":11, "3":10, "4":7,  "5":6,  "6":6, "7+":7},  "ceiling": 9, "hole_pct": 0.5},
+    "storm":           {"target": {"0":12, "1":15, "2":13, "3":10, "4":5,  "5":2,  "6":2, "7+":1},  "ceiling": 5, "hole_pct": 0.5},
+    "stax":            {"target": {"0":5,  "1":9,  "2":13, "3":12, "4":10, "5":5,  "6":3, "7+":3},  "ceiling": 6, "hole_pct": 0.5},
+    "blink":           {"target": {"0":4,  "1":7,  "2":12, "3":13, "4":10, "5":6,  "6":4, "7+":4},  "ceiling": 7, "hole_pct": 0.5},
+    "landfall":        {"target": {"0":5,  "1":9,  "2":12, "3":11, "4":9,  "5":5,  "6":4, "7+":5},  "ceiling": 7, "hole_pct": 0.5},
+    "default":         {"target": {"0":5,  "1":8,  "2":12, "3":12, "4":9,  "5":6,  "6":4, "7+":4},  "ceiling": 7, "hole_pct": 0.5}
+  }
+}
