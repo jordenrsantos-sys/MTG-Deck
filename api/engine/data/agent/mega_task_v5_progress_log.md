@@ -705,4 +705,4 @@ Existing `test_opposition_decks_v1.py` (14 tests) still pass — the expansion i
 
 ### Phase 11 commit
 
-`<pending>`
+`28f0d3866` — "Phase 11 (mega-task v5): tiered opposition deck registry (BLOCKING)". 4 files changed, 603 insertions, 31 deletions.
