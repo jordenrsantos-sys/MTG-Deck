@@ -63,3 +63,10 @@ api/engine/data/themes/_last_classify_trace.json
 
 # Local scratch / smoke output
 tmp/
+
+# Mega-task v5 Phase 5: derived corpus vector cache. Rebuilt by
+# tools/warm_corpus_vector_cache.py from corpus_v1.json — never check the
+# 16+ MB derived artifact into git.
+api/engine/data/corpus/corpus_vectors_cache_v1.json
+# Other broken/replaced venv directories (rebuilt 3.14→3.10 on 2026-05-22).
+.venv.broken-*

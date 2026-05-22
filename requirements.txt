@@ -1,6 +1,10 @@
 fastapi==0.129.0
 pydantic==2.12.5
 uvicorn==0.41.0
+# Mega-task v5 Phase 3 SSE streaming. Required by POST
+# /agent/build_deck_v1/stream and tests/test_agent_build_deck_v1_stream.py.
+# (Phase 3 originally shipped without pinning this; recovered in Phase 5.)
+sse-starlette>=3.0.0
 # MCP server deps (mcp_server/mtg_engine_mcp.py) — needed for Claude Code
 # integration. Optional at engine runtime; required only when running the
 # MCP server. Install with: pip install mcp httpx

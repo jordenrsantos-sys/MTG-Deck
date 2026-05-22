@@ -22,8 +22,13 @@ from typing import Any, Dict, List, Optional, Tuple
 _ATOMIC_WRITE_COUNTER = itertools.count()
 _ATOMIC_WRITE_LOCK = threading.Lock()
 
-STRENGTH_CHECK_VERSION = "strength_check_v1.3_atomic_writes_per_call_tmp"
+STRENGTH_CHECK_VERSION = "strength_check_v1.4_persistent_vector_cache"
 _CORPUS_PATH = Path(__file__).resolve().parents[2] / "engine" / "data" / "corpus" / "corpus_v1.json"
+# Mega-task v5 Phase 5: persist _CORPUS_VECTORS to disk so a fresh process
+# doesn't re-vectorize the 13K-entry corpus on first build (which was a
+# ~110-minute cold-start before this cache existed). The file is rewritten
+# atomically after _ensure_vectors finishes incremental vectorization.
+_CORPUS_VECTORS_PATH = Path(__file__).resolve().parents[2] / "engine" / "data" / "corpus" / "corpus_vectors_cache_v1.json"
 
 _CORPUS_RAW: Dict[str, Any] = {}
 _CORPUS_VECTORS: List[Dict[str, Any]] = []
@@ -86,7 +91,19 @@ def _load_corpus() -> None:
         _CORPUS_RAW = {}
         _CORPUS_VECTORS = []
         return
-    _CORPUS_VECTORS = []
+    # Load persisted vectors if available (mega-task v5 Phase 5).
+    # Schema: list of vector dicts identical to what _ensure_vectors appends.
+    # If the file is missing, malformed, or has the wrong shape, fall back
+    # silently to empty — _ensure_vectors will rebuild as needed (slow path).
+    try:
+        with open(_CORPUS_VECTORS_PATH, "r", encoding="utf-8") as f:
+            persisted = json.load(f)
+        if isinstance(persisted, list):
+            _CORPUS_VECTORS = persisted
+        else:
+            _CORPUS_VECTORS = []
+    except Exception:
+        _CORPUS_VECTORS = []
 
 
 def _ensure_vectors(db_snapshot_id: str) -> List[Dict[str, Any]]:
@@ -130,6 +147,12 @@ def _ensure_vectors(db_snapshot_id: str) -> List[Dict[str, Any]]:
 
     if todo:
         from api.engine.layers.deck_analyze_v1 import compute_deck_analyze_v1
+        # Mega-task v5 Phase 5: checkpoint every N entries so a long
+        # vectorization run (~110 min for the full 13K-entry corpus) can be
+        # killed and resumed without losing work. Each checkpoint writes the
+        # full _CORPUS_VECTORS list atomically.
+        CHECKPOINT_EVERY = 250
+        appended_since_checkpoint = 0
         for entry in todo:
             decklist = entry.get("decklist", [])
             text = "Commander\n1 " + entry.get("commander", "") + "\nDeck\n"
@@ -153,6 +176,22 @@ def _ensure_vectors(db_snapshot_id: str) -> List[Dict[str, Any]]:
                 "subtype_density": an.get("subtype_density", {}) or {},
                 "card_count": an.get("card_count", 0),
             })
+            appended_since_checkpoint += 1
+            if appended_since_checkpoint >= CHECKPOINT_EVERY:
+                try:
+                    _CORPUS_VECTORS_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    _atomic_write_json(_CORPUS_VECTORS_PATH, _CORPUS_VECTORS, indent=0)
+                except Exception:
+                    pass  # cache miss is recoverable; never fatal
+                appended_since_checkpoint = 0
+
+        # Final flush of any partial-batch progress.
+        if appended_since_checkpoint > 0:
+            try:
+                _CORPUS_VECTORS_PATH.parent.mkdir(parents=True, exist_ok=True)
+                _atomic_write_json(_CORPUS_VECTORS_PATH, _CORPUS_VECTORS, indent=0)
+            except Exception:
+                pass
 
     return [v for v in _CORPUS_VECTORS if v.get("_snapshot") == db_snapshot_id]
 

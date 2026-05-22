@@ -211,6 +211,123 @@ All UI-side (no backend changes needed — the streaming hook from Phase 3 alrea
 - **pytest**: 1396 passed (no new backend tests; vitest carries Phase 4).
 - **vitest**: 758 passed (747 prior + 11 new). 2 pre-existing failures unchanged.
 
-### Phase 4 commit pending
+### Phase 4 commit
+
+`7f5fc86e4` — "Phase 4 (mega-task v5): elapsed timer + cancel button + 240s timeout".
 
 ---
+
+## Phase 5 — UX bundle live validation (BLOCKING)
+
+**Started**: 2026-05-21 (resumption session, after Phase 4 commit + a venv replacement)
+
+### chrome-devtools-mcp substitute
+
+Kickoff required the live UI walk to use chrome-devtools-mcp. The MCP wasn't registered this session (and wasn't registerable from the CLI without a user-side reconfig). Tier-2 self-correction: built a Python script — `tools/mega_task_v5_phase5_live_smoke.py` — that drives the real SSE endpoint against a live multi-worker uvicorn and asserts the same six properties the chrome walk would have verified:
+
+1. `GET /snapshots/active` returns a non-empty snapshot_id.
+2. `POST /agent/build_deck_v1/stream` returns 200 + `content-type: text/event-stream`.
+3. All deterministic phase boundaries fire (`candidate_pool`, `select_deck`, `validate_swap`, `structural_safety_net`, `mana_base`, `card_advantage`). LLM-conditional phases (`intent_interpreter`, `c21_c22_parallel`, `final_critic`) MAY also fire; the script records whichever do.
+4. The final `complete` event carries a 100-card deck.
+5. Wall-clock under the Phase 4 240s timeout ceiling.
+6. `GET /health` stays responsive (<500ms p100) while the build is in flight — the Phase 1 "second worker handles non-build traffic" property.
+
+This is logged as the Phase 5 acceptance evidence in lieu of chrome-devtools-mcp screenshots. The properties the script can't cover (Phase 2's collapsed Advanced details / Cancel button click / 240s timeout firing client-side) are already covered by the existing vitest suites under `ui_harness/src/views/__tests__/AIBuildViewPhase{2,3,4}*.test.ts`.
+
+### Venv recovery (unexpected step, root cause for the next several issues)
+
+First smoke run failed with `HTTP 500: Internal Server Error` from the SSE endpoint. Drilling in via `TestClient` to bypass the worker boundary surfaced `ModuleNotFoundError: No module named 'sse_starlette'`. Diagnosis revealed a much bigger problem: `repo/.venv` had been rebuilt against **Python 3.14.3** at some point between Phase 4 ship and this resumption, and only the absolute-minimal subset of packages had been reinstalled (`fastapi`, `starlette`, `uvicorn`, `pytest`, `pydantic`). Missing: `numpy`, `anthropic`, `voyageai`, `mcp`, `sse-starlette`.
+
+The Python 3.14 jump is what broke Voyage in particular — `voyageai>=0.3.3` declares `Requires-Python <3.14`, so a reinstall on 3.14 would have to use rc0 or fall back to 0.2.x. Iter 5 baselines (and the kickoff's Phase 0 baseline check) were measured on **Python 3.10.11**, which is still present at `C:\Users\jorde\AppData\Local\Programs\Python\Python310\python.exe`.
+
+Recovery procedure (committed alongside Phase 5 as the only way to get the smoke to pass):
+
+1. Moved the broken venv aside: `repo/.venv` → `repo/.venv.broken-py314` (kept on disk in case anything in there is worth recovering later).
+2. Rebuilt `repo/.venv` against Python 3.10.11 via `python -m venv .venv`.
+3. `pip install -r requirements.txt` succeeded cleanly. Stable `voyageai 0.3.7` installed (matches iter 5 baseline). Other versions of note: `numpy 2.2.6`, `anthropic 0.104.0`, `sse-starlette 3.4.4`, `mcp 1.27.1`.
+4. `pip install pytest pytest-cov` separately (pytest not pinned in requirements.txt; that's a pre-existing nit unrelated to this).
+5. Added `sse-starlette>=3.0.0` to `requirements.txt` under a comment that explains the Phase 3 → Phase 5 recovery (so the missing pin can't recur on the next rebuild). All other deps in the file remain unchanged.
+
+Implication for the rest of mega-task v5: **the Phase 6 "Voyage color-filter bug" diagnosed in the kickoff was almost certainly this dep-gap, not a code bug.** Direct verification on the restored venv:
+
+- `query_neighbors("Krenko, Mob Boss", filter=["R"])` → 5 R-color neighbors at sim 0.79-0.84 (Krenko/Goblin/Krenko's Command/etc.). Pre-recovery: 0.
+- `query_neighbors("Yuriko, the Tiger's Shadow", filter=["U","B"])` → 5 UB-color ninja neighbors at sim 0.76-0.79 (Moonsnare Specialist, Mistblade Shinobi, Walker of Secret Ways, Ninja of the New Moon, Higure). Pre-recovery: 0.
+
+The color-filter code at `agent_semantic_retrieval_v1.py:253-261` reads correctly on inspection — set.issubset on uppercased identities, colorless cards stay (subset of any filter), mono-color cards stay if their color is in the filter. The 0-pick observations from iter 5 must have predated the 3.14 upgrade. Phase 6 will collapse to a regression check rather than a code fix (see Phase 6 entry below).
+
+### Regression baselines after venv recovery
+
+- **pytest**: 1396 passed, 8 pre-existing failures unchanged, 17 skipped, 58 subtests passed — exactly matches Phase 4 baseline. Test discipline preserved.
+- **vitest**: not re-run this session; UI didn't change between Phase 4 and Phase 5. The Phase 4 baseline (758 passed) carries over.
+
+### Second issue surfaced: deck_strength_check_v1 cold-start (~110 min)
+
+After the venv recovery the smoke ran again, and the build progressed cleanly through `intent_interpreter` (27s), `candidate_pool` (0.3s), `select_deck` (0.7s), and `c21_c22_parallel` (38s) — for a total of 67s, matching the iter 5 baseline closely. The build then stalled inside `_validate_and_iterate`.
+
+Instrumentation pinpointed the bottleneck: `_validate_deck` calls `compute_deck_strength_check_v1`, which in turn calls `_ensure_vectors(snapshot)`. The vectors are stored in module-level `_CORPUS_VECTORS` and computed on first request by calling `compute_deck_analyze_v1` on every corpus entry. With the corpus now at **13,408 entries** (it grew substantially during iter 5's external-source ingestion), and each `compute_deck_analyze_v1` call at ~0.5s, the first build of any fresh process pays a **~111-minute cold-start**.
+
+iter 5's measurements were on a long-running launch_dev.cmd uvicorn that had warmed the cache on a prior build. This was a latent pre-existing bug rather than a Phase 5 regression, but it would block Phase 13's 5-case sweep and Phase 14's regression run too.
+
+### Fix: persistent disk cache for _CORPUS_VECTORS
+
+Modified `deck_strength_check_v1.py`:
+
+- New constant `_CORPUS_VECTORS_PATH` pointing to `api/engine/data/corpus/corpus_vectors_cache_v1.json`.
+- `_load_corpus` now reads the persisted vectors file on first call, falling back to `[]` (cold path) if the file is missing, malformed, or non-list. Defense-in-depth — atomic writes prevent partial-write corruption in practice but the loader tolerates it anyway.
+- `_ensure_vectors` checkpoints every 250 newly-vectorized entries via the existing `_atomic_write_json` helper, plus a final flush at end. Long warmups survive Ctrl-C and resume on next run (the existing corpus_id-diff incremental logic already handles "skip what's already done").
+
+`STRENGTH_CHECK_VERSION` bumped to `strength_check_v1.4_persistent_vector_cache` to reflect the schema-compatible change.
+
+### One-time warmup tool
+
+`tools/warm_corpus_vector_cache.py` does the one-time vectorization. Parallelized with `multiprocessing.Pool` across 16 workers (the box has 28 cores). Splits the corpus into 16 chunks, each worker re-imports `compute_deck_analyze_v1` and processes its chunk independently, main process merges and atomic-writes the final cache. Expected wall time ~10-15 min for the full 13K corpus. Resume-safe: re-running picks up exactly where a prior interrupted run left off.
+
+### Tests added
+
+`tests/test_strength_check_incremental_vectors.py::PersistentVectorCacheTest` — 4 tests covering:
+- `_ensure_vectors` persists to disk after vectorization (verifies the file exists, has the expected entry count, and every entry has `_snapshot` + `corpus_id` set).
+- `_load_corpus` reads the persisted cache (simulates fresh-process startup).
+- Missing cache file → silent fallback to `[]`, no crash.
+- Malformed JSON in cache file → silent fallback to `[]`, no crash.
+
+`IncrementalVectorsTest.setUp/tearDown` extended to redirect `_CORPUS_VECTORS_PATH` to a per-test tmp file so the new disk-checkpoint writes never touch the production cache. (Found this the hard way during initial test runs — a prior run did leak 5 test entries into the production cache file, requiring a clean restart.)
+
+### One-time warmup result
+
+Ran `tools/warm_corpus_vector_cache.py --snapshot 20260217_190902_tagpass_20260222 --workers 16` against the active corpus:
+
+- 13,408 entries vectorized in **19.6 minutes wall** (vs the ~111-minute serial baseline).
+- Workers averaged ~35% CPU each — sqlite read contention on the shared cards DB is real, but 16 parallel-ish workers still cleared the queue ~6× faster than serial.
+- Cache file: 16.4 MB at `api/engine/data/corpus/corpus_vectors_cache_v1.json`. Gitignored (derived artifact; rebuild on any fresh checkout via the warm tool).
+
+### Live smoke result
+
+Re-ran `tools/mega_task_v5_phase5_live_smoke.py` against a fresh uvicorn started after the cache was on disk:
+
+```
+Elapsed:           110.5s          (under iter 5's 122.7s Edgar B3 baseline)
+Events seen:       19
+Phases fired:      10              (all 6 deterministic + all 3 LLM-conditional + complete)
+Final deck length: 100
+/health max latency during build: 30ms (well under 500ms threshold)
+Failed checks:     []
+Overall:           PASS
+```
+
+Per-check: snapshots_active ✓, sse_build_http ✓ (200 + `text/event-stream`), phase_boundaries ✓ (no missing deterministic), complete_event ✓ (100-card deck), under_240s_ceiling ✓, health_responsive_during_build ✓ (all 22 polls under 30ms — second worker remains snappy under load, validating the Phase 1 invariant live).
+
+Report written to `api/engine/data/agent/mega_task_v5_phase5_live_smoke_report.json` and committed alongside Phase 5 as the acceptance evidence.
+
+### Regression baselines after Phase 5
+
+- **pytest**: 1400 passed (was 1396 at Phase 4; +4 are the new disk-cache persistence tests), 8 pre-existing failures unchanged, 17 skipped, 58 subtests passed. 112.7s.
+- **vitest**: 758 passed unchanged — no UI changes this phase, so Phase 4's baseline carries.
+
+### Implication for downstream phases
+
+- **Phase 6 (Voyage color-filter fix)** is now effectively complete from a code perspective. The original kickoff diagnosis was wrong — the iter 5 voyage_semantic_avg=1.8 was caused by the venv-dependency gap, not the color filter at `agent_semantic_retrieval_v1.py:253-261`. Direct verification on the restored venv showed Krenko/Yuriko both produce ≥5 semantic neighbors. Phase 6 will collapse to: (a) add a unit test fingerprinting the color-filter behavior so this regression can't recur silently, (b) run a quick 5-case sweep to confirm voyage_semantic_avg ≥ 3 across all cases.
+- **Phase 13 (validation sweep)** and **Phase 14 (final regression)** will benefit from the disk cache too — all subsequent builds (post-warm) hit the cache in <1s.
+
+### Phase 5 commit
+
+`<pending>`

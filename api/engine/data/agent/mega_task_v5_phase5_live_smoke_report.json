@@ -1,0 +1,77 @@
+{
+  "base_url": "http://127.0.0.1:8000",
+  "test_case": "edgar_markov_b3_with_must_includes",
+  "started_at": "2026-05-22 13:43:47",
+  "checks": {
+    "snapshots_active": {
+      "ok": true,
+      "snapshot_id": "20260217_190902_tagpass_20260222"
+    },
+    "sse_build_http": {
+      "ok": true,
+      "status": 200,
+      "content_type": "text/event-stream; charset=utf-8"
+    },
+    "phase_boundaries": {
+      "ok": true,
+      "fired_count": 10,
+      "missing_deterministic": [],
+      "fired_llm_conditional": [
+        "intent_interpreter",
+        "c21_c22_parallel",
+        "final_critic"
+      ],
+      "fired_phases_sample": [
+        "c21_c22_parallel",
+        "candidate_pool",
+        "card_advantage",
+        "complete",
+        "final_critic",
+        "intent_interpreter",
+        "mana_base",
+        "select_deck",
+        "structural_safety_net",
+        "validate_swap"
+      ]
+    },
+    "complete_event": {
+      "ok": true,
+      "deck_len": 100,
+      "elapsed_s": 110.4923748000001
+    },
+    "under_240s_ceiling": {
+      "ok": true,
+      "elapsed_s": 110.4923748000001
+    },
+    "health_responsive_during_build": {
+      "ok": true,
+      "latencies_s": [
+        0.012049400000250898,
+        0.02759420000074897,
+        0.012283499992918223,
+        0.01285210000060033,
+        0.011222600005567074,
+        0.011878799996338785,
+        0.01720980000391137,
+        0.0262673000106588,
+        0.02995200001168996,
+        0.026574399991659448,
+        0.012245699996128678,
+        0.011565699998755008,
+        0.029811599990352988,
+        0.011569099995540455,
+        0.01115120000031311,
+        0.026918000003206544,
+        0.029828800004906952,
+        0.027050899996538647,
+        0.011444200004916638,
+        0.028908599997521378,
+        0.02806840000266675,
+        0.014796500006923452
+      ],
+      "max_s": 0.02995200001168996
+    }
+  },
+  "overall_ok": true,
+  "failed_checks": []
+}

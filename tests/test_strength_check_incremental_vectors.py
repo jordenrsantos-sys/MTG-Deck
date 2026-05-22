@@ -43,9 +43,17 @@ class IncrementalVectorsTest(unittest.TestCase):
     """Validates the corpus_id-diff incremental vectorization behavior."""
 
     def setUp(self) -> None:
+        import tempfile
+        from pathlib import Path
         # Snapshot module-level state so the test is isolated
         self._original_corpus_raw = sc._CORPUS_RAW
         self._original_vectors = sc._CORPUS_VECTORS
+        # Mega-task v5 Phase 5: redirect persistent cache path to a per-test
+        # tmp file so _ensure_vectors's disk-checkpoint writes never touch
+        # the production cache (which would corrupt a parallel warmup run).
+        self._original_cache_path = sc._CORPUS_VECTORS_PATH
+        self._tmpdir = tempfile.mkdtemp(prefix="strength_test_")
+        sc._CORPUS_VECTORS_PATH = Path(self._tmpdir) / "test_cache.json"
         sc._CORPUS_RAW = {
             "version": "test_incremental",
             "decks": [_mk_entry(f"test_id_{i}", f"Commander {i}") for i in range(5)],
@@ -53,8 +61,11 @@ class IncrementalVectorsTest(unittest.TestCase):
         sc._CORPUS_VECTORS = []
 
     def tearDown(self) -> None:
+        import shutil
         sc._CORPUS_RAW = self._original_corpus_raw
         sc._CORPUS_VECTORS = self._original_vectors
+        sc._CORPUS_VECTORS_PATH = self._original_cache_path
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_initial_call_vectorizes_all_then_added_entry_vectorizes_only_one(self) -> None:
         mock_analyze = MagicMock(side_effect=_fake_analyze)
@@ -127,6 +138,120 @@ class IncrementalVectorsTest(unittest.TestCase):
             self.assertEqual(len(cached_a), 5)
             self.assertTrue(all(v.get("_snapshot") == "SNAP_A" for v in cached_a),
                             "all returned entries must be for the requested snapshot")
+
+
+class PersistentVectorCacheTest(unittest.TestCase):
+    """Mega-task v5 Phase 5: validate the disk-persistent vector cache.
+
+    Pre-Phase-5 the cache was in-memory only, so any fresh process re-
+    vectorized the entire corpus on first strength_check call (~110 min for
+    13K entries). The fix persists `_CORPUS_VECTORS` to disk; `_load_corpus`
+    reads it back, and `_ensure_vectors` checkpoints during long runs.
+    """
+
+    def setUp(self) -> None:
+        import tempfile
+        from pathlib import Path
+        # Snapshot module-level state
+        self._original_corpus_raw = sc._CORPUS_RAW
+        self._original_vectors = sc._CORPUS_VECTORS
+        self._original_cache_path = sc._CORPUS_VECTORS_PATH
+        # Per-test isolated cache file
+        self._tmpdir = tempfile.mkdtemp(prefix="phase5_cache_")
+        sc._CORPUS_VECTORS_PATH = Path(self._tmpdir) / "test_cache.json"
+        sc._CORPUS_RAW = {
+            "version": "test_persistent",
+            "decks": [_mk_entry(f"test_id_{i}", f"Commander {i}") for i in range(3)],
+        }
+        sc._CORPUS_VECTORS = []
+
+    def tearDown(self) -> None:
+        import shutil
+        sc._CORPUS_RAW = self._original_corpus_raw
+        sc._CORPUS_VECTORS = self._original_vectors
+        sc._CORPUS_VECTORS_PATH = self._original_cache_path
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def test_ensure_vectors_persists_to_disk(self) -> None:
+        """After _ensure_vectors finishes, the cache file exists on disk and
+        contains all vectorized entries — so a future process can read it."""
+        import json
+        mock_analyze = MagicMock(side_effect=_fake_analyze)
+        with patch.object(analyze_mod, "compute_deck_analyze_v1", mock_analyze), \
+             patch.object(sc, "_load_corpus", lambda: None):
+            sc._ensure_vectors(SNAPSHOT_ID)
+        self.assertTrue(sc._CORPUS_VECTORS_PATH.exists(),
+                        "cache file should be written after vectorization")
+        with open(sc._CORPUS_VECTORS_PATH, "r", encoding="utf-8") as f:
+            persisted = json.load(f)
+        self.assertEqual(len(persisted), 3,
+                         "disk cache should hold all 3 vectorized entries")
+        self.assertTrue(all(v.get("_snapshot") == SNAPSHOT_ID for v in persisted),
+                        "every disk-cached vector must have _snapshot field set")
+        self.assertTrue(all(v.get("corpus_id") for v in persisted),
+                        "every disk-cached vector must have corpus_id field set")
+
+    def test_load_corpus_reads_persisted_cache(self) -> None:
+        """A fresh _CORPUS_VECTORS (simulating new process) gets pre-populated
+        from disk on _load_corpus() if a cache file exists."""
+        import json
+        # Pre-seed a cache file
+        seeded = [{
+            "_snapshot": SNAPSHOT_ID, "corpus_id": f"seeded_{i}",
+            "commander": "X", "archetype": "Y", "bracket": "B2",
+            "source": "test", "primitive_density": {}, "subtype_density": {},
+            "card_count": 50,
+        } for i in range(7)]
+        sc._CORPUS_VECTORS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(sc._CORPUS_VECTORS_PATH, "w", encoding="utf-8") as f:
+            json.dump(seeded, f)
+
+        # Simulate a fresh process: empty in-memory cache, then _load_corpus
+        # should populate from disk. We have to actually invoke _load_corpus
+        # so the test does NOT patch it out (unlike the other tests).
+        sc._CORPUS_VECTORS = []
+        # Make the real _load_corpus see a "valid corpus" — patch _CORPUS_PATH
+        # to point to a temp JSON file shaped like a real corpus.
+        corpus_json_path = sc._CORPUS_VECTORS_PATH.parent / "corpus_v1.json"
+        with open(corpus_json_path, "w", encoding="utf-8") as f:
+            json.dump({"version": "test", "decks": []}, f)
+        with patch.object(sc, "_CORPUS_PATH", corpus_json_path):
+            sc._load_corpus()
+        self.assertEqual(len(sc._CORPUS_VECTORS), 7,
+                         "fresh _load_corpus should populate from disk cache")
+
+    def test_load_corpus_tolerates_missing_cache_file(self) -> None:
+        """When the cache file doesn't exist (first-ever run), _load_corpus
+        sets _CORPUS_VECTORS to []. No crash."""
+        import json
+        # Ensure no cache file on disk
+        if sc._CORPUS_VECTORS_PATH.exists():
+            sc._CORPUS_VECTORS_PATH.unlink()
+        sc._CORPUS_VECTORS = []
+        corpus_json_path = sc._CORPUS_VECTORS_PATH.parent / "corpus_v1.json"
+        with open(corpus_json_path, "w", encoding="utf-8") as f:
+            json.dump({"version": "test", "decks": []}, f)
+        with patch.object(sc, "_CORPUS_PATH", corpus_json_path):
+            sc._load_corpus()  # must not raise
+        self.assertEqual(sc._CORPUS_VECTORS, [],
+                         "missing cache file should leave vectors empty, not raise")
+
+    def test_load_corpus_tolerates_malformed_cache_file(self) -> None:
+        """Garbage / partially-written cache file should fall back to empty
+        rather than crashing the engine. (Atomic writes prevent this in
+        practice, but defense-in-depth.)"""
+        sc._CORPUS_VECTORS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(sc._CORPUS_VECTORS_PATH, "w", encoding="utf-8") as f:
+            f.write("{not valid json at all")
+        sc._CORPUS_VECTORS = []
+        import json
+        corpus_json_path = sc._CORPUS_VECTORS_PATH.parent / "corpus_v1.json"
+        with open(corpus_json_path, "w", encoding="utf-8") as f:
+            json.dump({"version": "test", "decks": []}, f)
+        with patch.object(sc, "_CORPUS_PATH", corpus_json_path):
+            sc._load_corpus()
+        self.assertEqual(sc._CORPUS_VECTORS, [],
+                         "malformed cache file should fall back to empty, not raise")
 
 
 if __name__ == "__main__":
