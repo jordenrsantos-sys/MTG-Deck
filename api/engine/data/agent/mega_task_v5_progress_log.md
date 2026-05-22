@@ -330,4 +330,6 @@ Report written to `api/engine/data/agent/mega_task_v5_phase5_live_smoke_report.j
 
 ### Phase 5 commit
 
-`<pending>`
+`709a16bab` — "Phase 5 (mega-task v5): UX bundle live validation + venv recovery + corpus disk cache". 9 files changed, 852 insertions, 1,313,898 deletions (the deletions are entirely the orphan corpus tmp file cleanup).
+
+---
