@@ -28,6 +28,34 @@ Append-only timestamped record of phase execution. Same format as mega-task v1-v
 
 ### Phase 0 commit
 
-Pending — health report skeleton + this progress log + kickoff doc commit.
+`56f8cca57` — "Coherence Sweep #3 Phase 0: pre-flight + report skeleton". 3 files changed, 488 insertions, 0 deletions.
+
+---
+
+## Phase 1 — Substrate cache audit (BLOCKING)
+
+**Started**: 2026-05-22 (immediately after Phase 0)
+
+### Method
+
+Grepped for module-level cache patterns across `repo/api/engine` and `repo/engine`:
+- `_CACHE = {...}` or `_cache = ...` module globals
+- `@lru_cache` / `@functools.cache` decorators
+- `_load_*` / `_ensure_*` function names that compute-and-store
+- Module-level eager-loaded data (`_FOO = _load_json(_PATH)` at import time)
+
+For each cache found, measured cold-start cost via a fresh-process timer script. Threshold for inline fix: cold-start > 30s AND no disk persistence AND fix < 50 LOC.
+
+### Findings
+
+**6 module-level lazy caches.** Worst cold-start: `_CACHE` in `agent_semantic_retrieval_v1.py` at 1557.8ms (Voyage matrix load). Well under the 30s threshold. The previously-problematic `_CORPUS_VECTORS` in `deck_strength_check_v1.py` (was ~111 min cold-start) is already disk-persisted via mega-task v5 Phase 5.
+
+**3 module-level eager-loaded data structures.** Largest import cost: `deck_combo_insights_v1.py` at 449.8ms (4,527 outcomes + 3,679 bracket-pairs). Full `api.main` import: 897ms total.
+
+**No inline fixes needed.** Section 1 of the health report writes "clean — no caches exceed the trigger."
+
+### Phase 1 commit
+
+Pending.
 
 ---
