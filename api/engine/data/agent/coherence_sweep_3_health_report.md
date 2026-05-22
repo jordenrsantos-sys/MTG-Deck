@@ -311,7 +311,52 @@ None — Phase 5 is read-only audit and the data is clean.
 
 ## Section 6 — UI ↔ endpoint contract drift (Phase 6)
 
-`<pending — populated during Phase 6>`
+**Verdict: clean.** Every endpoint the UI calls exists in `api/main.py`. Both v5 contract additions (`GET /snapshots/active` and `POST /agent/build_deck_v1/stream`) are wired correctly into AIBuildView + useBuildStreaming hook.
+
+### UI fetch sites surveyed
+
+| UI file | Endpoint called | Exists at | Notes |
+|---|---|---|---|
+| `views/AIBuildView.tsx:275` | `GET /snapshots/active` | `api/main.py:893` | v5 Phase 2 auto-default snapshot |
+| `hooks/useBuildStreaming.ts:160` | `POST /agent/build_deck_v1/stream` | `api/main.py:2498` | v5 Phase 3 SSE stream |
+| `App.tsx:685` | `POST /build` | `api/main.py:1254` | legacy build endpoint (pre-v1) |
+| `components/workspaceUtils.ts:451` | `GET /snapshots?limit=1` | `api/main.py:888` | snapshot list |
+| `views/WorkspaceView.tsx:2137, 2884, 2966, 3087, 3391, 3495, 3896` | `/snapshots`, custom endpoint, `/cards/resolve_names`, `/build`, `/deck/validate`, `/deck/complete_v1`, `/deck/tune_v1` | `api/main.py:888, 1128, 1254, 1553, 1973, 1676` | Workspace's deck-builder uses Pillar A v1 endpoints |
+| `components/deck/DeckEditorPanel.tsx:374` | `POST /cards/resolve_names` | `api/main.py:1128` | name resolution |
+| `components/CardSuggestInput.tsx:79` | typeahead URL | `api/main.py:913` (`/cards/suggest`) | autocomplete |
+| `EngineViewerV0.tsx:184` | generic URL | varies | debug surface |
+| `Phase1Harness.tsx:353, 515, 701, 788` | `/snapshots`, `/build`, various | varies | Phase 1 harness (debug-only view) |
+
+### v5 contract verification
+
+**Auto-snapshot (Phase 2)**: `GET /snapshots/active` returns `{"snapshot_id": <str>}`. AIBuildView.tsx:275 reads `data.snapshot_id` and seeds the snapshotId state. Live response from /snapshots/active in Phase 2 verified: `{"snapshot_id":"20260217_190902_tagpass_20260222"}`. ✓ Contract honored.
+
+**SSE streaming (Phase 3)**: `POST /agent/build_deck_v1/stream` returns SSE events. useBuildStreaming.ts:160 sets `Accept: text/event-stream`, manually parses the response stream via `fetch + ReadableStream` (NOT EventSource — that's GET-only). Server emits events with shape `{phase, status, elapsed_s, cost_usd, ...}` per phase boundary. Verified live via Phase 5 smoke (mega-task v5 Phase 5) — 19 events on Edgar B3, all phase boundaries fire, complete event carries 100-card deck. ✓ Contract honored.
+
+**graduated_playtest_report UI render (Phase 12)**: AIBuildView.tsx renders the new `response.summary.graduated_playtest_report` block when present. Field is added to both the success-path `summary` and the failure-path `_failure_response()` for schema consistency. Verified via grep of the summary object construction in `agent_build_deck_v1.py`. ✓ Contract honored.
+
+### Endpoints UI doesn't call (informational)
+
+The 18 v1-tier endpoints registered in api/main.py include several that no UI surface calls today:
+- `/agent/context_bundle_v1` (MCP tool surface; called by Claude Code via MCP, not by browser UI)
+- `/playtest/benchmark_v1` (MCP tool surface)
+- `/corpus/batch_ingest_v1` (CLI tool surface)
+- `/playtest/opposition_decks_v1` (used by Pillar F internally; UI's graduated_playtest_report block already consumes via Pillar F output)
+- `/deck/save_to_library_v1` (Obsidian write integration)
+- `/corpus/similar_decks_v1` (MCP tool surface)
+- `/strategy_hypothesis_v0`, `/deck_complete_v0`, `/runs_v0`, `/run_v0/{id}`, `/run_diff_v0`, `/run_bundle_v0` (Phase 1 harness debug surface)
+- `/primitive_tag_index_v0/*` (Phase 1 harness debug surface)
+
+These are intentional non-UI endpoints. No contract drift.
+
+### Inline fixes landed
+
+None — Phase 6 is read-only audit and the contracts are clean.
+
+### Queued for iter 7 / wontfix
+
+- *Wontfix*: legacy `/build` endpoint coexists with `/agent/build_deck_v1` + `/agent/build_deck_v1/stream`. WorkspaceView still uses `/build`; AIBuildView uses the streaming endpoint. Both work; the legacy endpoint will eventually deprecate but no functional drift today.
+
 
 ## Section 7 — Documentation drift (Phase 7)
 

@@ -146,6 +146,29 @@ Queried mtg.sqlite directly for: snapshot row counts, cards table schema, column
 
 ### Phase 5 commit
 
+`f4d3195c7` — "Coherence Sweep #3 Phase 5: database + schema integrity — clean". 2 files changed, 82 insertions, 1 deletion.
+
+---
+
+## Phase 6 — UI ↔ endpoint contract drift
+
+**Started**: 2026-05-22 (immediately after Phase 5)
+
+### Method
+
+Grep all `fetch(...)` and `EventSource(...)` calls in `ui_harness/src/`. Map each to the endpoint registered in `api/main.py`. Cross-check v5's new contracts (auto-snapshot + SSE streaming + graduated_playtest_report field).
+
+### Findings
+
+**Clean.** Every UI fetch maps to an existing endpoint. Both v5 contract additions verified:
+- `GET /snapshots/active` (Phase 2) consumed by AIBuildView.tsx:275 ✓
+- `POST /agent/build_deck_v1/stream` (Phase 3) consumed by useBuildStreaming.ts:160 ✓
+- `response.summary.graduated_playtest_report` (Phase 12) consumed by AIBuildView render block ✓
+
+8 distinct UI endpoint paths surveyed. WorkspaceView covers the legacy /build + deck/validate + deck/complete_v1 + deck/tune_v1 + cards/resolve_names flow. AIBuildView covers the v1-agent streaming flow. Phase 1 harness is debug-only.
+
+### Phase 6 commit
+
 Pending.
 
 ---
