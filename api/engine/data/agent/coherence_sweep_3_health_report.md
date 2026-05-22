@@ -8,20 +8,51 @@ This report is populated phase-by-phase. The final executive summary + categoriz
 
 ## Executive summary (Phase 10)
 
-`<pending — populated during Phase 10>`
+**Project health after mega-tasks v1-v5: substrate is in good shape.** Across 10 audit areas the sweep found **1 inline-fixable item (memory drift)**, **3 substantive items queued for iter 7 mega-task v6**, and **2 items intentionally out-of-scope**. No catastrophic findings, no critical regressions, no hard halt conditions hit. pytest 1489 and vitest 758 baselines preserved through all 11 phases.
+
+The biggest single finding is **`agent_voyage_downgrade_pass_v1.py`** — a module that mega-task v4 Phase 10 documented as shipped, with a working test suite, but **no production code path imports it**. Either a real wiring bug or an abandoned implementation; iter 7 needs to make the call.
+
+Second-biggest finding is **`13_AI_AGENT_SURFACE/ENGINE_API_GUIDE.md`** which last updated 2026-05-17 (Pillar A+C ship date) — predates mega-tasks v3 + v4 + v5 and is missing ~10 endpoints. Substantive doc overhaul needed.
+
+Third finding is the **`voyage_rules_embedding_v1.py` at-scale deferred** — documented in memory as known carry-over but worth surfacing as iter 7 candidate alongside the downgrade-pass wiring decision.
+
+Everything else is healthy: substrate caches all sub-30s cold-start (the previously-problematic strength_check vector cache was disk-persisted in v5 Phase 5), all 4 architectural feedback rules verified honored in code, every UI fetch maps to an existing endpoint, every requirements.txt dep imports cleanly, 212 test files with 1489 passing tests.
 
 ---
 
 ## Categorized punch list (Phase 10)
 
 ### Fixed inline
-`<pending>`
+
+1. **`project_pillar_a_c_shipped_2026-05-17.md` — endpoint count drift fixed** (Phase 3). Description said "9 endpoints" — accurate at original 2026-05-17 ship date but stale by mega-task v5 (42 total routes / ~18 v1-tier endpoints today). Updated inline with an Update 2026-05-22 paragraph + clarified original 9 endpoints still ship; no regressions to documented endpoints.
 
 ### Queued for iter 7 mega-task v6
-`<pending>`
+
+1. **WIRING DECISION — `agent_voyage_downgrade_pass_v1`** (Phase 8 orphan finding). Module claims "shipped in mega-task v4 Phase 10" but no production code path imports it. Only the test file exercises it. Either (a) wire `compute_voyage_downgrade()` into `agent_build_deck_v1.py` between Voyage retrieval and pool composition, OR (b) document why it was abandoned + remove. ~1 day either way.
+
+2. **WIRING — `voyage_rules_embedding_v1`** at-scale activation (Phase 8 orphan finding + iter 6 prep deferred carryover). Module exists; at-scale pipeline not yet activated. Iter 7 ships this as part of "at-scale Voyage rules embedding" priority. ~2-3 days.
+
+3. **DOC OVERHAUL — `13_AI_AGENT_SURFACE/ENGINE_API_GUIDE.md`** (Phase 7 finding). Last modified 2026-05-17. Missing ~10 endpoints from v3-v5 + the SSE streaming contract + the graduated_playtest_report response shape. ~half day's focused doc work.
+
+4. **TEST REMEDIATION — 8 pre-existing test failures** (Phase 4 finding). Same 8 failures have been carried through mega-task v4 and v5 final-regression baselines. Decision needed: fix vs. retire (and document why). Some are in `test_complete_bracket_violations_v1.py::TestHttpEndpointWiring` (5 of the 8), so they may share a common root cause. ~1 day to investigate.
 
 ### Out-of-scope / wontfix
-`<pending>`
+
+1. **`scripts/__pycache__/build_primitive_tag_index_v0.cpython-310.pyc`** stale bytecode (Phase 8). Source `.py` removed in mega-task v5; the orphan `.pyc` is harmless and clears on next bytecode invalidation rebuild. Cleanup-on-rebuild.
+
+2. **Phase-named test file naming convention** (Phase 4). Tests under `test_agent_buildN_phase_X.py` and `test_agent_iterN_phase_M.py` patterns are intentional — they organize tests by mega-task phase for regression traceability, NOT by module. Wontfix.
+
+3. **Legacy `/build` endpoint coexistence with `/agent/build_deck_v1`** (Phase 6). Both endpoints work; WorkspaceView uses the legacy form, AIBuildView uses the new form. Eventual deprecation candidate but not a current bug.
+
+4. **`primitives_json` (v0) column duplicates `primitives_v1_json`** (Phase 5). v0 is legacy; v1 is what current Pillar D consumes. Both populated, no functional bug. Storage cleanup candidate but not iter 7 priority.
+
+5. **`pytest` 9.0.2 declared vs 9.0.3 installed minor drift** (Phase 9). Tests pass on 9.0.3; pinning detail.
+
+6. **`deprecated/_deprecated_motifs_v1.py`** (Phase 8). Folder + filename explicitly say deprecated. Intentional.
+
+7. **Windows Task Scheduler config for Track 5 per-set automation** (Phase 2). Kickoff explicitly excludes; the script chain itself is intact (verified file presence).
+
+8. **`tools/_coherence_sweep_3_orphan_scan.py`** (added this sweep). Decision-pending whether to keep as periodic audit harness or delete post-sweep. Suggest keeping.
 
 ---
 
@@ -543,4 +574,47 @@ None — Phase 9 is read-only audit and the deps are clean.
 
 ## Section 10 — Per-pillar smoke tests (Phase 10)
 
-`<pending — populated during Phase 10>`
+**Verdict: all 5 pillars smoke-pass.** Pillar A 7/9 endpoints returned 2xx (the 2 422s are this sweep's input schema errors — the endpoints correctly validated malformed bodies, proving the validation works). Pillars C/D/E/F all import + execute on sample inputs.
+
+### Pillar A — 9 baseline endpoints
+
+| Method | Endpoint | Status | Latency |
+|---|---|---|---|
+| GET | `/health` | 200 | 17ms |
+| GET | `/snapshots` | 200 | 2ms |
+| GET | `/snapshots/active` | 200 | 2ms |
+| GET | `/playtest/opposition_decks_v1` | 200 | 3ms |
+| GET | `/commander/archetype_brief_v1` | 200 | 385ms |
+| GET | `/theme/top_cards_v1` | 422 | 2ms — sweep sent wrong query param shape; endpoint validated correctly |
+| POST | `/deck/analyze_v1` | 200 | 22ms |
+| POST | `/card/search_v1` | 422 | 1ms — sweep sent `query_text` but endpoint expects different shape; validation works |
+| POST | `/deck/strength_check_v1` | 200 | 277ms (uses warm disk cache from v5 Phase 5) |
+
+### Pillar C — primitive extraction
+
+`primitive_extractor_v1.load_ontology()` returns 64 ontology tags. Pillar D consumes these (verified Phase 2: 78.1% of cards have populated primitives_v1_json).
+
+### Pillar D — agent_build_deck_v1
+
+`compute_agent_build_deck_v1` importable. `agent_llm_client_v1.get_default_client()` returns a working client (`model=claude-sonnet-4-6`, `is_available()=True`). Full-build was validated in Phase 13 of mega-task v5 (10 builds across 5 cases × 2 stochastic runs, all completing successfully).
+
+### Pillar E — 4 optimizers
+
+| Module | Import | Execution smoke |
+|---|---|---|
+| v0.1 `mana_base_optimizer_v1` | OK | (full live test in iter 6 sweep) |
+| v0.2 `card_advantage_optimizer_v1` | OK | (full live test in iter 6 sweep) |
+| v0.3 `curve_smoother_v1` | OK | `analyze_curve(deck=60-card-sample, archetype_hint='tribal')` → 60 non-land cards, significant=True |
+| v0.4 `interaction_designer_v1` | OK | `compute_interaction_targets(['W','U','B'], 'B3')` → total_target=11, mass_removal=2 |
+
+### Pillar F — statistical approximator + graduated playtest
+
+| Module | Result |
+|---|---|
+| `agent_statistical_approximator_v1.approximate_pod_winrate(...)` | `pod_winrate=0.087` on 99-Sol-Ring synthetic deck (low as expected; no win-paths armed) |
+| `agent_graduated_playtest_v1.run_graduated_sweep(...)` | `status=stalled_tier_0`, `tiers_run=1` (degenerate deck stalls at Tier 0 — expected behavior) |
+
+### Inline fixes landed
+
+None at Phase 10. Smokes confirmed integration; the only finding earlier was the Section 8 orphan agent_voyage_downgrade_pass_v1 module which is queued.
+

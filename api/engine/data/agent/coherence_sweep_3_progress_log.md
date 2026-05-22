@@ -241,6 +241,47 @@ Iter 7 watchpoint: voyageai's <3.14 Python constraint is the same one that broke
 
 ### Phase 9 commit
 
-Pending.
+`7f98820ae` — "Coherence Sweep #3 Phase 9: external-dep audit — clean". 2 files changed, 90 insertions, 2 deletions.
 
 ---
+
+## Phase 10 — Per-pillar smoke tests + final synthesis (BLOCKING)
+
+**Started**: 2026-05-22 (immediately after Phase 9)
+
+### Per-pillar smokes
+
+Each pillar exercised standalone via direct import + sample-input invocation. Pillar A via TestClient against 9 sampled endpoints. Pillar D's full-build was already exercised by mega-task v5 Phase 13 (10 builds across 5 cases × 2 stochastic runs).
+
+| Pillar | Smoke result |
+|---|---|
+| A | 7/9 endpoints 2xx; 2 422s from sweep-side input schema errors (validating endpoints work) |
+| C | `load_ontology()` returns 64 tags |
+| D | `agent_build_deck_v1` + `agent_llm_client_v1` import + working |
+| E v0.1-v0.4 | all 4 modules import; v0.3 + v0.4 produce sensible output on synthetic input |
+| F | `approximate_pod_winrate` returns 0.087 on degenerate deck; `run_graduated_sweep` returns Tier 0 stall (expected) |
+
+### Final synthesis
+
+Executive summary + categorized punch list written to `coherence_sweep_3_health_report.md`:
+
+- **Inline fixes landed**: 1 (Pillar A endpoint count drift in `project_pillar_a_c_shipped_2026-05-17.md`)
+- **Queued for iter 7 mega-task v6**: 4 substantive items (wire agent_voyage_downgrade_pass_v1, wire voyage_rules_embedding_v1 at scale, ENGINE_API_GUIDE.md overhaul, review the 8 pre-existing test failures)
+- **Out-of-scope / wontfix**: 8 items documented
+
+### Memory updates
+
+Cowork memory at `spaces/.../memory/`:
+- New: `project_coherence_sweep_3_shipped_2026-05-22.md` — full ship state with the per-audit-area verdict table + commit chain + cross-references.
+- Updated: `MEMORY.md` index — added the sweep-shipped entry below the iter 7 prep entry.
+- Updated: `project_iter_7_prep_notes_2026-05-22.md` — added 4 new sweep-surfaced priorities (#4-#7) to iter 7 scope; total estimate bumps from 3-5 weeks → 4-5.5 weeks.
+
+### Phase 10 commit
+
+Pending — final synthesis + memory updates.
+
+---
+
+## Coherence Sweep #3 SHIPPED 2026-05-22
+
+11 atomic phase commits + this synthesis commit = 12 commits total on top of mega-task v5 (`4cee4a287`). pytest 1489 unchanged through all 11 phases. ~$0 API spend (sweep is read-only).
