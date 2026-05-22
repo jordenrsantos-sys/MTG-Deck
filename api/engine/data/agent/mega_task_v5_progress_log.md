@@ -772,4 +772,4 @@ Uses `unittest.mock.patch` to inject synthetic `PodWinrateReport` values into `a
 
 ### Phase 12 commit
 
-`<pending>`
+`1257567cd` — "Phase 12 (mega-task v5): graduated playtest Stage 1 logic + UI report card". 5 files changed, 599 insertions, 0 deletions.
