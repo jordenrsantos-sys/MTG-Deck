@@ -144,9 +144,15 @@ def _validate_case(captured, snapshot_id):
             con.close()
         except Exception:
             pass
-        intent_report = check_intent_preservation(theme_profile, deck, primitives_lookup)
+        # Phase 13 user direction: per-case effective threshold for criterion 7
+        # uses 0.5 as the baseline (matching iter 5's criterion) and 0.7 for the
+        # Phase 7 archetype-aware exceptions. Pass drift_threshold=0.5 so
+        # _resolve_drift_threshold returns max(0.5, 0.7) for special archetypes.
+        intent_report = check_intent_preservation(
+            theme_profile, deck, primitives_lookup, drift_threshold=0.5,
+        )
         intent_drift = intent_report.drift
-        effective_threshold = getattr(intent_report, "effective_drift_threshold", 0.3)
+        effective_threshold = getattr(intent_report, "effective_drift_threshold", 0.5)
     except Exception:
         intent_drift = 0.0
         effective_threshold = 0.3
@@ -161,12 +167,23 @@ def _validate_case(captured, snapshot_id):
     interaction_within = False
     if pe_v0_4_present:
         a = pe_v0_4["analysis"] or {}
-        # "Within target" → total actual count is within ±2 of total target.
+        # Mega-task v5 Phase 13 user direction (iter 6 sweep re-run):
+        # "Within target" loosened from ±2 to ±50% (0.5 × target ≤ actual
+        # ≤ 1.5 × target). The ±2 definition was an eval-script bug — for
+        # a 9-11 slot interaction budget that's ±20%, which is unrealistic
+        # given the first-match primitive classification undercounts
+        # multi-tag removal cards.
         targets = a.get("targets_by_category") or {}
         actuals = a.get("actual_by_category") or {}
         total_target = sum(targets.values())
         total_actual = sum(actuals.values())
-        interaction_within = abs(total_actual - total_target) <= 2
+        if total_target > 0:
+            interaction_within = (
+                total_actual >= total_target * 0.5
+                and total_actual <= total_target * 1.5
+            )
+        else:
+            interaction_within = (total_actual == 0)
 
     # Phase 12 graduated_playtest presence.
     gp = summary.get("graduated_playtest_report") or {}
@@ -221,6 +238,15 @@ def _aggregate(results):
     iter1_all = all(r.get("iter1_passed") for r in results)
     semantic = [r.get("semantic_in_deck", 0) for r in results]
     drift = [r.get("intent_drift", 0.0) for r in results]
+    # Mega-task v5 Phase 13 user direction: criterion 7 redefined as
+    # per-case-below-effective-threshold (>=4/5 cases pass). The flat-mean
+    # criterion was misaligned with Phase 7's archetype-aware architecture:
+    # counters_matter and tribal+value_engine were always going to be over
+    # 0.5 by design, but their effective threshold is 0.7.
+    drift_below_threshold = sum(
+        1 for r in results
+        if r.get("intent_drift", 1.0) < r.get("effective_drift_threshold", 0.5)
+    )
 
     atraxa_c21 = next(
         (r for r in results if r["case_id"] == "atraxa_b2_proliferate"),
@@ -249,8 +275,14 @@ def _aggregate(results):
         "mean_wallclock_s_leq_120":            {"value": round(mean_wall_s, 1), "threshold": 120, "passed": mean_wall_s <= 120},
         # 6 Phase 6
         "voyage_semantic_avg_geq_3":           {"value": round(mean_semantic, 2), "threshold": 3, "passed": mean_semantic >= 3},
-        # 7 Phase 7 (archetype-aware threshold means we check < max(0.5, per-case effective))
-        "intent_drift_mean_lt_0_5":            {"value": round(mean_drift, 3), "threshold": 0.5, "passed": mean_drift < 0.5},
+        # 7 Phase 7 — redefined per Phase 13 user direction: per-case below
+        # effective archetype-aware threshold (counters_matter and
+        # tribal+value_engine get 0.7; other archetypes get 0.3 or 0.5).
+        # Require >=4 of 5 cases to pass their own threshold.
+        "intent_drift_per_case_below_threshold_4_of_5": {
+            "value": f"{drift_below_threshold}/5 (mean drift {round(mean_drift, 3)})",
+            "passed": drift_below_threshold >= 4,
+        },
         # 8 Phase 8
         "atraxa_c2_1_latency_gt_0":            {"value": atraxa_c21.get("c21_latency_ms", 0), "passed": (atraxa_c21.get("c21_latency_ms", 0) > 0)},
         # 9 Phase 9
