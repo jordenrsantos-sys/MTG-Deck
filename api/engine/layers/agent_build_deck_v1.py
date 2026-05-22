@@ -745,6 +745,40 @@ def compute_agent_build_deck_v1(
         t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
     )
 
+    # ---- Mega-task v5 Phase 12: graduated playtest sweep ----
+    # Run the deck through tiered opposition pods (Tier 0 precon-eq,
+    # Tier 1 mid-tier, Tier 2 high-tier / cEDH). Advance one tier when
+    # predicted pod winrate >= 0.55; surface tier results + overall
+    # status + (Stage-3-stub) tweak suggestions in the response.
+    _emit_progress(
+        progress_callback, phase="graduated_playtest", status="started",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
+    graduated_playtest_report: Dict[str, Any] = {
+        "active": False,
+        "report": None,
+    }
+    try:
+        from api.engine.layers.agent_graduated_playtest_v1 import (
+            run_graduated_sweep,
+        )
+        graduation = run_graduated_sweep(
+            deck=deck,
+            bracket=bracket,
+            db_snapshot_id=db_snapshot_id,
+        )
+        graduated_playtest_report["active"] = True
+        graduated_playtest_report["report"] = graduation.to_dict()
+    except Exception as exc:
+        warnings.append({
+            "code": "GRADUATED_PLAYTEST_FAILED",
+            "message": f"{exc.__class__.__name__}: {exc}",
+        })
+    _emit_progress(
+        progress_callback, phase="graduated_playtest", status="completed",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
+
     # ---- Summary ----
     body = deck[1:]  # may have been swapped during Phase D
     user_picks_present = sum(1 for c in body if c.get("source") == "user_intent")
@@ -850,6 +884,11 @@ def compute_agent_build_deck_v1(
         # mass-removal, graveyard-interaction) for the commander's
         # bracket + color identity, plus actual counts and discrepancies.
         "pillar_e_v0_4_interaction_check": interaction_designer_block,
+        # Mega-task v5 Phase 12: graduated playtest report — pod winrate
+        # at Tier 0 (precon-equivalent), Tier 1 (mid-tier), and Tier 2
+        # (high-tier / cEDH) with advancement gates, plus Stage-3-stub
+        # tweak suggestions when a tier stalls.
+        "graduated_playtest_report": graduated_playtest_report,
     }
 
     response = {
@@ -923,6 +962,10 @@ def _empty_summary(bracket: str, must_include_cards: List[str]) -> Dict[str, Any
         "pillar_e_v0_4_interaction_check": {
             "active": False,
             "analysis": None,
+        },
+        "graduated_playtest_report": {
+            "active": False,
+            "report": None,
         },
     }
 

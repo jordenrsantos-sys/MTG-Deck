@@ -727,6 +727,45 @@ export default function AIBuildView(props: AIBuildViewProps) {
                   </div>
                 ) : null}
 
+                {/* Mega-task v5 Phase 12: graduated playtest report card.
+                    Shows per-tier pod winrates with advancement marks
+                    so the user can see how the deck handled precons,
+                    mid-tier, and high-tier opposition. */}
+                {response.summary.graduated_playtest_report?.active &&
+                response.summary.graduated_playtest_report?.report ? (
+                  <div data-testid="graduated-playtest-block">
+                    <div className="text-text-muted mb-token-1">
+                      Graduated playtest
+                    </div>
+                    <div className="flex flex-wrap gap-token-2 mb-token-1">
+                      {response.summary.graduated_playtest_report.report.tier_results.map(
+                        (t: { tier: number; label: string; pod_winrate: number; advanced: boolean }) => (
+                          <Badge key={t.tier}>
+                            {t.advanced ? "✓" : "✗"} {t.label}: {(t.pod_winrate * 100).toFixed(0)}%
+                          </Badge>
+                        )
+                      )}
+                      <Badge>
+                        Status: {response.summary.graduated_playtest_report.report.overall_status}
+                      </Badge>
+                    </div>
+                    {response.summary.graduated_playtest_report.report.suggested_tweaks?.length > 0 ? (
+                      <details>
+                        <summary className="cursor-pointer text-text-muted text-xs">
+                          Suggested tweaks ({response.summary.graduated_playtest_report.report.suggested_tweaks.length})
+                        </summary>
+                        <ul className="mt-token-1 space-y-token-1 text-xs text-text-muted">
+                          {response.summary.graduated_playtest_report.report.suggested_tweaks.map(
+                            (s: string, i: number) => (
+                              <li key={i}>{s}</li>
+                            )
+                          )}
+                        </ul>
+                      </details>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {response.summary.phase_timings_ms ? (
                   <div>
                     <div className="text-text-muted mb-token-1">Phase timings (ms)</div>

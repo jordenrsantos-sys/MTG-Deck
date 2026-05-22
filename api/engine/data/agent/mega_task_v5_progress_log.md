@@ -706,3 +706,70 @@ Existing `test_opposition_decks_v1.py` (14 tests) still pass — the expansion i
 ### Phase 11 commit
 
 `28f0d3866` — "Phase 11 (mega-task v5): tiered opposition deck registry (BLOCKING)". 4 files changed, 603 insertions, 31 deletions.
+
+Progress-log SHA fixup: `09a84c616`.
+
+---
+
+## Phase 12 — Graduated playtest Stage 1: logic + UI report card
+
+**Started**: 2026-05-22 (immediately after Phase 11 commit)
+
+### Module shape
+
+New module `api/engine/layers/agent_graduated_playtest_v1.py` (Stage 1 of the graduated playtest framework):
+
+- Public API: `run_graduated_sweep(*, deck, bracket, db_snapshot_id=None, tier_advance_threshold=0.55) -> GraduationReport`
+- `GraduationReport` dataclass: `bracket`, `final_tier_reached`, `tier_results` (list of TierResult), `suggested_tweaks`, `overall_status`, `threshold_used`, `version`.
+- `TierResult` dataclass: `tier`, `label`, `bracket`, `effective_bracket`, `pod_winrate`, `per_opponent_winrate`, `opponents`, `advanced`, `reason`.
+
+### Advancement model
+
+Per kickoff: Run Tier 0 pod → if pod_winrate >= 0.55, advance to Tier 1 → if pass, advance to Tier 2. Stops at the first failed tier. Final status:
+
+- `graduated` — all 3 tiers passed
+- `graduated_partial` — reached Tier 2 but didn't beat it
+- `stalled_tier_1` — passed Tier 0, failed Tier 1
+- `stalled_tier_0` — failed at the precon baseline
+
+The Pillar F v0.1 approximator is bracket-keyed only; to get meaningful tier-on-tier gradient within a single bracket, `_effective_bracket(bracket, tier)` shifts the opponents' bracket: tier 0 = bracket-1 (clamped at B1), tier 1 = bracket, tier 2 = bracket+1 (clamped at B5). Pillar F v0.2 (per-deck simulation) will retire this hack.
+
+### Suggested tweaks (Stage-3-stub)
+
+When a tier stalls, `_generate_suggested_tweaks` emits a short diagnostic note pointing the reader at the relevant pillar_e analysis or speed/interaction axis. Stage 3 (game-simulation) will replace these strings with concrete card swaps.
+
+### Integration
+
+Inserted after `structural_safety_net` and before response composition in `compute_agent_build_deck_v1`. New SSE progress phase `graduated_playtest` (started + completed). Exposed under `response.summary.graduated_playtest_report` with `active` + `report` fields. Failure-path response also includes the field for schema consistency.
+
+### UI report card
+
+`ui_harness/src/views/AIBuildView.tsx` gets a new render block under the deck display:
+
+```
+Graduated playtest:
+[✓ Tier 0 (precon-equivalent): 78%] [✓ Tier 1 (mid-tier): 62%]
+[✗ Tier 2 (high-tier / cEDH): 31%] [Status: stalled_tier_2]
+```
+
+With a collapsible "Suggested tweaks" details element when tweaks fire. Renders only when `graduated_playtest_report.active=True` (skipped on the failure-path response).
+
+### Tests
+
+`tests/test_agent_graduated_playtest_v1.py` — 18 new tests across 4 classes:
+
+- `EffectiveBracketTest` — tier→bracket adjustment, B1 floor / B5 ceiling clamps, unknown bracket fallback.
+- `BuildOppositionForTierTest` — pulls 3 entries per (bracket, tier), empty for unsupported cells, tier isolation.
+- `RunGraduatedSweepTest` — 9 tests covering: returns GraduationReport, stall at each tier, full graduation, tier 2 failure → graduated_partial, threshold parameter, missing opposition handling, tweak generation on stall, no-tweaks on full graduation.
+- `GraduationReportToDictTest` — serialization round-trip.
+
+Uses `unittest.mock.patch` to inject synthetic `PodWinrateReport` values into `approximate_pod_winrate`, so tests don't depend on the live approximator's behavior — they pin the graduation logic specifically.
+
+### Regression baselines after Phase 12
+
+- **pytest**: 1489 passed (Phase 11 was 1471; +18 new Phase 12 tests). 8 pre-existing failures unchanged. 17 skipped. 58 subtests passed.
+- **vitest**: not re-run this session — UI change is additive (a new optional render block) and doesn't touch any existing component. Phase 13's UI smoke will pick up the new block live.
+
+### Phase 12 commit
+
+`<pending>`
