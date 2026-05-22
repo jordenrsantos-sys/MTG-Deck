@@ -126,6 +126,26 @@ Counted test files + grep'd test names per v3-v5 module + scanned for orphan tes
 
 ### Phase 4 commit
 
+`5d77891e3` — "Coherence Sweep #3 Phase 4: test coverage gaps — solid (212 files / 1489 passing)". 2 files changed, 83 insertions, 2 deletions.
+
+---
+
+## Phase 5 — Database + schema integrity
+
+**Started**: 2026-05-22 (immediately after Phase 4)
+
+### Method
+
+Queried mtg.sqlite directly for: snapshot row counts, cards table schema, column populations per snapshot, snapshot inheritance metadata, ancillary table inventory. Checked corpus_v1.json + opposition_decks_v1.json sizes + entry counts. Cross-referenced against iter-3 (released_at), iter-4 (primitives_v1_json), and v5 (no new columns) migrations.
+
+### Findings
+
+**Clean.** All 3 snapshots have 36,709 rows. `released_at` 100% populated everywhere. `primitives_v1_json` grows 22,169 (60.4%) on raw/source → 28,666 (78.1%) on tagpass-active. Tagpass inheritance metadata correct. corpus_v1.json (48.7 MB / 13,408 decks) + opposition_decks_v1.json (16 KB / 54 entries) + corpus_vectors_cache_v1.json (16.4 MB) sizes match expectations.
+
+15 tables in mtg.sqlite — no orphans, no anomalous row counts.
+
+### Phase 5 commit
+
 Pending.
 
 ---

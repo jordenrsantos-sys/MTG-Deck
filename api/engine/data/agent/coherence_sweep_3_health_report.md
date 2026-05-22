@@ -246,7 +246,68 @@ None — Phase 4 is read-only audit per kickoff policy.
 
 ## Section 5 — Database + schema integrity (Phase 5)
 
-`<pending — populated during Phase 5>`
+**Verdict: clean.** All 3 snapshots have identical row counts (36,709). Iter-3 `released_at` migration is universally populated. Iter-4 / mega-task-v4 `primitives_v1_json` correctly grows from 22,169 (60.4%) on source snapshots → 28,666 (78.1%) on the tagpass snapshot. Tagpass inheritance metadata (`cloned_for_tag_import_v1: true`, `source_snapshot_id`) confirms the clone-and-tag pipeline works. Corpus + opposition deck registries match v5 expected sizes.
+
+### Cards table — per-snapshot column populations
+
+| Snapshot | Total rows | released_at populated | primitives_v1_json populated |
+|---|---|---|---|
+| `20260217_185403` (raw download) | 36,709 | 36,709 (100%) | 22,169 (60.4%) |
+| `20260217_190902` (tags compiled) | 36,709 | 36,709 (100%) | 22,169 (60.4%) |
+| `20260217_190902_tagpass_20260222` (active) | 36,709 | 36,709 (100%) | **28,666 (78.1%)** |
+
+The tagpass snapshot adds 6,497 more cards with `primitives_v1_json` than the source. That's the iter-4 ontology v1 rules_modifier extraction (mega-task v4 Phase 4) doing its job — extracting tags from rules-text-described abilities that the regex extractor at the original snapshot couldn't see.
+
+### Cards schema (current)
+
+```
+snapshot_id (TEXT), oracle_id (TEXT), name (TEXT), mana_cost (TEXT),
+cmc (REAL), type_line (TEXT), oracle_text (TEXT), colors (TEXT),
+color_identity (TEXT), produced_mana (TEXT), keywords (TEXT),
+legalities_json (TEXT), primitives_json (TEXT), image_uris_json (TEXT),
+card_faces_json (TEXT), image_status (TEXT), released_at (TEXT),
+primitives_v1_json (TEXT)
+```
+
+`primitives_json` (the v0 column) and `primitives_v1_json` (the v1 column) are both present. v0 is legacy; v1 is what current Pillar D consumes. Both populated on the active snapshot.
+
+### Snapshot inheritance metadata
+
+The active snapshot's row in the `snapshots` table includes the manifest:
+- `cloned_for_tag_import_v1: true`
+- `source_snapshot_id: "20260217_190902"`
+- `tags_compiled: true`
+- `tool: "update_scryfall_bulk.py"`
+
+Inheritance works correctly — the tagpass clone-and-tag pipeline carries forward all source columns (released_at, oracle_text, etc.) and then runs the v1 extractor on top to populate `primitives_v1_json`. New columns added in iter 5/6 would inherit by the same mechanism if any had been added (none were in v5).
+
+### Data file sizes
+
+| File | Size | Entries |
+|---|---|---|
+| `engine/data/mtg.sqlite` | 732 MB | 3 snapshots × 36,709 cards + ancillary tables |
+| `api/engine/data/corpus/corpus_v1.json` | 48.7 MB | 13,408 decks (matches iter 6 finding) |
+| `api/engine/data/playtest/opposition_decks_v1.json` | ~16 KB | 54 entries (matches Phase 11) |
+| `api/engine/data/corpus/corpus_vectors_cache_v1.json` | 16.4 MB | 13,408 vectors (mega-task v5 Phase 5 disk cache) |
+
+### Ancillary tables
+
+15 tables total in `mtg.sqlite`. Most are documented in module docstrings:
+- `cards`, `cards_raw`, `card_tags`, `card_images` — primary card data
+- `snapshots` — snapshot metadata
+- `card_primitive_tags_v0`, `primitive_defs_v0`, `primitive_rules_v0`, `primitive_tag_runs_v0`, `primitive_tag_unknowns_v0`, `primitive_to_cards` — Pillar C v0 ontology (legacy)
+- `equiv_to_cards`, `patches_applied`, `run_history_v0`, `unknowns_queue` — agent run tracking + manual overrides
+
+No orphan tables. No tables with anomalous row counts.
+
+### Inline fixes landed
+
+None — Phase 5 is read-only audit and the data is clean.
+
+### Queued for iter 7 / wontfix
+
+- *Out-of-scope*: `primitives_json` (v0 column) duplicates capability of `primitives_v1_json` — could be deprecated in iter 7 for storage savings, but no functional bug. Lower priority than the 3 iter-7 locked priorities.
+
 
 ## Section 6 — UI ↔ endpoint contract drift (Phase 6)
 
