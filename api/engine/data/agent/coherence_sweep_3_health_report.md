@@ -408,7 +408,68 @@ None — all the docstring drift candidates are within the queue-for-iter-7 thre
 
 ## Section 8 — Orphan code detection (Phase 8)
 
-`<pending — populated during Phase 8>`
+**Verdict: 2 true production orphans flagged for iter 7 wiring decisions; 1 stale `.pyc` cleanup; 30 false positives (CLI scripts that are RUN rather than imported).** No inline deletions per kickoff policy.
+
+### Method
+
+AST-walked all 454 `.py` files (excluding `.venv` and `__pycache__`) and recorded every `Import` / `ImportFrom` target. For each file in `api/engine/layers/`, `extractors/`, `integrations/`, and `tools/`, checked whether the file's module name (or its leaf component) appeared anywhere as an import target. Files with no importers flagged. Followed up with explicit `grep -rn <module_name>` on each candidate to filter false positives (e.g., scripts only referenced via `__main__` invocation).
+
+Scanner lives at `tools/_coherence_sweep_3_orphan_scan.py` (added during this phase; can be deleted post-sweep or kept as ongoing audit harness).
+
+### True production orphans
+
+| Module | Status | Disposition |
+|---|---|---|
+| `api/engine/layers/agent_voyage_downgrade_pass_v1.py` | **TRUE ORPHAN — possibly a wiring bug.** Module claims "Mega-task v4 Phase 10" in its docstring; mega-task v4 final report claims this shipped as "mana-cost-aware Voyage downgrade pass." But the only importers are its own test file. No production code path imports `agent_voyage_downgrade_pass_v1` or `compute_voyage_downgrade`. | **Queued for iter 7.** Decision needed: wire it into `agent_build_deck_v1.py` (between Voyage retrieval and pool composition?) OR document why it was abandoned + remove. The test file passes today, which is why this wasn't caught — tests exercise the module standalone. |
+| `api/engine/layers/voyage_rules_embedding_v1.py` | **TRUE ORPHAN — expected.** Module is the "at-scale Voyage rules embedding pipeline" from mega-task v3 Phase 4 / v4 Phase 4. Documented in memory as "Phase 4 hook in place; at-scale embedding deferred." Test imports it; production doesn't. | **Queued for iter 7** as part of "at-scale Voyage rules embedding" priority (per `project_iter_6_prep_notes_2026-05-21` Priority #5 + `project_iter_7_prep_notes_2026-05-22` deferred items). |
+
+### Stale `.pyc` (no source file)
+
+| Path | Disposition |
+|---|---|
+| `scripts/__pycache__/build_primitive_tag_index_v0.cpython-310.pyc` | Source `.py` already removed (per mega-task v5 progress log). The `.pyc` is harmless — Python only loads `.pyc` if its source `.py` exists; this file will be ignored on next bytecode invalidation pass and naturally cleared on a fresh `__pycache__` rebuild. **Wontfix** (cleanup-on-rebuild). |
+
+### False positives (30 items — CLI scripts in `tools/`)
+
+These are scripts intended to be invoked directly (`python tools/<name>.py`), not imported. The orphan scanner flagged them because nothing imports them — by design. All 30 are legitimate CLI entry points:
+
+- `tools/test_pillar_d_iteration_{2,3,4,5,6}.py` — per-iter validation sweep harnesses (each iter has one).
+- `tools/mega_task_v5_phase5_live_smoke.py`, `phase6_query_smoke.py` — mega-task v5 smoke harnesses.
+- `tools/warm_corpus_vector_cache.py` — Coherence Sweep #3 / mega-task v5 disk-cache warmup.
+- `tools/_coherence_sweep_3_orphan_scan.py` — this audit's own scanner (added in Phase 8).
+- `tools/update_scryfall_bulk.py`, `ingest_new_set.py`, `check_new_sets.py`, `bulk_corpus_ingest.py`, `run_update_pipeline.py` — per-set automation (Track 5) entry points.
+- `tools/perf/run_perf_timing_audit.py` — perf timing harness.
+- `tools/playtest/{opposition_pool,pod_sim,turn_loop}.py` — Pillar F + MPA playtest scripts.
+- `tools/run_mpa_calibration.py`, `smoke_prod.py`, `smoke_v3_end_to_end.py`, `test_pillar_d_agent.py` — various harnesses.
+- `tools/backfill_primitives.py`, `backfill_primitives_v2.py`, `generate_combo_outcomes_v1.py` — one-shot data tooling.
+
+### Other false positives in layers/
+
+The scanner flagged the following but explicit grep confirmed they ARE imported:
+- `proof_scaffold_v1` — 2 production usages
+- `invariants_v1` — 43 production usages
+- `duplicate_enforcement` — 1 production usage
+- `patch_loop_v0` — 8 production usages
+- `proof_attempt_v1` — also imported
+
+These appeared in my initial list because the AST scanner's leaf-name match was insufficient for nested package references; the explicit grep pass cleared them.
+
+### Files explicitly in `deprecated/`
+
+- `api/engine/layers/deprecated/_deprecated_motifs_v1.py` — folder name + filename prefix both say "deprecated". Intentional. **Wontfix.**
+
+### Inline fixes landed
+
+None per kickoff policy ("do NOT delete inline; that's the user's call").
+
+### Queued for iter 7 / wontfix
+
+- *Queued for iter 7*: `agent_voyage_downgrade_pass_v1` — wiring decision needed (wire it in OR abandon). This is the more interesting finding because the module thinks it shipped.
+- *Queued for iter 7*: `voyage_rules_embedding_v1` — wire as part of "at-scale Voyage rules embedding" deferred item.
+- *Wontfix*: `_deprecated_motifs_v1.py` (already in deprecated/ folder).
+- *Wontfix*: stale `.pyc` (cleanup-on-rebuild).
+- *Decision needed*: keep or remove `tools/_coherence_sweep_3_orphan_scan.py`. Suggest keeping as a periodic audit harness (run it before each future sweep).
+
 
 ## Section 9 — External-dep audit (Phase 9)
 

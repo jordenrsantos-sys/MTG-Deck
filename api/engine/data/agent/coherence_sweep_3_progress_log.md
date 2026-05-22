@@ -191,6 +191,34 @@ Audited module docstrings on v5-added modules, the 3 key Obsidian vault docs (DE
 
 ### Phase 7 commit
 
-Pending.
+`a5bfd8dba` — "Coherence Sweep #3 Phase 7: documentation drift — 1 substantive queue for iter 7". 2 files changed, 67 insertions, 1 deletion.
+
+---
+
+## Phase 8 — Orphan code detection
+
+**Started**: 2026-05-22 (immediately after Phase 7)
+
+### Method
+
+Wrote `tools/_coherence_sweep_3_orphan_scan.py` (AST-walks all 454 .py files, records every Import/ImportFrom target, flags files in api/engine/layers + extractors + integrations + tools whose module name is never imported anywhere). Followed up with explicit `grep` on flagged candidates to filter false positives.
+
+### Findings
+
+**2 true production orphans:**
+1. `agent_voyage_downgrade_pass_v1` — mega-task v4 Phase 10 claimed shipped, but no production import. Only test imports it. **Possible wiring bug**; queued for iter 7 decision.
+2. `voyage_rules_embedding_v1` — known "at-scale deferred" hook per memory. Queued for iter 7.
+
+**30 false-positive tools/** scripts — all CLI entry points (run via `python tools/X.py`, not imported). Includes 5 iteration sweep harnesses + 2 v5 smoke harnesses + Track 5 automation scripts + perf/MPA harnesses + data backfill scripts.
+
+**5 false positives in layers/** that ARE imported (scanner heuristic missed them): proof_scaffold_v1, proof_attempt_v1, invariants_v1, duplicate_enforcement, patch_loop_v0.
+
+**1 explicit `deprecated/`** folder file — wontfix.
+
+**1 stale `.pyc`** without `.py` source — cleanup-on-rebuild, wontfix.
+
+### Phase 8 commit
+
+Pending — includes the new tools/_coherence_sweep_3_orphan_scan.py script.
 
 ---
