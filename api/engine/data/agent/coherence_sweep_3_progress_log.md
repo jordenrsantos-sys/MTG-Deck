@@ -104,6 +104,28 @@ Listed all 52 entries in cowork memory directory. Categorized: 15 `feedback_*` (
 
 ### Phase 3 commit
 
-Pending — includes the inline memory edit.
+`0e49198a2` — "Coherence Sweep #3 Phase 3: memory ↔ code alignment — 1 inline fix landed". 2 files changed. Cowork memory edit (project_pillar_a_c_shipped_2026-05-17.md) made outside the repo.
+
+---
+
+## Phase 4 — Test coverage gaps
+
+**Started**: 2026-05-22 (immediately after Phase 3)
+
+### Method
+
+Counted test files + grep'd test names per v3-v5 module + scanned for orphan test files. Used `pytest --co -q` data implicitly (1489 passing baseline). No live test runs — coverage audit is structural.
+
+### Findings
+
+**Solid coverage**: 212 test files, 1489 passing, 12 dedicated test files for `agent_build_deck_v1` alone, every Pillar E module has dedicated tests, every iter-6 Phase 5-12 deliverable has a test file.
+
+**No dead tests** — apparent "orphans" are phase-organized tests (test_agent_iterN_phase_M_*.py) and test harness files.
+
+**Carry-over**: same 8 pre-existing failures since mega-task v4 ship. Queued for iter 7 to decide fix-vs-retire.
+
+### Phase 4 commit
+
+Pending.
 
 ---

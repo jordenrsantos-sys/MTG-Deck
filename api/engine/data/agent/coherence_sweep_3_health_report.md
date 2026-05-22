@@ -183,7 +183,66 @@ None additional from Phase 3. The remaining 48 memory entries weren't exhaustive
 
 ## Section 4 — Test coverage gaps (Phase 4)
 
-`<pending — populated during Phase 4>`
+**Verdict: solid coverage — 212 test files / 1489 passing / 17 skipped / 8 pre-existing failures.** Major modules all have direct unit tests; agent_build_deck_v1 alone has 12 dedicated test files. No dead test files found pointing at removed code.
+
+### Test file inventory
+
+- **Total test files**: 212
+- **Total passing pytests**: 1489 (post-mega-task-v5)
+- **Skipped**: 17 (intentional — gated on env vars / network)
+- **Pre-existing failures**: 8 (carried unchanged from iter 4; documented in mega-task v4 final report)
+- **Subtests passing**: 58
+- **Total test runtime**: ~110s
+
+### Coverage for v3-v5 shipped modules
+
+| Module | Test files | Notable test patterns |
+|---|---|---|
+| `agent_build_deck_v1` | 12 | Phase-organized: phase_a2, phase_b, phase_b2, phase_c, phase_c2_1, phase_c2_2, phase_d, phase_d2, iter3_phase_1, iter3_phase_3, stream (v5 Phase 3), forbidden_budget_overhead (v5 Phase 8) |
+| `agent_semantic_retrieval_v1` | 3 | iter3_phase_7 + iter5_phase_1 + iter6_phase_6 color-filter edge cases (v5 Phase 6) |
+| `mana_base_optimizer_v1` (Pillar E v0.1) | 1 | full optimizer + Karsten + aggressive reconciliation |
+| `card_advantage_optimizer_v1` (Pillar E v0.2) | 1 | full optimizer + per-bracket mix |
+| `curve_smoother_v1` (Pillar E v0.3 / Phase 9) | 1 | 17 tests across 6 classes |
+| `interaction_designer_v1` (Pillar E v0.4 / Phase 10) | 1 | 16 tests across 6 classes |
+| `agent_intent_preservation_check_v1` | 1 | 17 tests (8 original + 9 Phase 7 archetype-aware) |
+| `agent_graduated_playtest_v1` (Phase 12) | 1 | 18 tests with mocked approximator |
+| `agent_statistical_approximator_v1` (Pillar F v0.1) | 1 | multi-tier matchup matrix |
+| `deck_strength_check_v1` | 1 | incremental + persistent disk cache (4 + 4 = 8 tests after v5 Phase 5 add) |
+| `agent_combo_anchor_guard_v1` (iter 3 Phase 2) | 1 | forbidden_set generation + filter |
+| `opposition_decks_v1` | 2 | 14 original schema tests + 13 Phase 11 tiered tests |
+
+### Phase-named test pattern
+
+Many tests use `test_agent_buildN_phase_X.py` naming (15+ files). This is intentional — tests are organized by "which mega-task phase introduced or modified this code path" rather than per-module. The `test_agent_iterN_phase_M_*.py` naming is similar. This makes regression traceability easy: failures point at the originating phase.
+
+### 8 pre-existing failures (documented carry-over)
+
+```
+tests/test_bracket_gc_limits_v1.py::BracketGcLimitsV1Tests::test_b4_and_b5_are_unlimited
+tests/test_complete_bracket_violations_v1.py::TestHttpEndpointWiring (5 tests)
+tests/test_no_random_imports.py::NoRandomImportsTests::test_runtime_modules_avoid_nondeterministic_time_and_random_usage
+tests/test_pipeline_profile_bracket_enforcement_v1.py::test_pipeline_reports_profile_bracket_enforcement_payload_and_panel
+```
+
+Same 8 failures appeared at end of mega-task v4 ship (`e97589870`). They're documented in `mega_task_v4_final_report.md` and were not addressed in v5. They block strict "all tests pass" but iter 4 + iter 5 + iter 6 baselines all preserve them as-is. Iter 7 should consider whether to fix any of these vs. continue carry-over.
+
+### "Dead tests" — checked, none found
+
+The "orphan test files" scan flagged tests whose filenames don't directly match a module name — but on inspection these are all phase-organized tests (test_agent_iter3_phase_5_released_at.py tests the released_at field in agent_build_deck_v1's iter 3 Phase 5 addition, etc.) or test harness files (conftest, decklist_fixture_harness, guardrails_fixture_harness). No tests for genuinely-removed code found.
+
+### Missing integration tests (queue for iter 7)
+
+The kickoff calls out that Phase 10 of THIS sweep will add per-pillar smoke tests as the integration layer. So the only "missing coverage" finding is: there is no single "Pillar A across all 18 v1-tier endpoints in one run" integration test today. Phase 10's deliverable closes that gap.
+
+### Inline fixes landed
+
+None — Phase 4 is read-only audit per kickoff policy.
+
+### Queued for iter 7 / wontfix
+
+- *Queued for iter 7*: review the 8 pre-existing test failures, decide which to fix vs. retire (documenting why) — they've been carried across 4 mega-tasks without resolution.
+- *Wontfix*: phase-named test file naming convention. It's intentional + works.
+
 
 ## Section 5 — Database + schema integrity (Phase 5)
 
