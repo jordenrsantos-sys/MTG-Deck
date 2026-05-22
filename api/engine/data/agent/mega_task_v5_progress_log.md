@@ -443,4 +443,4 @@ Deferred to Phase 13 — the multi-case sweep there computes intent_drift on Atr
 
 ### Phase 7 commit
 
-`<pending>`
+`589672661` — "Phase 7 (mega-task v5): theme signal density expansion + archetype-aware drift thresholds". 3 files changed, 245 insertions, 9 deletions.
