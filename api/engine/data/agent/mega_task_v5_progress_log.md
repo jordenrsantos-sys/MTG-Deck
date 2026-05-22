@@ -639,3 +639,70 @@ Inserted between `curve_smoother` and `structural_safety_net` in `compute_agent_
 ### Phase 10 commit
 
 `0e004c6f2` — "Phase 10 (mega-task v5): Pillar E v0.4 interaction designer". 4 files changed, 615 insertions, 0 deletions.
+
+Progress-log SHA fixup: `2d5076902`.
+
+---
+
+## Phase 11 — Tiered opposition registry (BLOCKING)
+
+**Started**: 2026-05-22 (immediately after Phase 10 commit)
+
+### Sourcing constraint
+
+The current corpus has 13,408 entries — almost all EDHREC-sourced (`edhrec_*`). No dedicated precon or cEDH-decklist-database sources exist in the corpus. The kickoff anticipated this ("focus on B2/B3/B4/B5 (drop B1 if precons aren't well-distinguished)") and Phase 11 takes that adjustment.
+
+Tier mapping from the corpus_id pattern:
+- `_cedh_rank1_` or low rank in B5 → **tier 2** (cEDH high-tier)
+- `_rank1_` / `_rank2_` in B2-B4 → **tier 2** (top-of-bracket EDHREC)
+- Mid-ranks (`_rank3_`, `_core_`) → **tier 1** (mid)
+- `_average_`, `bootstrap_`, `_exhibition_` → **tier 0** (precon-equivalent baseline)
+
+This is a heuristic tier assignment — when the corpus gets dedicated precon / cEDH-DB sources in a future iter, the mapping should tighten.
+
+### Registry expansion
+
+`api/engine/data/playtest/opposition_decks_v1.json` grew from 19 entries → 54:
+
+| Bracket | tier 0 | tier 1 | tier 2 | Total |
+|---------|--------|--------|--------|-------|
+| B1      | —      | 3      | —      | 3     |
+| B2      | 3      | 10     | 3      | 16    |
+| B3      | 3      | 6      | 3      | 12    |
+| B4      | 3      | 5      | 3      | 11    |
+| B5      | 3      | 6      | 3      | 12    |
+
+Every (B2-B5, tier 0/1/2) cell has ≥3 entries — meeting the kickoff coverage target. B1 stays mid-tier-only per the kickoff drop-clause.
+
+New top-level fields on the registry: `schema_version: "opposition_v1.1_tiered"`, `last_updated_utc`, `tier_definitions` (human-readable). All existing 19 entries kept; the 35 new ones each carry an `opposition_tier` field. Role tags include the tier + commander slug + archetype slug so they remain unique within bracket.
+
+### Loader helpers
+
+`api/engine/playtest/opposition_decks_v1.py` gains two new helpers and extends `registry_summary`:
+
+- `filter_by_tier(tier: int) -> List[entry]` — entries at the given tier across all brackets.
+- `filter_by_bracket_and_tier(bracket: str, tier: int) -> List[entry]` — the intersection (e.g. all (B3, tier 0) entries for the graduated playtest's Tier-0 pod).
+- `registry_summary()` now surfaces `per_bracket_tier_count` so the UI can see coverage at a glance.
+
+Pre-Phase-11 entries default to tier 1 in the loader (backward-compat).
+
+### Tests
+
+`tests/test_opposition_decks_v1_phase11_tiered.py` — 13 new tests across 5 classes:
+
+- `TieredSchemaTest` — every entry has `opposition_tier`, tier values in {0,1,2}, schema_version advertises tiered, tier_definitions are documented.
+- `TieredCoverageTest` — every (B2-B5, tier 0/1/2) cell has ≥3 entries; total ≥ 36.
+- `FilterHelpersTest` — `filter_by_tier`/`filter_by_bracket_and_tier` return correct entries, unknown bracket returns [], non-int tier returns [].
+- `RegistrySummaryTest` — summary includes tier breakdown, total matches registry size.
+- `BackwardCompatTest` — pre-Phase-11 entry without tier field defaults to tier 1 via the loader.
+
+Existing `test_opposition_decks_v1.py` (14 tests) still pass — the expansion is purely additive; existing role_tags and corpus_ids are preserved; `version` field still present.
+
+### Regression baselines after Phase 11
+
+- **pytest**: 1471 passed (Phase 10 was 1458; +13 new Phase 11 tests). 8 pre-existing failures unchanged. 17 skipped. 58 subtests passed.
+- **vitest**: 758 unchanged.
+
+### Phase 11 commit
+
+`<pending>`

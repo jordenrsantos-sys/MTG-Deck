@@ -79,15 +79,61 @@ def all_role_tags() -> List[str]:
 
 
 def registry_summary() -> Dict[str, Any]:
-    """Compact summary for endpoint payloads: counts per bracket, total."""
+    """Compact summary for endpoint payloads: counts per bracket, total.
+
+    Mega-task v5 Phase 11: also surfaces per-bracket per-tier counts so the
+    UI / graduated playtest can see which (bracket, tier) cells have
+    opponents populated.
+    """
     reg = load_registry()
     entries = reg.get("entries", [])
     by_bracket: Dict[str, int] = {}
+    by_bracket_tier: Dict[str, Dict[str, int]] = {}
     for e in entries:
         b = e.get("bracket", "?")
+        t = e.get("opposition_tier", 1)
         by_bracket[b] = by_bracket.get(b, 0) + 1
+        bt = by_bracket_tier.setdefault(b, {})
+        key = f"tier{t}"
+        bt[key] = bt.get(key, 0) + 1
     return {
         "version": reg.get("version", REGISTRY_VERSION),
+        "schema_version": reg.get("schema_version"),
         "total_entries": len(entries),
         "per_bracket_count": by_bracket,
+        "per_bracket_tier_count": by_bracket_tier,
     }
+
+
+def filter_by_tier(tier: int) -> List[Dict[str, Any]]:
+    """Mega-task v5 Phase 11: filter entries by opposition_tier.
+
+    Entries that pre-date the tier schema and don't carry the field default
+    to tier 1 (mid-tier) for backwards-compat.
+    """
+    if not isinstance(tier, int):
+        return []
+    reg = load_registry()
+    return [
+        e for e in reg.get("entries", [])
+        if int(e.get("opposition_tier", 1)) == tier
+    ]
+
+
+def filter_by_bracket_and_tier(bracket: str, tier: int) -> List[Dict[str, Any]]:
+    """Mega-task v5 Phase 11: filter entries by both bracket and tier.
+
+    Returns the entries for, e.g., (B3, tier=0) — the precon-equivalents
+    for bracket 3. Empty list if no entries exist for that (bracket, tier).
+    """
+    if not isinstance(bracket, str) or not isinstance(tier, int):
+        return []
+    target = bracket.strip().upper()
+    if target not in {"B1", "B2", "B3", "B4", "B5"}:
+        return []
+    reg = load_registry()
+    return [
+        e for e in reg.get("entries", [])
+        if e.get("bracket") == target
+        and int(e.get("opposition_tier", 1)) == tier
+    ]

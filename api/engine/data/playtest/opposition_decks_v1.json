@@ -1,151 +1,453 @@
 {
   "version": "opposition_decks_v1",
-  "description": "Phase 5b.5 — curated registry of standardized opposition decks for MPA calibration. Each entry pins a corpus deck as a 'known opponent' at a given bracket. role_tag is the stable identifier the calibration suite uses to pick matchups; role_tags are unique within a bracket.",
+  "description": "Phase 5b.5 \u00e2\u20ac\u201d curated registry of standardized opposition decks for MPA calibration. Each entry pins a corpus deck as a 'known opponent' at a given bracket. role_tag is the stable identifier the calibration suite uses to pick matchups; role_tags are unique within a bracket.",
   "selection_rationale": {
-    "B1": "Exhibition tier — pick archetype-diverse low-power decks. Pillow-fort, tokens, midrange.",
-    "B2": "Core tier — anchor on the 7 Wizards-published precons present in corpus_v1.json. These are the canonical 'known-weak' opposition; calibration uses them as the B2 floor.",
-    "B3": "Upgraded tier — pick across tribal / aristocrats-combo / pillow-fort-control to span the B3 spread.",
-    "B4": "Optimized tier — prefer entries whose archetype hint contains 'combo', 'stax', or 'cEDH-adjacent'. These are most likely to produce decisive games at MAX_TURNS=50.",
-    "B5": "cEDH tier — picks across combo / tempo / control-stax archetypes."
+    "B1": "Exhibition tier \u00e2\u20ac\u201d pick archetype-diverse low-power decks. Pillow-fort, tokens, midrange.",
+    "B2": "Core tier \u00e2\u20ac\u201d anchor on the 7 Wizards-published precons present in corpus_v1.json. These are the canonical 'known-weak' opposition; calibration uses them as the B2 floor.",
+    "B3": "Upgraded tier \u00e2\u20ac\u201d pick across tribal / aristocrats-combo / pillow-fort-control to span the B3 spread.",
+    "B4": "Optimized tier \u00e2\u20ac\u201d prefer entries whose archetype hint contains 'combo', 'stax', or 'cEDH-adjacent'. These are most likely to produce decisive games at MAX_TURNS=50.",
+    "B5": "cEDH tier \u00e2\u20ac\u201d picks across combo / tempo / control-stax archetypes."
   },
   "created_utc": "2026-05-19T00:00:00Z",
+  "schema_version": "opposition_v1.1_tiered",
+  "last_updated_utc": "2026-05-22T18:33:20Z",
+  "tier_definitions": {
+    "0": "Precon-equivalent / baseline. Lowest power band within the bracket.",
+    "1": "Mid-tier / community-standard. Median EDHREC composition within the bracket.",
+    "2": "High-tier / cEDH / optimized. Top-ranked EDHREC compositions; for B5 these are cEDH builds."
+  },
   "entries": [
     {
       "corpus_id": "edhrec_heliod_the_radiant_dawn_b1_edhrec_heliod_the_radiant_dawn_exhibition_rank2_20260518T033807_5",
       "commander": "Heliod, the Radiant Dawn",
       "bracket": "B1",
       "archetype_hint": "Pillow Fort / Enchantress / Control / Group Hug",
-      "role_tag": "B1-baseline-pillow-fort"
+      "role_tag": "B1-baseline-pillow-fort",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_jaheira_friend_of_the_forest_/_b1_edhrec_jaheira_friend_of_the_forest_inspiring_leader_exhibition_rank1_20260518T143028_2",
       "commander": "Jaheira, Friend of the Forest // Inspiring Leader",
       "bracket": "B1",
       "archetype_hint": "Tokens",
-      "role_tag": "B1-baseline-tokens"
+      "role_tag": "B1-baseline-tokens",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_y'shtola_night's_blessed_b1_edhrec_yshtola_exhibition_rank3_20260517T152242_2",
       "commander": "Y'shtola, Night's Blessed",
       "bracket": "B1",
       "archetype_hint": "Artifact Midrange",
-      "role_tag": "B1-baseline-midrange"
+      "role_tag": "B1-baseline-midrange",
+      "opposition_tier": 1
     },
-
     {
       "corpus_id": "edhrec_the_ur-dragon_b2_edhrec_precon_draconic_domination_20260517T185258_0",
       "commander": "The Ur-Dragon",
       "bracket": "B2",
       "archetype_hint": "Precon (Draconic Domination)",
-      "role_tag": "B2-precon-draconic-domination"
+      "role_tag": "B2-precon-draconic-domination",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_atraxa_praetors'_voice_b2_edhrec_precon_breed_lethality_20260517T192054_0",
       "commander": "Atraxa, Praetors' Voice",
       "bracket": "B2",
       "archetype_hint": "Precon (Breed Lethality)",
-      "role_tag": "B2-precon-breed-lethality"
+      "role_tag": "B2-precon-breed-lethality",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_kaalia_of_the_vast_b2_edhrec_precon_heavenly-inferno_20260517T212934_0",
       "commander": "Kaalia of the Vast",
       "bracket": "B2",
       "archetype_hint": "Precon (Heavenly Inferno)",
-      "role_tag": "B2-precon-heavenly-inferno"
+      "role_tag": "B2-precon-heavenly-inferno",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_lathril_blade_of_the_elves_b2_edhrec_precon_elven-empire_20260517T213330_0",
       "commander": "Lathril, Blade of the Elves",
       "bracket": "B2",
       "archetype_hint": "Precon (Elven Empire)",
-      "role_tag": "B2-precon-elven-empire"
+      "role_tag": "B2-precon-elven-empire",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_the_wise_mothman_b2_edhrec_precon_mutant-menace_20260517T213737_0",
       "commander": "The Wise Mothman",
       "bracket": "B2",
       "archetype_hint": "Precon (Mutant Menace)",
-      "role_tag": "B2-precon-mutant-menace"
+      "role_tag": "B2-precon-mutant-menace",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_ms._bumbleflower_b2_edhrec_precon_peace_offering_20260517T195149_0",
       "commander": "Ms. Bumbleflower",
       "bracket": "B2",
       "archetype_hint": "Precon (Peace Offering)",
-      "role_tag": "B2-precon-peace-offering"
+      "role_tag": "B2-precon-peace-offering",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_y'shtola_night's_blessed_b2_edhrec_precon_scions_spellcraft_20260517T191710_0",
       "commander": "Y'shtola, Night's Blessed",
       "bracket": "B2",
       "archetype_hint": "Precon (Scions & Spellcraft)",
-      "role_tag": "B2-precon-scions-spellcraft"
+      "role_tag": "B2-precon-scions-spellcraft",
+      "opposition_tier": 1
     },
-
     {
       "corpus_id": "edhrec_edgar_markov_b3_edhrec_edgar_upgraded_rank1_20260517T183601_6",
       "commander": "Edgar Markov",
       "bracket": "B3",
       "archetype_hint": "Vampire Tribal / Lifedrain",
-      "role_tag": "B3-upgraded-vampire-tribal"
+      "role_tag": "B3-upgraded-vampire-tribal",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_the_necrobloom_b3_edhrec_the_necrobloom_upgraded_rank2_20260518T000314_9",
       "commander": "The Necrobloom",
       "bracket": "B3",
       "archetype_hint": "Aristocrats / Lands Matter / Dredge / Tokens / Combo",
-      "role_tag": "B3-upgraded-aristocrats-combo"
+      "role_tag": "B3-upgraded-aristocrats-combo",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_heliod_the_radiant_dawn_b3_edhrec_heliod_the_radiant_dawn_upgraded_rank1_20260518T033807_8",
       "commander": "Heliod, the Radiant Dawn",
       "bracket": "B3",
       "archetype_hint": "Pillow Fort / Flash / Group Hug / Card Draw",
-      "role_tag": "B3-upgraded-pillow-fort"
+      "role_tag": "B3-upgraded-pillow-fort",
+      "opposition_tier": 1
     },
-
     {
       "corpus_id": "edhrec_muldrotha_the_gravetide_b4_edhrec_muldrotha_the_gravetide_upgraded_rank1_20260518T000808_9",
       "commander": "Muldrotha, the Gravetide",
       "bracket": "B4",
       "archetype_hint": "Mill / Combo / Control",
-      "role_tag": "B4-optimized-graveyard-combo"
+      "role_tag": "B4-optimized-graveyard-combo",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_sauron_the_dark_lord_b4_edhrec_sauron_optimized_rank1_20260517T201526_11",
       "commander": "Sauron, the Dark Lord",
       "bracket": "B4",
       "archetype_hint": "Grixis Optimized / Stax",
-      "role_tag": "B4-optimized-stax"
+      "role_tag": "B4-optimized-stax",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_the_ur-dragon_b4_edhrec_urdragon_optimized_rank3_20260517T185258_13",
       "commander": "The Ur-Dragon",
       "bracket": "B4",
       "archetype_hint": "Dragon Tribal / Goodstuff / cEDH-adjacent",
-      "role_tag": "B4-optimized-tribal-goodstuff"
+      "role_tag": "B4-optimized-tribal-goodstuff",
+      "opposition_tier": 1
     },
-
     {
       "corpus_id": "edhrec_ezio_auditore_da_firenze_b5_edhrec_ezio_auditore_da_firenze_cedh_rank1_20260518T003102_13",
       "commander": "Ezio Auditore da Firenze",
       "bracket": "B5",
       "archetype_hint": "Combo / cEDH",
-      "role_tag": "B5-cedh-combo"
+      "role_tag": "B5-cedh-combo",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_yuriko_the_tiger's_shadow_b5_edhrec_yuriko_the_tigers_shadow_cedh_rank1_20260517T232550_12",
       "commander": "Yuriko, the Tiger's Shadow",
       "bracket": "B5",
       "archetype_hint": "Tempo / Aggro",
-      "role_tag": "B5-cedh-tempo"
+      "role_tag": "B5-cedh-tempo",
+      "opposition_tier": 1
     },
     {
       "corpus_id": "edhrec_toxrill_the_corrosive_b5_edhrec_toxrill_the_corrosive_cedh_rank1_20260518T024402_12",
       "commander": "Toxrill, the Corrosive",
       "bracket": "B5",
       "archetype_hint": "Control",
-      "role_tag": "B5-cedh-control-stax"
+      "role_tag": "B5-cedh-control-stax",
+      "opposition_tier": 1
+    },
+    {
+      "corpus_id": "user_bootstrap_expans_krenko_midpower_b2",
+      "commander": "Krenko, Mob Boss",
+      "bracket": "B2",
+      "archetype_hint": "Goblin Tribal Aggro (mid-power)",
+      "role_tag": "B2-tier0-krenko-mob-boss-goblin-tribal-aggro-",
+      "opposition_tier": 0
+    },
+    {
+      "corpus_id": "edhrec_y'shtola_night's_blessed_b2_edhrec_average_yshtola_b2_20260517T191710_2",
+      "commander": "Y'shtola, Night's Blessed",
+      "bracket": "B2",
+      "archetype_hint": "Average B2 Deck (n=1488)",
+      "role_tag": "B2-tier0-y-shtola-night-s-ble-average-b2-deck-n-14",
+      "opposition_tier": 0
+    },
+    {
+      "corpus_id": "edhrec_ms._bumbleflower_b2_edhrec_average_bumbleflower_b2_20260517T195149_2",
+      "commander": "Ms. Bumbleflower",
+      "bracket": "B2",
+      "archetype_hint": "Average B2 Deck (n=3078)",
+      "role_tag": "B2-tier0-ms-bumbleflower-average-b2-deck-n-30",
+      "opposition_tier": 0
+    },
+    {
+      "corpus_id": "edhrec_y'shtola_night's_blessed_b2_edhrec_yshtola_core_rank3_20260517T152242_5",
+      "commander": "Y'shtola, Night's Blessed",
+      "bracket": "B2",
+      "archetype_hint": "FFXIV Tribal / Midrange",
+      "role_tag": "B2-tier1-y-shtola-night-s-ble-ffxiv-tribal",
+      "opposition_tier": 1
+    },
+    {
+      "corpus_id": "edhrec_the_ur-dragon_b2_edhrec_urdragon_core_rank3_20260517T185258_7",
+      "commander": "The Ur-Dragon",
+      "bracket": "B2",
+      "archetype_hint": "Dragon Tribal Budget",
+      "role_tag": "B2-tier1-the-ur-dragon-dragon-tribal-budget",
+      "opposition_tier": 1
+    },
+    {
+      "corpus_id": "edhrec_nekusar_the_mindrazer_b2_edhrec_precon_mind-seize_20260517T233301_0",
+      "commander": "Nekusar, the Mindrazer",
+      "bracket": "B2",
+      "archetype_hint": "Precon (Mind Seize)",
+      "role_tag": "B2-tier1-nekusar-the-mindraze-precon-mind-seize",
+      "opposition_tier": 1
+    },
+    {
+      "corpus_id": "edhrec_y'shtola_night's_blessed_b2_edhrec_yshtola_core_rank1_20260517T152242_3",
+      "commander": "Y'shtola, Night's Blessed",
+      "bracket": "B2",
+      "archetype_hint": "Control / Pillow Fort",
+      "role_tag": "B2-tier2-y-shtola-night-s-ble-control",
+      "opposition_tier": 2
+    },
+    {
+      "corpus_id": "edhrec_the_ur-dragon_b2_edhrec_urdragon_exhibition_rank1_20260517T185258_2",
+      "commander": "The Ur-Dragon",
+      "bracket": "B2",
+      "archetype_hint": "Lizard Tribal (Maskwood Nexus shell)",
+      "role_tag": "B2-tier2-the-ur-dragon-lizard-tribal-maskwo",
+      "opposition_tier": 2
+    },
+    {
+      "corpus_id": "edhrec_atraxa_praetors'_voice_b2_edhrec_atraxa_core_rank1_20260517T192054_8",
+      "commander": "Atraxa, Praetors' Voice",
+      "bracket": "B2",
+      "archetype_hint": "Counters Matter / Proliferate / +1/+1 Counters / Counters",
+      "role_tag": "B2-tier2-atraxa-praetors-voic-counters-matter",
+      "opposition_tier": 2
+    },
+    {
+      "corpus_id": "bootstrap_krenko_mob_boss_b3",
+      "commander": "Krenko, Mob Boss",
+      "bracket": "B3",
+      "archetype_hint": "Goblin Tribal Aggro",
+      "role_tag": "B3-tier0-krenko-mob-boss-goblin-tribal-aggro",
+      "opposition_tier": 0
+    },
+    {
+      "corpus_id": "bootstrap_atraxa_superfriends_b3",
+      "commander": "Atraxa, Praetors' Voice",
+      "bracket": "B3",
+      "archetype_hint": "Superfriends / Proliferate Counters",
+      "role_tag": "B3-tier0-atraxa-praetors-voic-superfriends",
+      "opposition_tier": 0
+    },
+    {
+      "corpus_id": "bootstrap_edgar_markov_b3",
+      "commander": "Edgar Markov",
+      "bracket": "B3",
+      "archetype_hint": "Vampire Tribal",
+      "role_tag": "B3-tier0-edgar-markov-vampire-tribal",
+      "opposition_tier": 0
+    },
+    {
+      "corpus_id": "edhrec_y'shtola_night's_blessed_b3_edhrec_yshtola_upgraded_rank3_20260517T152242_8",
+      "commander": "Y'shtola, Night's Blessed",
+      "bracket": "B3",
+      "archetype_hint": "Artifact Combo",
+      "role_tag": "B3-tier1-y-shtola-night-s-ble-artifact-combo",
+      "opposition_tier": 1
+    },
+    {
+      "corpus_id": "edhrec_edgar_markov_b3_edhrec_edgar_upgraded_rank3_20260517T183601_8",
+      "commander": "Edgar Markov",
+      "bracket": "B3",
+      "archetype_hint": "Vampire Tribal Aggro",
+      "role_tag": "B3-tier1-edgar-markov-vampire-tribal-aggro",
+      "opposition_tier": 1
+    },
+    {
+      "corpus_id": "edhrec_the_ur-dragon_b3_edhrec_urdragon_upgraded_rank3_20260517T185258_10",
+      "commander": "The Ur-Dragon",
+      "bracket": "B3",
+      "archetype_hint": "Dragon Tribal / Midrange",
+      "role_tag": "B3-tier1-the-ur-dragon-dragon-tribal",
+      "opposition_tier": 1
+    },
+    {
+      "corpus_id": "edhrec_y'shtola_night's_blessed_b3_edhrec_yshtola_upgraded_rank1_20260517T152242_6",
+      "commander": "Y'shtola, Night's Blessed",
+      "bracket": "B3",
+      "archetype_hint": "Control / Lifegain",
+      "role_tag": "B3-tier2-y-shtola-night-s-ble-control",
+      "opposition_tier": 2
+    },
+    {
+      "corpus_id": "edhrec_edgar_markov_b3_edhrec_edgar_core_rank1_20260517T183601_3",
+      "commander": "Edgar Markov",
+      "bracket": "B3",
+      "archetype_hint": "Vampire Tribal / Enchantments",
+      "role_tag": "B3-tier2-edgar-markov-vampire-tribal",
+      "opposition_tier": 2
+    },
+    {
+      "corpus_id": "edhrec_the_ur-dragon_b3_edhrec_urdragon_core_rank2_20260517T185258_6",
+      "commander": "The Ur-Dragon",
+      "bracket": "B3",
+      "archetype_hint": "Dragon Tribal / Big Mana",
+      "role_tag": "B3-tier2-the-ur-dragon-dragon-tribal",
+      "opposition_tier": 2
+    },
+    {
+      "corpus_id": "bootstrap_najeela_combat_b4",
+      "commander": "Najeela, the Blade-Blossom",
+      "bracket": "B4",
+      "archetype_hint": "Najeela Combat Combo",
+      "role_tag": "B4-tier0-najeela-the-blade-bl-najeela-combat-combo",
+      "opposition_tier": 0
+    },
+    {
+      "corpus_id": "user_bootstrap_expans_krenko_combo_b4",
+      "commander": "Krenko, Mob Boss",
+      "bracket": "B4",
+      "archetype_hint": "Goblin Combo (Kiki-Jiki / Conspicuous Snoop line)",
+      "role_tag": "B4-tier0-krenko-mob-boss-goblin-combo-kiki-ji",
+      "opposition_tier": 0
+    },
+    {
+      "corpus_id": "edhrec_the_ur-dragon_b4_edhrec_average_the_ur_dragon_20260517T185258_1",
+      "commander": "The Ur-Dragon",
+      "bracket": "B4",
+      "archetype_hint": "Average Deck (n=46975)",
+      "role_tag": "B4-tier0-the-ur-dragon-average-deck-n-46975",
+      "opposition_tier": 0
+    },
+    {
+      "corpus_id": "edhrec_y'shtola_night's_blessed_b4_edhrec_yshtola_optimized_rank3_20260517T152242_11",
+      "commander": "Y'shtola, Night's Blessed",
+      "bracket": "B4",
+      "archetype_hint": "Pillow Fort / Spellslinger / Control / Burn / Lifedrain",
+      "role_tag": "B4-tier1-y-shtola-night-s-ble-pillow-fort",
+      "opposition_tier": 1
+    },
+    {
+      "corpus_id": "edhrec_edgar_markov_b4_edhrec_edgar_core_rank3_20260517T183601_5",
+      "commander": "Edgar Markov",
+      "bracket": "B4",
+      "archetype_hint": "Aggro / Kindred / Mardu (RWB)",
+      "role_tag": "B4-tier1-edgar-markov-aggro",
+      "opposition_tier": 1
+    },
+    {
+      "corpus_id": "edhrec_y'shtola_night's_blessed_b4_edhrec_yshtola_optimized_rank1_20260517T152242_9",
+      "commander": "Y'shtola, Night's Blessed",
+      "bracket": "B4",
+      "archetype_hint": "Enchantress",
+      "role_tag": "B4-tier2-y-shtola-night-s-ble-enchantress",
+      "opposition_tier": 2
+    },
+    {
+      "corpus_id": "edhrec_edgar_markov_b4_edhrec_edgar_optimized_rank1_20260517T183601_9",
+      "commander": "Edgar Markov",
+      "bracket": "B4",
+      "archetype_hint": "Primer / Vampire Tribal Optimized",
+      "role_tag": "B4-tier2-edgar-markov-primer",
+      "opposition_tier": 2
+    },
+    {
+      "corpus_id": "edhrec_the_ur-dragon_b4_edhrec_urdragon_upgraded_rank1_20260517T185258_8",
+      "commander": "The Ur-Dragon",
+      "bracket": "B4",
+      "archetype_hint": "Five Color (WUBRG) / Flying / Tokens",
+      "role_tag": "B4-tier2-the-ur-dragon-five-color-wubrg",
+      "opposition_tier": 2
+    },
+    {
+      "corpus_id": "bootstrap_kinnan_basal_b5",
+      "commander": "Kinnan, Bonder Prodigy",
+      "bracket": "B5",
+      "archetype_hint": "Kinnan Stax / Combo",
+      "role_tag": "B5-tier0-kinnan-bonder-prodig-kinnan-stax",
+      "opposition_tier": 0
+    },
+    {
+      "corpus_id": "edhrec_y'shtola_night's_blessed_b5_edhrec_average_yshtola_b5_20260517T191710_5",
+      "commander": "Y'shtola, Night's Blessed",
+      "bracket": "B5",
+      "archetype_hint": "Average B5 Deck (n=767)",
+      "role_tag": "B5-tier0-y-shtola-night-s-ble-average-b5-deck-n-76",
+      "opposition_tier": 0
+    },
+    {
+      "corpus_id": "edhrec_edgar_markov_b5_edhrec_average_edgar_b5_20260517T191710_11",
+      "commander": "Edgar Markov",
+      "bracket": "B5",
+      "archetype_hint": "Average B5 Deck (n=162)",
+      "role_tag": "B5-tier0-edgar-markov-average-b5-deck-n-16",
+      "opposition_tier": 0
+    },
+    {
+      "corpus_id": "edhrec_y'shtola_night's_blessed_b5_edhrec_yshtola_cedh_rank3_20260517T152242_14",
+      "commander": "Y'shtola, Night's Blessed",
+      "bracket": "B5",
+      "archetype_hint": "Spellslinger / cEDH",
+      "role_tag": "B5-tier1-y-shtola-night-s-ble-spellslinger",
+      "opposition_tier": 1
+    },
+    {
+      "corpus_id": "edhrec_edgar_markov_b5_edhrec_edgar_cedh_rank3_20260517T183601_14",
+      "commander": "Edgar Markov",
+      "bracket": "B5",
+      "archetype_hint": "cEDH / Combo / Competitive / Goodstuff / Mardu (RWB) / Storm / Turbo",
+      "role_tag": "B5-tier1-edgar-markov-cedh",
+      "opposition_tier": 1
+    },
+    {
+      "corpus_id": "edhrec_the_ur-dragon_b5_edhrec_urdragon_cedh_rank3_20260517T185258_16",
+      "commander": "The Ur-Dragon",
+      "bracket": "B5",
+      "archetype_hint": "Combo / cEDH",
+      "role_tag": "B5-tier1-the-ur-dragon-combo",
+      "opposition_tier": 1
+    },
+    {
+      "corpus_id": "edhrec_y'shtola_night's_blessed_b5_edhrec_yshtola_cedh_rank1_20260517T152242_12",
+      "commander": "Y'shtola, Night's Blessed",
+      "bracket": "B5",
+      "archetype_hint": "cEDH / Esper (WUB)",
+      "role_tag": "B5-tier2-y-shtola-night-s-ble-cedh",
+      "opposition_tier": 2
+    },
+    {
+      "corpus_id": "edhrec_edgar_markov_b5_edhrec_edgar_cedh_rank1_20260517T183601_12",
+      "commander": "Edgar Markov",
+      "bracket": "B5",
+      "archetype_hint": "cEDH / Combo / Competitive / Mardu (RWB) / Reanimator",
+      "role_tag": "B5-tier2-edgar-markov-cedh",
+      "opposition_tier": 2
+    },
+    {
+      "corpus_id": "edhrec_the_ur-dragon_b5_edhrec_urdragon_cedh_rank1_20260517T185258_14",
+      "commander": "The Ur-Dragon",
+      "bracket": "B5",
+      "archetype_hint": "cEDH / Dragon Tribal",
+      "role_tag": "B5-tier2-the-ur-dragon-cedh",
+      "opposition_tier": 2
     }
   ]
 }
