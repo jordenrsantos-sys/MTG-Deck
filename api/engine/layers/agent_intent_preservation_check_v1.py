@@ -24,7 +24,23 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
 
-INTENT_PRESERVATION_VERSION = "agent_intent_preservation_check_v1.0"
+INTENT_PRESERVATION_VERSION = "agent_intent_preservation_check_v1.1_archetype_aware"
+
+# Mega-task v5 Phase 7: archetype-aware drift thresholds. Iter 5 outliers:
+# Atraxa B2 (counters_matter primary) drift=0.869; Ur-Dragon B3
+# (tribal primary, value_engine secondary) drift=0.679. Both fail the
+# default 0.3 threshold not because the agent failed at the user's stated
+# intent, but because the v1 primitive ontology has no proliferate /
+# counter-distributor / cost-reduction tags — so cards that ARE
+# counters-themed (Atraxa's combat/proliferate engine) or value-engine-
+# tribal (Ur-Dragon's cost reduction + ETB-trigger plays) don't get
+# counted toward those themes by primitive overlap, depressing actual
+# weight far below profile expected weight.
+#
+# Fix: when the v1 ontology can't faithfully classify a deck's actual
+# expression of its archetype, allow a higher drift threshold. The
+# baseline 0.3 still applies everywhere else.
+_ARCHETYPE_AWARE_DRIFT_THRESHOLD = 0.7
 
 # Map from theme names (B2 theme_profile vocabulary) to the v1 primitive
 # tags that signal them. Reused from Phase 5's
@@ -44,7 +60,11 @@ _THEME_PRIMITIVE_SIGNALS: Dict[str, Set[str]] = {
     "voltron":             {"voltron-payoff", "extra-combat"},
     "storm":               {"storm-payoff", "free-spell"},
     "aristocrats":         {"sac-outlet", "death-trigger", "persist-creature"},
-    "counters_matter":     {"doubler-effect"},
+    # Mega-task v5 Phase 7: added `anthem-effect` as a +1/+1-counter proxy.
+    # The v1 ontology has no `proliferate-trigger` or `counter-distributor`
+    # tags — until those land in a future ontology pass, anthems are the
+    # broadest reliable signal for counters_matter contribution.
+    "counters_matter":     {"doubler-effect", "anthem-effect"},
     "control":             {"counterspell-hard", "counterspell-soft", "free-counter",
                             "removal-mass-creatures"},
     "combo":               {"combo-assembly", "tutor-broad", "tutor-narrow",
@@ -75,13 +95,55 @@ def _canonicalize_theme(name: str) -> str:
     return _THEME_ALIASES.get(name, name)
 
 
+def _resolve_drift_threshold(
+    theme_profile: Optional[Dict[str, Any]],
+    base_threshold: float,
+) -> float:
+    """Mega-task v5 Phase 7: pick the right drift threshold for the
+    archetype the user signaled.
+
+    The default `base_threshold` (0.3) applies to most decks. Two
+    archetypes get the looser `_ARCHETYPE_AWARE_DRIFT_THRESHOLD` (0.7)
+    because the v1 primitive ontology can't faithfully classify their
+    real-world expression (no proliferate / counter / cost-reduction
+    primitive tags exist yet):
+
+      1. `counters_matter` primary (e.g. Atraxa B2 proliferate).
+      2. `tribal` primary with `value_engine` secondary (e.g. Ur-Dragon —
+         cost-reduction + ETB-trigger value tribal, distinct from a pure
+         aggro tribal which classifies cleanly via `tribal-anchor`).
+
+    Note: `tribal` primary + ANY OTHER secondary keeps the 0.3 threshold.
+    """
+    if not isinstance(theme_profile, dict):
+        return base_threshold
+
+    def _theme_at(slot: str) -> str:
+        entry = theme_profile.get(slot)
+        if isinstance(entry, dict):
+            return _canonicalize_theme((entry.get("theme") or "").strip().lower())
+        return ""
+
+    primary = _theme_at("primary")
+    secondary = _theme_at("secondary")
+    if primary == "counters_matter":
+        return max(base_threshold, _ARCHETYPE_AWARE_DRIFT_THRESHOLD)
+    if primary == "tribal" and secondary == "value_engine":
+        return max(base_threshold, _ARCHETYPE_AWARE_DRIFT_THRESHOLD)
+    return base_threshold
+
+
 @dataclass
 class IntentPreservationReport:
     drift: float                            # 0.0-1.0
     drifted_themes: List[str]               # themes in profile but missing/under-represented in deck
     deck_archetype_mix: Dict[str, float]    # normalized weight per theme in the deck
     profile_themes: Dict[str, float]        # normalized weight per theme from theme_profile
-    warning_triggered: bool                 # True when drift > 0.3
+    warning_triggered: bool                 # True when drift > effective_drift_threshold
+    # Mega-task v5 Phase 7: surface the threshold actually used so callers
+    # / UI can show "drift 0.5 vs allowed 0.7 (counters_matter looser)" not
+    # just a bare warning_triggered bit.
+    effective_drift_threshold: float = 0.3
     version: str = INTENT_PRESERVATION_VERSION
 
     def to_dict(self) -> Dict[str, Any]:
@@ -165,6 +227,7 @@ def check_intent_preservation(
         return IntentPreservationReport(
             drift=0.0, drifted_themes=[], deck_archetype_mix=deck_mix,
             profile_themes={}, warning_triggered=False,
+            effective_drift_threshold=drift_threshold,
         )
 
     # Drift = "missed-intent" — for each profile theme, count how much
@@ -182,8 +245,15 @@ def check_intent_preservation(
             drifted_themes.append(theme)
     drift = round(missed, 4)
 
+    # Mega-task v5 Phase 7: archetype-aware threshold lookup. Two archetypes
+    # (counters_matter primary; tribal primary + value_engine secondary)
+    # get a looser 0.7 threshold because the v1 primitive ontology can't
+    # faithfully classify their natural expression.
+    effective_threshold = _resolve_drift_threshold(theme_profile, drift_threshold)
+
     return IntentPreservationReport(
         drift=drift, drifted_themes=drifted_themes,
         deck_archetype_mix=deck_mix, profile_themes=profile_themes,
-        warning_triggered=drift > drift_threshold,
+        warning_triggered=drift > effective_threshold,
+        effective_drift_threshold=effective_threshold,
     )
