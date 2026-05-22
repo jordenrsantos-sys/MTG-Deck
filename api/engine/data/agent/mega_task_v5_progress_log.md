@@ -332,4 +332,63 @@ Report written to `api/engine/data/agent/mega_task_v5_phase5_live_smoke_report.j
 
 `709a16bab` — "Phase 5 (mega-task v5): UX bundle live validation + venv recovery + corpus disk cache". 9 files changed, 852 insertions, 1,313,898 deletions (the deletions are entirely the orphan corpus tmp file cleanup).
 
+Progress-log SHA fixup: `140d05af2`.
+
 ---
+
+## Phase 6 — Voyage color-filter regression check (BLOCKING)
+
+**Started**: 2026-05-22 (immediately after Phase 5 commit)
+
+### Scope collapse
+
+The kickoff Phase 6 spec opens with: "iter 5's voyage_semantic_avg = 1.8 vs target ≥ 3. Krenko mono-R = 0 picks, Yuriko UB = 0 picks suggest filter excludes too aggressively." It then lists three likely color-filter bugs to inspect and fix in `agent_semantic_retrieval_v1.py::query_neighbors`.
+
+Phase 5's venv recovery already established that the iter 5 numbers were caused by a venv-dep gap (numpy + voyageai missing on the upgraded Python 3.14 venv), not a code bug. Direct verification on the restored Python 3.10 venv showed Krenko + Yuriko both produce 5+ neighbors with high similarity (0.76-0.84) under their natural color filters.
+
+Phase 6 therefore collapses to a regression check: lock the color-filter contract with unit tests so the bug can't recur, and run a 5-case live smoke confirming the iter 5 outliers are gone.
+
+### Unit tests (`test_agent_iter6_phase_6_color_filter_edge_cases.py`)
+
+New file with 9 tests pinning the `query_neighbors(color_identity_filter=...)` behavior for every real-commander shape:
+
+- `test_no_filter_returns_every_card` — None filter doesn't filter
+- `test_empty_list_filter_treated_as_no_filter` — `[]` is treated as no filter (matches the call site's `sorted(color_identity)` shape for a colorless commander)
+- `test_mono_R_filter_krenko_shape` — colorless + mono-R pass, every other color drops
+- `test_two_color_UB_filter_yuriko_shape` — colorless + U + B + UB hybrid pass; off-color drops. This is *the* case that scored 0 picks pre-recovery.
+- `test_three_color_BRW_filter_edgar_shape` — every subset of BRW passes; U/G/4-color/5-color drop
+- `test_four_color_WUBG_filter_atraxa_shape` — every subset of WUBG passes; anything touching R drops
+- `test_five_color_WUBRG_filter_ur_dragon_shape` — everything passes
+- `test_filter_is_case_insensitive_on_filter_side` — lowercase filter still matches uppercase stored identities
+- `test_colorless_cards_pass_under_every_filter_shape` — sanity loop across 9 different filter shapes
+
+The fixture builds an 11-card index (1 card per color shape) at orthogonal vectors so the filter membership test (not raw cosine) determines what survives. All 9 tests pass against the production `query_neighbors` implementation, confirming the existing code is correct.
+
+### Live smoke (`tools/mega_task_v5_phase6_query_smoke.py`)
+
+Drives `query_neighbors` directly against the live 30K-card Voyage index for all 5 iter-5 baseline commanders. Asserts each returns ≥3 neighbors honoring the color filter (no leaks). Results captured at `api/engine/data/agent/mega_task_v5_phase6_query_smoke_report.json`:
+
+| Commander                          | Filter           | Neighbors | Top sim | Status |
+|-----------------------------------|------------------|-----------|---------|--------|
+| Edgar Markov                       | BRW              | 20        | 0.727   | PASS   |
+| Krenko, Mob Boss                   | R                | 19        | 0.836   | PASS   |
+| Atraxa, Praetors' Voice            | BGUW             | 18        | 0.734   | PASS   |
+| Yuriko, the Tiger's Shadow         | BU               | 19        | 0.789   | PASS   |
+| The Ur-Dragon                      | BGRUW            | 20        | 0.815   | PASS   |
+
+All 5 cases pass with zero color leaks. Krenko returned `Krenko, Tin Street Kingpin / Goblin Gang Leader / Krenko's Command / Krenko, Baron of Tin Street / Searslicer Goblin` as its top-5 neighbors (high relevance). Yuriko returned `Moonsnare Specialist / Mistblade Shinobi / Walker of Secret Ways / Ninja of the New Moon / Higure, the Still Wind` (ninja-tribal, all U-or-B). The iter 5 outliers are fully resolved.
+
+Edgar's first query was 1545ms (cold-loads the 30395-row × 1024-dim Voyage matrix into RAM, ~120 MB); subsequent queries were all under 3ms. The matrix cache lives in `_CACHE["matrix"]` and is process-local, not disk-persistent — but the load is one-time per process and fast.
+
+### Code changes for Phase 6
+
+Zero production code changes. The kickoff-suggested fixes in `agent_semantic_retrieval_v1.py:253-261` were never necessary. Only added tests + the smoke tool + the smoke report + this progress log entry.
+
+### Regression baselines after Phase 6
+
+- **pytest**: 1409 passed (Phase 5 was 1400; +9 are the new color-filter edge-case tests). 8 pre-existing failures unchanged. 17 skipped. 58 subtests passed. 139s.
+- **vitest**: 758 unchanged (no UI changes this phase).
+
+### Phase 6 commit
+
+`<pending>`

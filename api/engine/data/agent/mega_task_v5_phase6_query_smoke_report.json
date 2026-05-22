@@ -1,0 +1,237 @@
+{
+  "k": 20,
+  "min_neighbors_required": 3,
+  "started_at": "2026-05-22 13:53:19",
+  "cases": [
+    {
+      "commander": "Edgar Markov",
+      "filter": [
+        "B",
+        "R",
+        "W"
+      ],
+      "neighbor_count": 20,
+      "query_ms": 1545.15,
+      "color_leaks": [],
+      "ok": true,
+      "top5_names": [
+        "Markov Enforcer",
+        "Markov Dreadknight",
+        "Markov Blademaster",
+        "Markov Waltzer",
+        "Voracious Vampire"
+      ],
+      "top5_color_identities": [
+        [
+          "R"
+        ],
+        [
+          "B"
+        ],
+        [
+          "R"
+        ],
+        [
+          "R",
+          "W"
+        ],
+        [
+          "B"
+        ]
+      ],
+      "top5_similarities": [
+        0.7274,
+        0.7267,
+        0.7133,
+        0.7073,
+        0.7034
+      ]
+    },
+    {
+      "commander": "Krenko, Mob Boss",
+      "filter": [
+        "R"
+      ],
+      "neighbor_count": 19,
+      "query_ms": 1.92,
+      "color_leaks": [],
+      "ok": true,
+      "top5_names": [
+        "Krenko, Tin Street Kingpin",
+        "Goblin Gang Leader",
+        "Krenko's Command",
+        "Krenko, Baron of Tin Street",
+        "Searslicer Goblin"
+      ],
+      "top5_color_identities": [
+        [
+          "R"
+        ],
+        [
+          "R"
+        ],
+        [
+          "R"
+        ],
+        [
+          "R"
+        ],
+        [
+          "R"
+        ]
+      ],
+      "top5_similarities": [
+        0.8361,
+        0.8196,
+        0.8122,
+        0.7979,
+        0.7944
+      ]
+    },
+    {
+      "commander": "Atraxa, Praetors' Voice",
+      "filter": [
+        "B",
+        "G",
+        "U",
+        "W"
+      ],
+      "neighbor_count": 18,
+      "query_ms": 1.85,
+      "color_leaks": [],
+      "ok": true,
+      "top5_names": [
+        "Ixhel, Scion of Atraxa",
+        "Atraxa, Grand Unifier",
+        "Norn's Choirmaster",
+        "Vorinclex, Monstrous Raider",
+        "Vorinclex, Voice of Hunger"
+      ],
+      "top5_color_identities": [
+        [
+          "B",
+          "G",
+          "W"
+        ],
+        [
+          "B",
+          "G",
+          "U",
+          "W"
+        ],
+        [
+          "W"
+        ],
+        [
+          "G"
+        ],
+        [
+          "G"
+        ]
+      ],
+      "top5_similarities": [
+        0.7336,
+        0.732,
+        0.7301,
+        0.7298,
+        0.7144
+      ]
+    },
+    {
+      "commander": "Yuriko, the Tiger's Shadow",
+      "filter": [
+        "B",
+        "U"
+      ],
+      "neighbor_count": 19,
+      "query_ms": 1.84,
+      "color_leaks": [],
+      "ok": true,
+      "top5_names": [
+        "Moonsnare Specialist",
+        "Mistblade Shinobi",
+        "Walker of Secret Ways",
+        "Ninja of the New Moon",
+        "Higure, the Still Wind"
+      ],
+      "top5_color_identities": [
+        [
+          "U"
+        ],
+        [
+          "U"
+        ],
+        [
+          "U"
+        ],
+        [
+          "B"
+        ],
+        [
+          "U"
+        ]
+      ],
+      "top5_similarities": [
+        0.7893,
+        0.7786,
+        0.7649,
+        0.7629,
+        0.7611
+      ]
+    },
+    {
+      "commander": "The Ur-Dragon",
+      "filter": [
+        "B",
+        "G",
+        "R",
+        "U",
+        "W"
+      ],
+      "neighbor_count": 20,
+      "query_ms": 2.45,
+      "color_leaks": [],
+      "ok": true,
+      "top5_names": [
+        "Scion of the Ur-Dragon",
+        "Spellbound Dragon",
+        "Ancestor Dragon",
+        "Firkraag, Cunning Instigator",
+        "Atarka, World Render"
+      ],
+      "top5_color_identities": [
+        [
+          "B",
+          "G",
+          "R",
+          "U",
+          "W"
+        ],
+        [
+          "R",
+          "U"
+        ],
+        [
+          "W"
+        ],
+        [
+          "R",
+          "U"
+        ],
+        [
+          "G",
+          "R"
+        ]
+      ],
+      "top5_similarities": [
+        0.8148,
+        0.7675,
+        0.7626,
+        0.7515,
+        0.7505
+      ]
+    }
+  ],
+  "overall_ok": true,
+  "failed_commanders": []
+}
