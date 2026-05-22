@@ -569,4 +569,4 @@ Inserted between `card_advantage` and `structural_safety_net` in `compute_agent_
 
 ### Phase 9 commit
 
-`<pending>`
+`5bd97577e` — "Phase 9 (mega-task v5): Pillar E v0.3 curve smoother analysis". 5 files changed, 578 insertions, 0 deletions.
