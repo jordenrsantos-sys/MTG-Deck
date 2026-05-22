@@ -897,4 +897,12 @@ Per the kickoff:
 
 ### Phase 14 commit
 
-`<pending>`
+`ef77f6278` — "Phase 14 (mega-task v5): final regression + report + memory update". 2 files changed, 158 insertions, 0 deletions.
+
+---
+
+## Mega-task v5 SHIPPED 2026-05-22
+
+17 atomic phase commits + 7 progress-log SHA fixups + 1 Phase 13 amendment + this final commit = 26 commits total on top of mega-task v4 (`e97589870`). pytest 1489 / vitest 758. Spend ~$5 of $100 ceiling.
+
+The 3 unmet iter 6 success criteria become iter 7 priorities #1-#3 ([[project_iter_7_prep_notes_2026-05-22]] in cowork memory). Coherence Sweep #3 dispatches before iter 7 per [[project_iter_6_prep_notes_2026-05-21]] commitment.
