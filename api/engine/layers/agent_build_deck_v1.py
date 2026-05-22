@@ -674,6 +674,56 @@ def compute_agent_build_deck_v1(
         t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
     )
 
+    # ---- Mega-task v5 Phase 10: Pillar E v0.4 interaction designer ----
+    # Computes target counts per interaction category for the commander's
+    # bracket + color identity, and counts how the deck currently meets
+    # those targets. Pure analysis — does NOT mutate the deck.
+    _emit_progress(
+        progress_callback, phase="interaction_designer", status="started",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
+    interaction_designer_block: Dict[str, Any] = {
+        "active": False,
+        "analysis": None,
+    }
+    try:
+        from api.engine.layers.interaction_designer_v1 import (
+            compute_interaction_targets as _compute_interaction,
+        )
+        archetype_hint = None
+        for c in llm_metrics.get("calls") or []:
+            if c.get("phase") == "C2_2_wild_combo_discovery":
+                archetype_hint = c.get("archetype")
+                break
+        interaction = _compute_interaction(
+            commander_color_identity=list(pool.get("color_identity") or []),
+            bracket=bracket,
+            archetype_hint=archetype_hint,
+            deck=deck,
+            pool=pool,
+        )
+        interaction_designer_block["active"] = True
+        interaction_designer_block["analysis"] = interaction.to_dict()
+        if interaction.significant:
+            warnings.append({
+                "code": "INTERACTION_DISCREPANCY",
+                "message": (
+                    f"Interaction designer flagged {len(interaction.discrepancies)} "
+                    f"discrepancies against bracket {bracket} / "
+                    f"{interaction.color_identity} targets. "
+                    f"First discrepancy: {interaction.discrepancies[0]}"
+                ),
+            })
+    except Exception as exc:
+        warnings.append({
+            "code": "INTERACTION_DESIGNER_FAILED",
+            "message": f"{exc.__class__.__name__}: {exc}",
+        })
+    _emit_progress(
+        progress_callback, phase="interaction_designer", status="completed",
+        t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
+    )
+
     # ---- Iter 5 mega-task v4 Phase 13 retro: structural safety net ----
     # Defensive guarantee that iter1 invariants hold by the time the
     # response is composed. User must-includes MUST be present + deck
@@ -795,6 +845,11 @@ def compute_agent_build_deck_v1(
         # above archetype CMC ceiling), holes (CMC slots under target).
         # Pure analysis, no deck mutation.
         "pillar_e_v0_3_curve_check": curve_smoother_block,
+        # Mega-task v5 Phase 10 (Pillar E v0.4): interaction designer —
+        # per-category interaction targets (counterspells, removal,
+        # mass-removal, graveyard-interaction) for the commander's
+        # bracket + color identity, plus actual counts and discrepancies.
+        "pillar_e_v0_4_interaction_check": interaction_designer_block,
     }
 
     response = {
@@ -862,6 +917,10 @@ def _empty_summary(bracket: str, must_include_cards: List[str]) -> Dict[str, Any
             "llm_critique": None,
         },
         "pillar_e_v0_3_curve_check": {
+            "active": False,
+            "analysis": None,
+        },
+        "pillar_e_v0_4_interaction_check": {
             "active": False,
             "analysis": None,
         },

@@ -570,3 +570,72 @@ Inserted between `card_advantage` and `structural_safety_net` in `compute_agent_
 ### Phase 9 commit
 
 `5bd97577e` — "Phase 9 (mega-task v5): Pillar E v0.3 curve smoother analysis". 5 files changed, 578 insertions, 0 deletions.
+
+Progress-log SHA fixup: `c1a26454f`.
+
+---
+
+## Phase 10 — Pillar E v0.4 interaction designer
+
+**Started**: 2026-05-22 (immediately after Phase 9 commit)
+
+### Module shape
+
+New module `api/engine/layers/interaction_designer_v1.py` follows the Pillar E pattern (same as v0.1, v0.2, v0.3): deterministic analysis, no deck mutation, exposed under `response.summary.pillar_e_v0_4_interaction_check`.
+
+- Public API: `compute_interaction_targets(*, commander_color_identity, bracket, archetype_hint=None, deck=None, pool=None, discrepancy_pct=0.5) -> InteractionTargets`
+- `InteractionTargets` dataclass with `bracket`, `color_identity`, `archetype_hint`, `total_target`, `sorcery_speed_target`, `instant_speed_target`, `mass_removal_target`, `targets_by_category`, `actual_by_category`, `discrepancies`, `significant`, `version`.
+
+### Per-bracket policy
+
+| Bracket | Total | Sorcery-speed | Mass-removal |
+|---------|-------|---------------|--------------|
+| B1, B2  | 9     | 70%           | 2            |
+| B3      | 11    | 50%           | 2            |
+| B4      | 11    | 50%           | 3            |
+| B5      | 13    | 20%           | 1            |
+| default | 10    | 50%           | 2            |
+
+### Color-gating
+
+Counterspells require U in commander color identity. Mass removal is universal (every color has *some* sweeper). Targeted artifact / enchantment / graveyard interaction is gated by color (W primary for wraths, B primary for graveyard, etc.). Off-color cards on a deck are not counted toward their category — a counterspell on a mono-R deck contributes 0 to the counterspells count.
+
+The per-category target allocation uses weighted shares of the remaining budget after mass_removal is carved out: counterspells get a heavier weight when U is in CI, targeted-creature-removal is the workhorse, targeted-artifact/enchantment are smaller shares, graveyard-interaction is a minor share unless specifically built.
+
+### Card classification
+
+Maps the v1 primitive ontology to interaction categories:
+
+- `counterspell-hard`, `counterspell-soft`, `free-counter` → counterspells
+- `removal-creature` → targeted_creature_removal
+- `removal-artifact` → targeted_artifact_removal
+- `removal-enchantment` → targeted_enchantment_removal
+- `removal-mass-creatures`, `removal-mass-board` → mass_removal
+- `bounce`, `tap-down` → soft-removal proxy (counted as targeted_creature_removal)
+- `recursion-exile`, `mill-all` → graveyard_interaction proxy
+
+A card matches the FIRST category for any of its primitives — no double-counting.
+
+### Integration
+
+Inserted between `curve_smoother` and `structural_safety_net` in `compute_agent_build_deck_v1`. New SSE progress phase `interaction_designer` (started + completed). Emits `INTERACTION_DISCREPANCY` warning when significant. Failure-path response also includes the field with `active=False` for schema consistency.
+
+### Tests
+
+`tests/test_interaction_designer_v1.py` — 16 tests across 6 classes:
+
+- `BracketPolicyTest` — totals 9/9/11/11/13 across B1-B5, sorcery split correct, mass removal target correct, unknown bracket falls back to default 10.
+- `ColorGatingTest` — Atraxa (WUBG) gets counterspells > 0 (kickoff ref), Krenko (mono-R) gets 0 counterspells (kickoff ref), targeted-creature-removal is universal, colorless commander uses default targets.
+- `AllocationSumTest` — per-category targets sum within ±1 of total_target across 5 color profiles × 5 brackets (25 combos).
+- `DeckDiscrepancyTest` — no deck = empty actual, below-target deck → "under target" discrepancies, U deck counts counterspells, mono-R deck drops counterspells from count, pool primitives win over deck primitives.
+- `InstantSorcerySplitTest` — instant + sorcery == total across all brackets.
+- `InteractionTargetsToDictTest` — serialization round-trip preserves expected keys.
+
+### Regression baselines after Phase 10
+
+- **pytest**: 1458 passed (Phase 9 was 1442; +16 new Phase 10 tests). 8 pre-existing failures unchanged. 17 skipped. 58 subtests passed.
+- **vitest**: 758 unchanged.
+
+### Phase 10 commit
+
+`<pending>`
