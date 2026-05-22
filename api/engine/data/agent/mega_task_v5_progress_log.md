@@ -773,3 +773,75 @@ Uses `unittest.mock.patch` to inject synthetic `PodWinrateReport` values into `a
 ### Phase 12 commit
 
 `1257567cd` — "Phase 12 (mega-task v5): graduated playtest Stage 1 logic + UI report card". 5 files changed, 599 insertions, 0 deletions.
+
+Progress-log SHA fixup: `983db3c8d`.
+
+---
+
+## Phase 13 — Iter 6 final validation sweep + report (BLOCKING)
+
+**Started**: 2026-05-22 (immediately after Phase 12 commit)
+
+### Sweep
+
+Reused the 5-case test suite from `tools/test_pillar_d_iteration_5.py` exactly (Edgar/Krenko/Atraxa/Yuriko/Ur-Dragon, same theme_hints + must_includes + `skip_strength_check=True` flag for apples-to-apples comparison with iter 5's measurements).
+
+Wrote `tools/test_pillar_d_iteration_6.py` with new iter-6 metric extraction for Phases 8, 9, 10, 12, plus the chrome-devtools-mcp-substitute ui_equivalent_build_path criterion (each case's build completes OK + emits a 100-card deck within 240s).
+
+Ran the sweep: ~10 minutes wall, $1.55 API spend.
+
+### Per-case results
+
+| Case                       | iter1 | wall (s) | cost ($) | creativity | novel | semantic | drift | C2.1 (ms) | E v0.3 | E v0.4 ok | GP |
+|---------------------------|-------|----------|----------|-----------:|------:|---------:|------:|----------:|-------:|----------:|---:|
+| edgar_b3_vampire_tribal    | PASS  | 111.8    | $0.2956  | 36         | 6     | 3        | 0.518 | 39468     | y      | n         | y  |
+| krenko_b4_goblin_combo     | PASS  | 120.8    | $0.3128  | 37         | 6     | 1        | 0.582 | 41727     | y      | n         | y  |
+| atraxa_b2_proliferate      | PASS  | 111.4    | $0.3602  | 40         | 5     | 3        | 0.847 | **36481** | y      | n         | y  |
+| yuriko_b5_ninja_tempo      | PASS  | 108.4    | $0.2901  | 34         | 4     | 1        | 0.470 | 35943     | y      | n         | y  |
+| ur_dragon_b3_dragon_tribal | PASS  | 116.8    | $0.2934  | 39         | 7     | 2        | 0.651 | 39863     | y      | n         | y  |
+
+Atraxa C2.1 went **0.0s (iter 5) → 36.5s (iter 6)** — the Phase 8 budget-overhead fix is fully validated live. Every other Phase 8 marker is also non-zero (35-42s).
+
+### 12 success criteria
+
+Passed **9 / 12** — exactly at the hard-halt threshold of ≥3 failures.
+
+| # | Criterion                                | Status | Value                              |
+|---|------------------------------------------|--------|-----------------------------------|
+| 1 | iter1_structural_pass_5_of_5             | PASS   | True                              |
+| 2 | mean_creativity_delta ≥ 35               | PASS   | 37.2                              |
+| 3 | mean_novel_combo ≥ 5                     | PASS   | 5.6                               |
+| 4 | mean_cost_usd ≤ 0.45                     | PASS   | $0.3104                           |
+| 5 | mean_wallclock_s ≤ 120                   | PASS   | 113.8                             |
+| 6 | **voyage_semantic_avg ≥ 3** (Phase 6)    | **FAIL** | 2.0 (iter 5 was 1.8 — improved but didn't close) |
+| 7 | **intent_drift_mean < 0.5** (Phase 7)    | **FAIL** | 0.614 (iter 5 was 0.592 — slight regression) |
+| 8 | atraxa_c2_1_latency > 0 (Phase 8)        | PASS   | 36481 ms                          |
+| 9 | pillar_e_v0_3_curve_check 5/5 (Phase 9)  | PASS   | 5/5                               |
+| 10| **pillar_e_v0_4_interaction within 4/5** | **FAIL** | 0/5 (criterion-definition issue, see below) |
+| 11| graduated_playtest_report 5/5 (Phase 12) | PASS   | 5/5 (all 5 have Tier 0 predictions) |
+| 12| ui_equivalent_build_path 5/5 (Phase 5 substitute) | PASS | 5/5 (all complete OK in <240s) |
+
+Phase 8 (the iter 5 BLOCKING bug) is fully validated live. Phases 5, 9, 11, 12 all pass cleanly.
+
+### The three failures
+
+**Criterion 6 (voyage_semantic_avg = 2.0 vs target ≥3).** Phase 6's venv recovery restored Voyage queries to working state — direct verification showed 18-20 high-similarity neighbors per commander. The iter-5 → iter-6 improvement (1.8 → 2.0) confirms semantic retrieval is alive. But the SELECTION layer (C2.2 wild combo discovery + downstream filtering) doesn't aggressively keep semantic_neighbor candidates in the final deck. The +0.15 score boost added at iter 5 Phase 1 places them above no-overlap baseline cards but apparently still below most theme-overlap candidates. Closing this fully needs either a larger score boost, an explicit "include N semantic picks" budget in C2.2's prompt, or a post-hoc semantic-injection pass before structural_safety_net.
+
+**Criterion 7 (intent_drift_mean = 0.614 vs target <0.5).** Phase 7 added `anthem-effect` to the counters_matter signal set (mitigation for the v1 ontology gap) and made the drift threshold archetype-aware (0.7 for counters_matter primary or tribal+value_engine). The threshold change helped per-case acceptance for Atraxa + Ur-Dragon, but the *mean* drift went UP slightly (iter 5 = 0.592 → iter 6 = 0.614) — likely because `anthem-effect` overlaps with tribal cards, diluting tribal weight by spreading some onto counters_matter. The kickoff's chosen criterion is mean drift, not archetype-aware-acceptance, so the change registered as a regression. Fix paths: (a) drop the anthem-effect addition and rely solely on threshold changes; (b) re-define the iter-6 drift criterion as archetype-aware (count cases below their effective threshold); (c) add real proliferate/counter primitives to the v1 ontology in iter 7.
+
+**Criterion 10 (pillar_e_v0_4_interaction within target on 0/5).** This is a *criterion-definition* failure rather than a Phase 10 module failure. My tool defined "within target" as `|total_actual - total_target| ≤ 2` — for a 9-11 slot interaction budget, ±2 is roughly ±20%. Every case in iter 6 was outside that window because the primitive-based classification undercounts: many removal cards have multi-tag primitives where my "first-match" classification picks a non-removal tag first. Loosening to `0.5 × target ≤ actual ≤ 1.5 × target` (i.e., ±50%) would probably let 4-5 of 5 pass. Phase 10 itself (the interaction designer module) works correctly per its unit tests; this is an evaluation-script bug.
+
+### Hard halt #5 triggered
+
+> 5. Phase 13 final validation fails on >= 3 of 12 success criteria. Halt; don't proceed to Phase 14 final regression on a broken iter 6.
+
+Stopping before Phase 14. The 3 failures break down as:
+- One real architectural gap (criterion 6 — semantic selection).
+- One pre-existing baseline that slightly worsened despite mitigation (criterion 7 — drift; the v1 ontology is the underlying limit).
+- One criterion-definition artifact in my own evaluation script (criterion 10 — within-target tolerance).
+
+Phase 14 cannot ship until these are resolved or the criteria themselves are revised per user direction.
+
+### Phase 13 commit
+
+`<pending>`
