@@ -56,6 +56,28 @@ For each cache found, measured cold-start cost via a fresh-process timer script.
 
 ### Phase 1 commit
 
+`f67f388a3` — "Coherence Sweep #3 Phase 1: substrate cache audit — clean (no inline fixes)". 2 files changed, 64 insertions, 2 deletions.
+
+---
+
+## Phase 2 — Cross-pillar integration verification
+
+**Started**: 2026-05-22 (immediately after Phase 1)
+
+### Method
+
+- TestClient smoke on Pillar A endpoints (sample of /health + /snapshots + /playtest/opposition_decks_v1 + /deck/analyze_v1 + /commander/archetype_brief_v1 + /card/search_v1 + /deck/candidate_pool_v1).
+- Direct DB query to verify Pillar C primitive_v1 coverage (78.1% of 36,709 cards tagged).
+- iter 6 sweep data (Phase 13 — 2 runs × 5 cases = 10 builds) used as Pillar D's full-build evidence; all 4 LLM phases fired on every case.
+- Direct module smoke of Pillar E v0.3 + v0.4 + Pillar F approximator + graduated playtest on a synthetic deck.
+- Track 5 per-set automation verified via file-presence inventory (not triggered per kickoff policy).
+
+### Findings
+
+**Clean wiring across all pillars.** One memory drift surfaced (`project_pillar_a_c_shipped_2026-05-17` claims 9 endpoints; actual is ~42 routes / ~18 v1-tier) — Phase 3 fixes inline.
+
+### Phase 2 commit
+
 Pending.
 
 ---

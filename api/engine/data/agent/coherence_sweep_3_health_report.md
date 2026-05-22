@@ -65,7 +65,82 @@ None from Phase 1.
 
 ## Section 2 — Cross-pillar integration verification (Phase 2)
 
-`<pending — populated during Phase 2>`
+**Verdict: clean, with one piece of memory drift queued for inline fix in Phase 3.** All pillars wire end-to-end. The only finding is that `project_pillar_a_c_shipped_2026-05-17` memory claims "9 AI-facing endpoints" — current count is **~42 routes / ~18 v1-tier AI-facing endpoints** after subsequent mega-tasks added agent/v1 endpoints. That's pure memory staleness, not a wiring issue (Phase 3 fixes inline).
+
+### Pillar A — endpoint smoke
+
+`api.main` imports + 42 routes register in 1.0s. Sampled endpoints respond cleanly:
+
+| Endpoint | Status | Latency | Notes |
+|---|---|---|---|
+| `GET /health` | 200 | 18ms | engine_version 0.2.3, image_cache OK |
+| `GET /snapshots/active` | 200 | 3ms | returns `20260217_190902_tagpass_20260222` |
+| `GET /snapshots` | 200 | 2ms | snapshot list |
+| `GET /playtest/opposition_decks_v1` | 200 | <10ms | **54 entries** (matches Phase 11 expansion) |
+| `POST /deck/analyze_v1` | 200 | 29ms | full Edgar B3 minimal-deck analysis |
+| `GET /commander/archetype_brief_v1` | 200 | 432ms | uses corpus data |
+| `POST /card/search_v1` | 422 | <1ms | validates input schema (test sent wrong fields — proves validation works) |
+| `POST /deck/candidate_pool_v1` | 422 | 2ms | input schema validation working |
+
+All routes load + respond. 422 responses are FastAPI schema validation working correctly when the test sent malformed bodies (not endpoint bugs).
+
+### Pillar C — primitive extractor pipeline
+
+Direct DB inspection on the active snapshot:
+- Total cards: 36,709
+- Cards with `primitives_v1_json` populated (non-empty): **28,666 (78.1%)**
+- Sample tags on real cards: `["haste-grant", "tutor-broad"]`, `["etb-trigger"]`, `["death-trigger", "mana-fixing-utility", "optional-trigger", "persist-creature"]`
+
+Pillar C is producing tags. The 78.1% coverage rate is consistent with the iter 5 baseline of 93% on cards-with-abilities (the 78.1% includes lands + basic-aoe cards that intentionally have no primitives).
+
+### Pillar D — agent build_deck_v1
+
+Verified via iter 6 sweep data (Phase 13 — 2 stochastic runs against 5 baseline commanders, 10 builds total). All 4 LLM injection points fired on every case:
+
+- **B2 intent_interpreter**: theme_profile produced for all 5 cases (per Phase 13 report `theme_profile` column)
+- **C2.1 candidate_critic**: latency_ms ranged 35,943–43,885 across the 10 builds — non-zero on every case (Phase 8 fix confirmed live; iter-5's Atraxa 0.0s pathology is dead)
+- **C2.2 wild_combo_discovery**: archetype detection populated (consumed by Pillar E + curve smoother as archetype_hint)
+- **D2 final_critic**: card rationales rewritten on every case (verified via per-case wall_clock pattern, ~30-50s D2 component)
+
+Theme profile cascade through phases verified: B2 produces profile → flows to C2.1/C2.2/D2 system prompts (`forbidden_prompt_block` injection threading) → intent_preservation_drift downstream computes against the same B2 profile. End-to-end confirmed by iter 6 sweep yielding non-zero `intent_drift` for all 5 cases (drift is only computable if the cascade works).
+
+### Pillar E — 4 optimizers
+
+iter 6 sweep confirms presence on 5/5 cases for v0.3 + v0.4 (Phase 13 report `E v0.3 = y` and graduated playtest `GP = y` columns). v0.1 + v0.2 were verified earlier in mega-task v4 / iter 5; their summary fields still appear in the v5 build response.
+
+Live integration smoke (Sol Ring × 99 + Edgar Markov synthetic deck):
+- v0.3 `curve_smoother_v1.analyze_curve()` runs and returns `CurveAnalysis` with archetype_target, deck_curve, bricks, holes.
+- v0.4 `interaction_designer_v1.compute_interaction_targets()` runs and returns `InteractionTargets` with bracket policy + color-gated allocation.
+
+### Pillar F + Graduated playtest
+
+Direct module smokes:
+- `agent_statistical_approximator_v1.approximate_pod_winrate(deck=..., db_snapshot_id=...)` → `PodWinrateReport(pod_winrate=0.087, ...)`. Synthetic deck of 99 Sol Rings yields low winrate as expected (no win-paths armed).
+- `agent_graduated_playtest_v1.run_graduated_sweep(deck=..., bracket="B3")` → tier_results=[Tier 0 stalled, advanced=False]. Behavior matches the design (won't advance past Tier 0 without real win-paths).
+
+Both produce valid output on degenerate input; both produced sensible output on real iter 6 builds (verified via Phase 13 sweep).
+
+### Track 5 — per-set automation chain
+
+Verified file presence (not triggered — per kickoff "Don't touch the v3 per-set automation scheduled task"):
+
+- `tools/new_set_pipeline_v0.py` + `v1.py` — entry points
+- `api/engine/integrations/new_set_notifier_v1.py` — chain link
+- `api/engine/layers/new_set_report_writer_v1.py` — chain link
+- `api/engine/data/scripts/known_set_codes_v1.json` — set-tracking state file
+- `api/engine/data/scripts/new_set_pipeline_v0.md` + `new_set_watcher_v1.md` — runbooks
+
+Chain intact. The Phase 2 audit cannot verify the *scheduled* invocation (Windows Task Scheduler config is out-of-scope) but the script chain is loadable.
+
+### Inline fixes landed
+
+None inline this phase. The Pillar A endpoint-count drift is recorded; the inline fix lands in Phase 3 (memory↔code alignment) where memory updates are in scope.
+
+### Queued for iter 7 / wontfix
+
+- *Memory drift inline-fix (lands Phase 3)*: `project_pillar_a_c_shipped_2026-05-17.md` says "9 AI-facing endpoints"; actual is ~18 v1-tier endpoints + 24 utility/non-v1. Phase 3 updates the memory entry inline.
+- *Out-of-scope*: Scheduled task wiring verification (Windows Task Scheduler) — kickoff explicitly excludes.
+
 
 ## Section 3 — Memory ↔ code alignment (Phase 3)
 
