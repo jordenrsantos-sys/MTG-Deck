@@ -391,4 +391,6 @@ Zero production code changes. The kickoff-suggested fixes in `agent_semantic_ret
 
 ### Phase 6 commit
 
-`<pending>`
+`f3c81aa18` — "Phase 6 (mega-task v5): Voyage color-filter regression check (no code fix needed)". 4 files changed, 641 insertions, 0 deletions.
+
+---
