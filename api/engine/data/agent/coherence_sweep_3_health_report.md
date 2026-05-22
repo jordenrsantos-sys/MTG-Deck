@@ -144,7 +144,42 @@ None inline this phase. The Pillar A endpoint-count drift is recorded; the inlin
 
 ## Section 3 — Memory ↔ code alignment (Phase 3)
 
-`<pending — populated during Phase 3>`
+**Verdict: 1 inline fix landed (Pillar A endpoint count drift); 4 architectural feedback rules all honored by current code; sampled "shipped" memories self-consistent.**
+
+The cowork memory directory has **52 entries** (the kickoff estimated "~17" — that estimate predated the v3-v5 ship phase). 15 are `feedback_*` rules; the rest are project-state snapshots, prep notes, or design specs.
+
+### 4 architectural feedback rules verified honored
+
+| Rule | Memory file | Honored at | Evidence |
+|---|---|---|---|
+| Pool ranking score does not drive LLM picking | `feedback_pool_score_does_not_drive_llm_picking.md` | `agent_build_deck_v1.py:3657` | Prompt contains explicit "**YOU MUST SELECT AT LEAST 3 SEMANTIC-NEIGHBOR CARDS**" — the prompt-level mechanism replacing the failed score boost. iter 6 sweep showed this still doesn't fully close the gap, which is consistent with the rule's "stronger guidance lifts selection rate; soft guidance + score boost doesn't" — iter 7 priority #1 (semantic-injection GUARANTEE) is the next escalation. |
+| User intent locks deck shape | `feedback_user_intent_locks_deck_shape_not_corpus_optimum.md` | `agent_build_deck_v1.py:287, 2235-2422` | B2 intent_interpreter produces `theme_profile` with `primary`/`secondary`/`tertiary`; downstream phases consume it and cascade weights through C2.1/C2.2/D2. Weights MUST sum to 1.0 per the B2 prompt template (line 2295). Pillar E v0.3/v0.4 target counts shift with archetype_hint derived from this profile. |
+| Mana base serves spells, not reverse | `feedback_mana_base_serves_spells_not_reverse.md` | `mana_base_optimizer_v1.py:366, 396` | Comment "reconciliation should be AGGRESSIVE: any non-zero discrepancy is reconciled" + `"policy": "aggressive_recompute_fresh"` in the recommendation payload. Mega-task v4 Phase 9 shipped this. |
+| Corpus is descriptive not prescriptive | `feedback_corpus_descriptive_not_prescriptive.md` | `agent_build_deck_v1.py creativity_envelope_metrics + staples_avoided` | Build response reports `creativity_delta_count` (cards added beyond corpus baseline) + `staples_avoided_count` (high-frequency cards intentionally excluded). The agent is rewarded for novelty against corpus, not for matching corpus optimum. |
+
+### Inline fix landed: Pillar A endpoint count drift
+
+`project_pillar_a_c_shipped_2026-05-17.md` description claimed "9 endpoints" — accurate at 2026-05-17 ship date but stale by mega-task v5 (now 42 total routes / ~18 v1-tier endpoints). Fix landed inline: updated the description + added an "Update 2026-05-22" paragraph documenting the post-v5 endpoint count + confirmed all original 9 endpoints still ship (no regression).
+
+### Sampled "shipped" memories (self-consistent)
+
+- `project_mega_task_v5_shipped_2026-05-22.md` — written during Phase 14 of v5; metrics match `pillar_d_iteration_6_validation_report.md`.
+- `project_mega_task_v4_shipped_2026-05-21.md` — claims iter 5 wallclock 118s / coverage 93%; matches `pillar_d_iteration_5_validation_report.md`.
+- `project_iter_6_prep_notes_2026-05-21.md` — Coherence Sweep #3 spec section is the source-of-truth for THIS sweep's 10 audit areas.
+- `project_iter_7_prep_notes_2026-05-22.md` — written during Phase 14 of v5; iter 7 priorities #1-#3 match the iter 6 sweep failures documented in the final report.
+
+### "Queued" memories still genuinely pending
+
+`project_iter_5_prep_notes_2026-05-21.md` Priority #5 deferred items (bracket-partitioned corpus, at-scale Voyage rules, live combo extractors, reverse-engineering target decks) — none of these shipped in mega-task v5; all carry to iter 7. Verified via repo grep: no module references `bracket_partitioned`, no live `edhrec_extractor.py`, etc. Still pending as claimed.
+
+### Inline fixes landed
+
+1. `project_pillar_a_c_shipped_2026-05-17.md` — endpoint count drift fixed (9 → "9 at ship; 42 total today").
+
+### Queued for iter 7 / wontfix
+
+None additional from Phase 3. The remaining 48 memory entries weren't exhaustively spot-checked but the sampled subset is consistent and the 4 load-bearing architectural rules are honored. Full memory audit at this depth would be its own sub-task; Phase 3 met the kickoff bar of "audit each [feedback rule] against current code" + spot-check shipped memories.
+
 
 ## Section 4 — Test coverage gaps (Phase 4)
 

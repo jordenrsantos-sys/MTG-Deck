@@ -78,6 +78,32 @@ For each cache found, measured cold-start cost via a fresh-process timer script.
 
 ### Phase 2 commit
 
-Pending.
+`36a6c2ee5` — "Coherence Sweep #3 Phase 2: cross-pillar integration verification — clean". 2 files changed, 98 insertions, 1 deletion.
+
+---
+
+## Phase 3 — Memory ↔ code alignment (BLOCKING)
+
+**Started**: 2026-05-22 (immediately after Phase 2)
+
+### Method
+
+Listed all 52 entries in cowork memory directory. Categorized: 15 `feedback_*` (architectural rules), 37 `project_*` (state snapshots, prep notes, design specs). Spot-checked the 4 kickoff-locked architectural rules + 4 recent shipped-state memories + the Pillar A endpoint count.
+
+### Findings
+
+**1 inline fix landed**: `project_pillar_a_c_shipped_2026-05-17.md` description said "9 endpoints" — accurate at original ship but stale by mega-task v5 (42 routes total today). Updated inline with original count + post-v5 update note.
+
+**4 architectural rules all honored**:
+- `pool_score_does_not_drive_llm_picking` → explicit "MUST SELECT" prompt at `agent_build_deck_v1.py:3657`
+- `user_intent_locks_deck_shape` → theme_profile cascade verified end-to-end through B2/C2.1/C2.2/D2
+- `mana_base_serves_spells_not_reverse` → "aggressive_recompute_fresh" policy at `mana_base_optimizer_v1.py:396`
+- `corpus_descriptive_not_prescriptive` → creativity_envelope_metrics + staples_avoided_count tracked in build response
+
+**Sampled shipped memories consistent**: mega-task v4/v5 shipped, iter 5/6 prep notes, iter 7 prep notes — all consistent with iter-N validation reports + iter-N+1 prep notes.
+
+### Phase 3 commit
+
+Pending — includes the inline memory edit.
 
 ---
