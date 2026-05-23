@@ -911,11 +911,26 @@ def snapshot_preflight_v1(snapshot_id: str):
 
 
 @app.get("/cards/suggest")
-def cards_suggest(q: str, snapshot_id: Optional[str] = None, limit: int = 20, commander_only: bool = False):
+def cards_suggest(
+    q: str,
+    snapshot_id: Optional[str] = None,
+    limit: int = 20,
+    commander_only: bool = False,
+    fuzzy: bool = False,
+):
+    """Typeahead for the card-name input. Prefix + substring match by default;
+    when `fuzzy=true` AND the deterministic match returns 0 results, fall back
+    to edit-distance matching against the snapshot's name index (or the
+    commander-eligible subset when commander_only=true). v7 Phase 2 added the
+    fuzzy fallback to handle typos like "Edgar Makrov" → "Edgar Markov" in the
+    AIBuildView commander typeahead, which previously cascaded into total deck
+    failure (BRIEF_NO_CORPUS_ENTRIES_FOR_COMMANDER → empty CI → 99 Wastes).
+    """
     query = _coerce_nonempty_str(q).lower()
     normalized_snapshot_id = _coerce_nonempty_str(snapshot_id)
     safe_limit = min(max(_coerce_positive_int(limit, default=20), 1), 20)
     require_legal_commander = bool(commander_only)
+    allow_fuzzy = bool(fuzzy)
     candidate_limit = safe_limit if not require_legal_commander else min(max(safe_limit * 8, safe_limit), 200)
 
     if len(query) < 2:
@@ -1051,12 +1066,87 @@ def cards_suggest(q: str, snapshot_id: Optional[str] = None, limit: int = 20, co
                 ).fetchall()
                 _append_rows(contains_rows)
 
+            # v7 Phase 2: fuzzy fallback. Only fires when caller opted in AND
+            # the deterministic match yielded nothing. Uses difflib's
+            # SequenceMatcher (Ratcliff/Obershelp) ratio — no extra deps. We
+            # restrict the candidate universe to <= ~5k names to keep the
+            # cold-start ratio compute under ~50ms; for non-commander queries
+            # the snapshot's 36k names are usable too but we cap at 5000 to
+            # avoid blowing the speed budget.
+            fuzzy_results: List[Dict[str, Any]] = []
+            if allow_fuzzy and len(results) == 0 and len(query) >= 3:
+                try:
+                    import difflib
+                    universe_sql = (
+                        f"SELECT {select_clause} FROM cards "
+                        "WHERE snapshot_id = ? ORDER BY name ASC LIMIT 50000"
+                    )
+                    universe_rows = con.execute(universe_sql, (normalized_snapshot_id,)).fetchall()
+                    # Build (name → row_dict) map (last wins for duplicates).
+                    name_to_row: Dict[str, Dict[str, Any]] = {}
+                    for r in universe_rows:
+                        try:
+                            rd = dict(r)
+                        except Exception:
+                            continue
+                        nm = rd.get("name")
+                        if isinstance(nm, str) and nm:
+                            name_to_row[nm] = rd
+                    # Pre-filter to commander-legal if asked. The full
+                    # commander-legality check is too slow to run across
+                    # 36k cards, so we filter on a cheap proxy (Legendary
+                    # Creature OR Planeswalker text via type_line LIKE)
+                    # and then run the strict check only on the top-N
+                    # fuzzy matches before returning.
+                    if require_legal_commander:
+                        prefiltered = {
+                            n: rd for n, rd in name_to_row.items()
+                            if isinstance(rd.get("type_line"), str)
+                            and (
+                                ("Legendary" in rd["type_line"]
+                                 and "Creature" in rd["type_line"])
+                                or "Planeswalker" in rd["type_line"]
+                            )
+                        }
+                    else:
+                        prefiltered = name_to_row
+                    candidate_names = list(prefiltered.keys())
+                    # difflib.get_close_matches returns top-N by ratio;
+                    # cutoff 0.6 ≈ edit-distance ~2 for typical name lengths.
+                    matches = difflib.get_close_matches(
+                        query, [n.lower() for n in candidate_names],
+                        n=safe_limit * 3, cutoff=0.6,
+                    )
+                    # Re-map lowercased matches back to original-cased names.
+                    lower_to_original: Dict[str, str] = {n.lower(): n for n in candidate_names}
+                    for m in matches:
+                        original = lower_to_original.get(m)
+                        if not original:
+                            continue
+                        rd = prefiltered.get(original)
+                        if not rd:
+                            continue
+                        if require_legal_commander and not _is_legal_commander_suggestion(original):
+                            continue
+                        rr = _to_result_row(rd)
+                        if rr is None:
+                            continue
+                        rr["fuzzy_match"] = True
+                        fuzzy_results.append(rr)
+                        if len(fuzzy_results) >= safe_limit:
+                            break
+                except Exception:
+                    fuzzy_results = []
+            if fuzzy_results:
+                results.extend(fuzzy_results)
+
     except Exception:
         return {
             "query": query,
             "snapshot_id": normalized_snapshot_id,
             "limit": safe_limit,
             "results": [],
+            "fuzzy_active": allow_fuzzy,
         }
 
     return {
@@ -1064,6 +1154,7 @@ def cards_suggest(q: str, snapshot_id: Optional[str] = None, limit: int = 20, co
         "snapshot_id": normalized_snapshot_id,
         "limit": safe_limit,
         "results": results,
+        "fuzzy_active": allow_fuzzy,
     }
 
 

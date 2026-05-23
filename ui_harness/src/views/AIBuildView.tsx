@@ -20,6 +20,10 @@ import Chip from "../ui/primitives/Chip";
 import Input from "../ui/primitives/Input";
 import Select from "../ui/primitives/Select";
 import { useBuildStreaming } from "../hooks/useBuildStreaming";
+// v7 Phase 2: replaces the plain commander <Input> with a debounced
+// typeahead + fuzzy-match fallback so typos don't cascade into 99-Wastes
+// failures via BRIEF_NO_CORPUS_ENTRIES_FOR_COMMANDER.
+import CommanderTypeahead from "../components/CommanderTypeahead";
 
 const API_BASE_URL =
   ((import.meta as ImportMeta).env?.VITE_API_BASE_URL as string | undefined) ??
@@ -413,11 +417,13 @@ export default function AIBuildView(props: AIBuildViewProps) {
             <div className="space-y-token-3">
               <label className="block text-sm">
                 <span className="block text-text-muted mb-token-1">Commander</span>
-                <Input
+                <CommanderTypeahead
                   value={commander}
-                  onChange={(e) => setCommander(e.target.value)}
+                  onChange={(next) => setCommander(next)}
+                  apiBase={API_BASE_URL}
+                  snapshotId={snapshotId}
                   placeholder="e.g., Edgar Markov"
-                  aria-label="Commander name"
+                  ariaLabel="Commander name"
                 />
               </label>
 

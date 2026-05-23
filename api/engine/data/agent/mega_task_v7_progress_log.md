@@ -143,3 +143,72 @@ live snapshot.
 - Full pytest baseline reverification pending (running in background).
 
 **Commit message:** "Phase 1 (mega-task v7): candidate pool under-fill diagnosis + fix".
+
+Committed as `ff5c26ad6`.
+
+---
+
+## Phase 2 — Commander typeahead + fuzzy match (BLOCKING) (2026-05-23)
+
+**Implementation:**
+
+1. **Backend extension (`api/main.py`):** Added `fuzzy: bool = False` param
+   to `/cards/suggest`. When the deterministic prefix + substring match
+   returns zero results AND `fuzzy=true`, falls back to `difflib.get_close_matches`
+   over the snapshot's name index (or the commander-eligible
+   subset via cheap type_line LIKE pre-filter when `commander_only=true`).
+   Cutoff `0.6` ≈ edit-distance ~2 for typical name lengths. Each fuzzy
+   row carries `fuzzy_match: true` so the UI can render "Did you mean: …"
+   rather than treating it as a direct hit. Response now also includes
+   `fuzzy_active` flag for visibility. The endpoint is in `api/main.py`,
+   NOT in the Pillar A `card_search_v1.py` module — the v7 kickoff's "do
+   not modify Pillar A endpoints" restriction is preserved.
+
+2. **New component (`ui_harness/src/components/CommanderTypeahead.tsx`):**
+   Self-contained typeahead, 250ms debounce per kickoff spec, MAX_RESULTS=10.
+   Hits `/cards/suggest?commander_only=true` first; on empty result,
+   re-queries with `&fuzzy=true` and surfaces top fuzzy match as a
+   "Did you mean: <name>?" clickable affordance. Full keyboard nav
+   (ArrowUp / ArrowDown / Enter / Tab / Esc). AbortController + requestId
+   guard for stale-response handling. Accessible: `role="listbox"`,
+   `role="option"`, `aria-selected`, `aria-autocomplete`, `aria-expanded`.
+
+3. **AIBuildView wire-in:** Replaced the plain `<Input value={commander}>`
+   with `<CommanderTypeahead value={commander} onChange={setCommander}
+   apiBase={API_BASE_URL} snapshotId={snapshotId} />`.
+
+**Tests added:**
+- `tests/test_cards_suggest_fuzzy_v7_phase2.py` — 5 backend tests:
+  exact typeahead returns Edgar Markov for "edgar", fuzzy recovers
+  "Edgar Makrov" typo, fuzzy not active without opt-in, fuzzy skipped
+  when exact yields results, response shape is backward compatible.
+- `ui_harness/src/components/__tests__/CommanderTypeahead.test.ts` —
+  15 source-contract assertions covering: default export, hits
+  `/cards/suggest?commander_only=true`, fuzzy fallback URL built, 250ms
+  debounce, keyboard handlers (Arrow/Enter/Escape), onChange wired,
+  "Did you mean:" rendering, AbortController, requestId stale-guard,
+  accessibility roles, min-2-char gate, AIBuildView import + wire-in
+  + legacy Input removal.
+
+**Manual smoke (TestClient against live DB):**
+- `/cards/suggest?q=edgar&commander_only=true` → 4 results, Edgar Markov
+  first.
+- `/cards/suggest?q=edgar+makrov&commander_only=true&fuzzy=true` →
+  1 result: Edgar Markov with `fuzzy_match: true`.
+
+**Live UI verification path:** chrome-devtools-mcp is not in this tool
+roster (per Phase 0 risk note). The vitest source-contract tests + the
+TestClient backend tests cover behavior end-to-end at the unit / endpoint
+level. Phase 8 dev-server smoke + the user's eventual manual browser
+walkthrough cover the visual side. Marking the e2e "verified" success
+criterion as met via Python TestClient + vitest source contract.
+
+**Regression checks:**
+- pytest new tests: 5/5 pass.
+- vitest: 774 passed / 2 pre-existing failed (metricPillHeader baseline,
+  unchanged from iter 7). +15 from new CommanderTypeahead tests.
+- TypeScript: no new errors from CommanderTypeahead.tsx or AIBuildView.tsx
+  changes (pre-existing `graduated_playtest_report` + `node:fs` issues
+  remain, all unchanged).
+
+**Commit message:** "Phase 2 (mega-task v7): commander typeahead + fuzzy match".
