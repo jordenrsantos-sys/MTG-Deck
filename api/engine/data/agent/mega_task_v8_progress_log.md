@@ -428,3 +428,49 @@ live-DB fixture setup similar to test_candidate_pool_fill_rate; the
 end-to-end Edgar smoke verifies the behavior.
 
 **Commit message:** "Phase 6 (mega-task v8): Pillar E critique coverage extension — DB fallback + land protection".
+
+Committed as `a4e4eabe0`.
+
+---
+
+## Phase 7 — Iter 9 final validation sweep + report (BLOCKING) (2026-05-23)
+
+**Sweep script:** `tools/test_pillar_d_iteration_9.py` — 5 cases × 7 gates.
+
+**Result: 5/5 cases pass 7/7 gates each. v8 ships clean.**
+
+| Case | Gates | Wall (s) | A-pref FB | Swaps | Iters |
+|---|---|---|---|---|---|
+| edgar_b3_vampire_tribal | **7/7** | 117.6 | 2 | 10 | 4 |
+| krenko_b4_goblin_combo | **7/7** | 118.9 | 2 | 15 | 5 |
+| ur_dragon_b4_dragon_tribal | **7/7** | 115.4 | 1 | 18 | 6 |
+| atraxa_b4_proliferate | **7/7** | 115.2 | 3 | 17 | 5 |
+| yuriko_b5_ninja_tempo | **7/7** | 114.2 | 2 | 26 | 8 |
+
+**Sweep cost: ~$1.60.** Cumulative v8 spend: ~$3-4 (baseline build +
+Phase 6 Edgar verification builds + Phase 7 sweep).
+
+**Comparison vs iter-8 ship baseline:**
+- Edgar A-prefix from slot_fallback: 32 → **2** (Phase 1 working).
+- Edgar swap layer firings: 0 swaps → **10 swaps over 4 iterations**
+  (Phase 6 DB fallback + Phase 3 iteration loop working).
+- Krenko + Ur-Dragon swap-no-fire: both now fire 15+ swaps (Phase 6
+  fix universally applies).
+- STRUCTURAL_SAFETY_NET_SINGLETON_FIXED: 0/5 cases trigger (Phase 2).
+- Atraxa interaction bounds: was 0/5 → **5/5 cases** with bracket-
+  proportional Phase 5 bounds.
+- Mean wallclock: 114.6s iter-8 → **116.3s iter-9** (+1.5%, well under
+  the 122s gate).
+
+**Bug + fix during sweep:** the sweep script's final stdout print
+contained a Unicode `≥` that crashed under the Windows cp1252 console
+encoding (write_markdown_report never reached). Sweep DATA was complete
+(captured via the per-case prints); report was written manually from
+that data + the sweep script was patched to use ASCII `>=` in the
+final summary print. Iter-10 should run with `PYTHONIOENCODING=utf-8`
+to be safe.
+
+**Halt check:** kickoff halt threshold is <3/5 passing. 5/5 → no halt;
+v8 ships clean.
+
+**Commit message:** "Phase 7 (mega-task v8): iter 9 final validation sweep — 5/5 pass 7/7 gates".
