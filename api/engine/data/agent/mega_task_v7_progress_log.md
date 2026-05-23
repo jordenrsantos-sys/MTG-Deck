@@ -586,3 +586,48 @@ v7 spend so far ~$5 (cumulative with Phase 1 diagnostic builds + Phase
 3 swap module testing). Well under the $100 ceiling.
 
 **Commit message:** "Phase 8 (mega-task v7): iter 8 final validation sweep + report".
+
+Committed as `5ce26437c`.
+
+---
+
+## Phase 9 — Final regression + report + memory update (BLOCKING) (2026-05-23)
+
+**Full pytest:** 1608 passed / 25 skipped / 0 failed / 78 subtests
+(was 1566 at v6 ship; +42 new across v7).
+
+**Full vitest:** 774 passed / 2 pre-existing failed (was 759 at v6 ship;
++15 new from CommanderTypeahead). The 2 failures (metricPillHeader
+source-grep drift on WorkspaceView) are the same v6-baseline failures
+documented in Phase 7 of v6 — unchanged by v7.
+
+**5-case sweep:** see Phase 8 — 10/12 success criteria.
+
+**Live UI sanity:** substituted with vitest source-contract tests +
+pytest TestClient endpoint tests, per Phase 0 risk note
+(chrome-devtools-mcp not in current tool roster). User-driven manual
+walkthrough recommended for visual confirmation of typeahead UX.
+
+**Final report:** `api/engine/data/agent/mega_task_v7_final_report.md`
+written with executive summary, headline metrics, what-shipped per
+phase, architectural notes, iter 8 → iter 9 hand-off, commit chain,
+test deltas, spend ($5 of $100), and what's NOT shipped (deferred).
+
+**Memory updates** (Cowork memory dir `C:/Users/jorde/.claude/projects/E--MTG-Root/memory/`):
+
+- NEW: `project_mega_task_v7_shipped.md` — v7 commit chain + load-bearing constraints iter 9 must honor (8 substrate invariants).
+- UPDATED: `MEMORY.md` — added v7 entry to index (kept v6 entry; both navigable).
+- UPDATED: `project_5_pillar_forward_plan.md` — Pillar E v0.7 added to status; 4 iter 9 candidates documented (Pillar F v0.2 substrate top priority; primitive_to_cards rebuild #2; bracket-aware bounds + Edgar/Krenko/Ur-Dragon swap-no-fire investigation as smaller-scope items).
+
+**Mega-task v7 success criteria check (per kickoff):**
+
+1. ✅ All 10 phases committed; Phase 9 final regression passes.
+2. ✅ Phase 8 sweep meets ≥10 of 12 success criteria (10/12 — target met).
+3. ✅ pytest 1608 + vitest 774 baselines preserved + new tests pass.
+4. ✅ Candidate pool returns ≥60 spells per build (Phase 1).
+5. ✅ Commander typeahead + fuzzy match live-verified via proxy (Phase 2).
+6. ⚠ LLM critique pass actively closes Pillar E optimizer flags (Phase 3) — fires on 2/5 cases (Atraxa + Yuriko). Edgar/Krenko/Ur-Dragon swap-no-fire deferred to iter 9.
+7. ✅ CC's 4 iter 7 sweep gaps closed (Phases 4-7): voyage_semantic 2.2 → 3.4; intent_drift 3/5 → 4/5; interaction_within per-category bounds populated correctly (sweep-script measure tight); win_con_coherence 0/5 → 5/5.
+8. ✅ Total API spend under $100 (actual ~$5).
+
+**Commit message:** "Phase 9 (mega-task v7): final regression + report + memory update — v7 SHIPPED".
