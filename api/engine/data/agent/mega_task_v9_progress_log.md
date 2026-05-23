@@ -383,3 +383,75 @@ across 9 classes:
 Honor canonical test passes — that's the key gate per kickoff.
 
 **Commit message:** "Phase 5 (mega-task v9): 7-layer continuous effects per CR 613".
+
+Committed as `887ab2fb7`.
+
+---
+
+## Phase 6 — Combat phase (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/combat/combat.py`:
+
+- `AttackerDeclaration(attacker_card_id, target)` — target is player_id
+  (int) or planeswalker card_id (str).
+- `BlockerAssignment(attacker_card_id, blocker_card_ids)` — ordered
+  list of blockers per attacker.
+- `CombatState` — per-combat-phase tracking: attackers,
+  blocker_assignments, damage_assignment_order (mutable for active
+  player's choice).
+- `can_attack(card, characteristics)` — untapped + creature +
+  not-summoning-sick-or-haste + not-defender.
+- `declare_attackers(state, attackers)` — taps each (unless vigilance);
+  validates each is legal (raises on first illegal).
+- `declare_blockers(state, block_assignments)` — validates blockers
+  are untapped + creature; initializes damage_assignment_order to
+  blocker declaration order.
+- `deal_combat_damage(state, combat_state, is_first_strike)` — one
+  damage pass. Routes through DamageEvent → apply_replacements →
+  apply marked damage (creatures) or life loss (players). SBA loop
+  runs after.
+  - Per CR 510.1c / 702.2b:
+    * Trample: lethal-first per blocker; excess to defending player.
+    * Non-trample single block: assign all damage (excess wasted).
+    * Multi-block: lethal-first ordering, last takes all remaining.
+    * Deathtouch: 1 damage = lethal (enforced by forcing
+      damage_marked = toughness for SBA pickup).
+  - Lifelink: attacker's controller gains life = damage dealt.
+  - Commander damage: tracked by attacker.oracle_id when attacker IS
+    the commander.
+- `first_strike_phase_active(combat_state, state)` — True iff any
+  participant has first or double strike (skips the FS substep when
+  False — CR 510.1).
+- `run_combat_phase(state, attackers, block_assignments)` —
+  end-to-end: declare attackers → declare blockers → first-strike
+  damage (if applicable) → normal damage → return action log.
+- Attacker damage section and blocker-back-to-attacker section are
+  independently phase-gated so FS-only attacker can take normal-pass
+  blocker damage (the key test that broke an initial design).
+
+**Tests** in `tests/pillar_f_v0_2/test_phase6_combat.py`: 15 tests
+across 8 classes:
+- **CanAttackTests** (5): untapped+non-sick can, tapped can't, sick-no-
+  haste can't, sick-with-haste can, defender can't.
+- **UnblockedDamageTests** (2): 2/2 unblocked → player takes 2,
+  vigilance attacker doesn't tap.
+- **TrampleTests** (1): 5/5 trampler into 2/2 → 3 to player.
+- **FirstStrikeAndDoubleStrikeTests** (2): double-strike kills blocker
+  then hits player; first-strike attacker kills blocker then dies to
+  blocker's normal-pass damage.
+- **DeathtouchTests** (1): 1/1 deathtouch trades with 5/5.
+- **LifelinkTests** (2): unblocked + blocked-with-excess heals attacker
+  for damage dealt.
+- **MultiBlockTests** (1): 5/5 vs 1/1+1/1+5/5 = first 2 blockers die,
+  3rd takes 3 damage; attacker takes 7 → dies.
+- **CommanderDamageTests** (1): commander attack tracks damage by
+  oracle_id.
+
+**Iter-10 simplifications:** attack-cost payment (Propaganda) deferred;
+planeswalker target validation skipped; deathtouch SBA approximated by
+forcing lethal damage_marked rather than tracking the deathtouch flag
+per blocker.
+
+**All 15 pass.** ~310 LOC production + ~290 LOC test.
+
+**Commit message:** "Phase 6 (mega-task v9): combat phase — attackers/blockers/damage/keywords".
