@@ -39,15 +39,101 @@ def _mock_neighbors(
 
 class ResolveNTargetTests(unittest.TestCase):
     def test_bracket_aware_targets(self):
+        # v7 Phase 4: B3/B4 bumped from 3 to 4 to close iter-7 sweep
+        # gap (voyage_semantic_avg landed at 2.2 vs ≥3 target).
         self.assertEqual(resolve_n_target("B1"), 2)
         self.assertEqual(resolve_n_target("B2"), 2)
-        self.assertEqual(resolve_n_target("B3"), 3)
-        self.assertEqual(resolve_n_target("B4"), 3)
+        self.assertEqual(resolve_n_target("B3"), 4)
+        self.assertEqual(resolve_n_target("B4"), 4)
         self.assertEqual(resolve_n_target("B5"), 4)
 
-    def test_unknown_bracket_defaults_to_3(self):
-        self.assertEqual(resolve_n_target(""), 3)
-        self.assertEqual(resolve_n_target("UNKNOWN"), 3)
+    def test_unknown_bracket_defaults_to_b3(self):
+        # v7 Phase 4: B3 default is now 4 (was 3).
+        self.assertEqual(resolve_n_target(""), 4)
+        self.assertEqual(resolve_n_target("UNKNOWN"), 4)
+
+
+class V7Phase4WidenedSwappableSetTests(unittest.TestCase):
+    """v7 Phase 4: slot_fallback / agent_select / pillar_e_aggressive_swap
+    sources are eligible swap-out targets (widens iter-6/7 swap set which
+    only covered C2.2 wild discovery picks). Closes iter-7 sweep gap #1
+    (voyage_semantic_avg 2.2 → ≥3 target)."""
+
+    def test_slot_fallback_card_is_swappable(self):
+        deck = [
+            _card("Edgar Markov", source="user_intent"),
+            _card("Sol Ring", source="archetype_staple"),
+            _card("Some Ramp", source="slot_fallback:ramp"),
+        ]
+        anchors = ["Edgar Markov"]
+        neighbors = {"Edgar Markov": [{"name": "Vampire Tactician", "similarity": 0.9}]}
+        new_deck, swap_log = inject_semantic_picks(
+            deck, anchors, ["B", "R", "W"], n_target=1,
+            query_neighbors=_mock_neighbors(neighbors),
+        )
+        self.assertEqual(len(swap_log), 1)
+        self.assertEqual(swap_log[0]["removed"], "Some Ramp")
+        self.assertEqual(swap_log[0]["added"], "Vampire Tactician")
+
+    def test_agent_select_card_is_swappable(self):
+        deck = [
+            _card("Edgar Markov", source="user_intent"),
+            _card("Generic Pick", source="agent_select"),
+        ]
+        anchors = ["Edgar Markov"]
+        neighbors = {"Edgar Markov": [{"name": "Vampire Tactician", "similarity": 0.9}]}
+        new_deck, swap_log = inject_semantic_picks(
+            deck, anchors, ["B", "R", "W"], n_target=1,
+            query_neighbors=_mock_neighbors(neighbors),
+        )
+        self.assertEqual(len(swap_log), 1)
+        self.assertEqual(swap_log[0]["removed"], "Generic Pick")
+
+    def test_pillar_e_aggressive_swap_card_is_swappable(self):
+        deck = [
+            _card("Edgar Markov", source="user_intent"),
+            _card("Phyrexian Arena", source="pillar_e_aggressive_swap"),
+        ]
+        anchors = ["Edgar Markov"]
+        neighbors = {"Edgar Markov": [{"name": "Vampire Tactician", "similarity": 0.9}]}
+        new_deck, swap_log = inject_semantic_picks(
+            deck, anchors, ["B", "R", "W"], n_target=1,
+            query_neighbors=_mock_neighbors(neighbors),
+        )
+        self.assertEqual(len(swap_log), 1)
+        self.assertEqual(swap_log[0]["removed"], "Phyrexian Arena")
+
+    def test_archetype_staple_still_protected(self):
+        # Regression: archetype_staple cards must NEVER be swap targets
+        # — they're the corpus baseline that anchors the deck.
+        deck = [
+            _card("Edgar Markov", source="user_intent"),
+            _card("Sol Ring", source="archetype_staple"),  # Should NOT be swapped.
+        ]
+        anchors = ["Edgar Markov"]
+        neighbors = {"Edgar Markov": [{"name": "Vampire Tactician", "similarity": 0.9}]}
+        new_deck, swap_log = inject_semantic_picks(
+            deck, anchors, ["B", "R", "W"], n_target=2,
+            query_neighbors=_mock_neighbors(neighbors),
+        )
+        self.assertEqual(len(swap_log), 0)
+        names = [c["card_name"] for c in new_deck]
+        self.assertIn("Sol Ring", names)
+
+    def test_user_intent_still_protected(self):
+        deck = [
+            _card("Edgar Markov", source="user_intent"),
+            _card("Bloodthirsty Conqueror", source="user_intent"),  # Should NOT be swapped.
+        ]
+        anchors = ["Edgar Markov"]
+        neighbors = {"Edgar Markov": [{"name": "Vampire Tactician", "similarity": 0.9}]}
+        new_deck, swap_log = inject_semantic_picks(
+            deck, anchors, ["B", "R", "W"], n_target=2,
+            query_neighbors=_mock_neighbors(neighbors),
+        )
+        self.assertEqual(len(swap_log), 0)
+        names = [c["card_name"] for c in new_deck]
+        self.assertIn("Bloodthirsty Conqueror", names)
 
 
 class InjectSemanticPicksTests(unittest.TestCase):

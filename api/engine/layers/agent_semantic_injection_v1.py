@@ -41,11 +41,14 @@ SOURCE_TAG = "semantic_injection"
 # Bracket-aware injection targets. B5 cEDH gets the strongest injection
 # (semantic neighbors of tempo/combo anchors land more tech). B2 casual
 # stays gentle (the user picked a casual bracket; don't trample intent).
+# v7 Phase 4: bumped B3/B4 from 3 to 4 (still below B5's 4 cap). Iter 7
+# sweep landed voyage_semantic_avg at 2.2 vs ≥3 target; the swap-set
+# widening below + bumping B3/B4 closes the gap.
 _DEFAULT_N_TARGETS: Dict[str, int] = {
     "B1": 2,
     "B2": 2,
-    "B3": 3,
-    "B4": 3,
+    "B3": 4,
+    "B4": 4,
     "B5": 4,
 }
 
@@ -53,13 +56,32 @@ _DEFAULT_N_TARGETS: Dict[str, int] = {
 # still leaves us with enough candidates after de-duplication.
 _NEIGHBORS_PER_ANCHOR = 30
 
-# Substrings on a card's `source` field that mark it as a "low-priority
-# C2.2 wild discovery pick" (eligible for swap-out). C2.1 picks, mana
-# base, must-includes, commander, and archetype staples are PROTECTED
-# (we don't swap user-intent / structural cards).
+# Substrings on a card's `source` field that mark it eligible for
+# swap-out. C2.1 picks, mana base, must-includes, commander, and
+# archetype staples are PROTECTED (we don't swap user-intent /
+# structural cards).
+#
+# v7 Phase 4: widened swappable set per CC's iter-7 sweep gap #1
+# (voyage_semantic_avg landed at 2.2 vs ≥3 target). Pre-v7, only
+# C2.2 wild discovery picks were swappable — most cases had only
+# 1 such card, so injection capped at +1. v7 adds three more
+# substrings so 3-4 cards per build are eligible for swap-out:
+#   - slot_fallback:* — v7 Phase 1's per-slot DB injections. These
+#     are bracket-floor fills with weak theme tie-in; safe to swap
+#     for a semantic neighbor when one exists.
+#   - agent_select (without a theme: prefix) — Phase 2 greedy slot
+#     fill picks that came in via pool-rank rather than theme. Low
+#     theme alignment → marginal fit. Safe to swap.
+#   - pillar_e_aggressive_swap — v7 Phase 3's swap injections. These
+#     ARE deterministic so swapping them might re-introduce a gap,
+#     but it's a lower-priority swap-out path. Capped by the upstream
+#     anchor logic which keeps must-includes + commander intact.
 _SWAPPABLE_SOURCE_SUBSTRINGS: Tuple[str, ...] = (
     "C2_2_wild_combo_discovery_added",
     "wild_combo_discovery",
+    "slot_fallback:",        # v7 Phase 1 DB-fallback injections
+    "agent_select",          # Phase 2 greedy slot fill (non-theme)
+    "pillar_e_aggressive_swap",  # v7 Phase 3 deterministic swaps
     # NOTE: do NOT include "creative_outlier" here on its own — those are
     # also often anchors. We rely on the anchor list passed in to filter
     # what we swap OUT.

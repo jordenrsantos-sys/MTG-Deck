@@ -302,3 +302,40 @@ as v6 Phase 2's semantic-injection guarantee.
 - Full pytest baseline check pending (background).
 
 **Commit message:** "Phase 3 (mega-task v7): Pillar E v0.7 aggressive swap layer".
+
+Committed as `1253421aa`.
+
+---
+
+## Phase 4 — voyage_semantic widen injection swappable set (2026-05-23)
+
+CC's iter-7 sweep gap #1: voyage_semantic_avg landed at 2.2 vs ≥3 target.
+The semantic-injection layer fires correctly but only adds 1 card per
+case because the swappable set is narrow — most builds have 1 C2.2 wild
+discovery pick, so injection caps at +1.
+
+**Implementation in `agent_semantic_injection_v1.py`:**
+
+1. `_DEFAULT_N_TARGETS` for B3/B4 bumped from 3 → 4 (B5 stayed at 4).
+   B1/B2 stayed at 2 to preserve casual-bracket intent.
+
+2. `_SWAPPABLE_SOURCE_SUBSTRINGS` widened from 2 entries to 5:
+   - kept: `C2_2_wild_combo_discovery_added`, `wild_combo_discovery`
+   - added: `slot_fallback:` (v7 Phase 1's per-slot DB-injected cards)
+   - added: `agent_select` (Phase 2 greedy slot-fill picks, marginal fit)
+   - added: `pillar_e_aggressive_swap` (v7 Phase 3's swap injections)
+
+Protection invariants preserved: `user_intent`, `mana_base`,
+`C2_1_candidate_critic`, `archetype_staple` still NEVER swap out.
+
+**Tests:**
+- `tests/test_agent_semantic_injection_v1.py` — added
+  `V7Phase4WidenedSwappableSetTests` (5 tests). Validates each new
+  swappable source AND verifies archetype_staple + user_intent still
+  protected. Updated existing target-default tests to match new B3/B4=4.
+- Total semantic injection tests: 18 pass (was 13; +5 new).
+
+**Regression:** semantic injection tests 18/18 pass. No other test
+files reference these constants directly (verified via grep).
+
+**Commit message:** "Phase 4 (mega-task v7): voyage_semantic widen injection swappable set".
