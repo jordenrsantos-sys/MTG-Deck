@@ -1362,6 +1362,246 @@ def _score_archetype_staple(frequency_in_corpus: float) -> float:
     return base - freq_penalty
 
 
+# v7 Phase 1: per-slot fallback floors and scoring. Floors are loose — we
+# want enough candidates that _select_deck has options even after some
+# get rejected by combo policy or bracket gates. SLOT_FALLBACK_SCORE
+# stays well below archetype_staple baseline (~5-20) and theme bonuses
+# (~10-50), so fallback cards sit at the bottom of the rank order but
+# fill empty slots when nothing else does.
+_SLOT_FALLBACK_FLOORS: Dict[str, int] = {
+    "ramp": 12,
+    "card_draw": 12,
+    "removal": 10,
+    "win_condition": 4,
+    # land/creature/flex intentionally not fallback'd: lands top up with
+    # basics in _select_deck Pass 3; creatures rarely undershoot for any
+    # commander; flex is the catch-all and only takes a few slots.
+}
+SLOT_FALLBACK_SCORE: float = 1.0
+
+
+def _hydrate_card_metadata(
+    db_snapshot_id: str, names: List[Optional[str]]
+) -> Dict[str, Dict[str, Any]]:
+    """Batch-lookup full card metadata for a list of names. Returns
+    name → card dict ({type_line, primitives, cmc, color_identity, ...}).
+    Skips empty/None names + dedupes. Per-card lookup failures are silently
+    skipped (never raises). Used to hydrate archetype staples whose source
+    endpoint only returns (name, usage_pct) without the metadata needed
+    for the downstream slot classifier."""
+    from engine.db import find_card_by_name
+    out: Dict[str, Dict[str, Any]] = {}
+    seen: set = set()
+    for raw in names:
+        if not isinstance(raw, str):
+            continue
+        name = raw.strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        try:
+            card = find_card_by_name(db_snapshot_id, name)
+        except Exception:
+            continue
+        if card:
+            out[name] = card
+    return out
+
+
+def _classify_pool_slots(candidates: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Count candidates per slot category using _classify_card. Used by
+    fallback injection + the pool_filter_trace instrumentation."""
+    counts: Dict[str, int] = {
+        "creature": 0, "land": 0, "ramp": 0, "card_draw": 0,
+        "removal": 0, "win_condition": 0, "flex": 0,
+    }
+    for c in candidates:
+        slot = _classify_card(
+            name=c.get("name") or "",
+            type_line=c.get("type_line"),
+            primitives=c.get("primitives"),
+        )
+        counts[slot] = counts.get(slot, 0) + 1
+    return counts
+
+
+# Per-slot DB-query lists for the fallback path. ONLY uses primitive names
+# present in the primitive_to_cards inverted index (the legacy taxonomy_v1_23
+# vocabulary). v6 Phase 3 added new ontology names to cards.primitives_v1_json
+# but did NOT rebuild the inverted index; until that rebuild ships (iter 9+),
+# the fallback DB query must use legacy names to actually hit rows.
+_RAMP_FALLBACK_QUERY: List[str] = [
+    "MANA_ROCK", "MANA_RAMP_LAND_SEARCH", "MANA_RAMP_CREATURE_DORK",
+    "MANA_RITUAL_BURST", "TUTOR_LAND",
+]
+_DRAW_FALLBACK_QUERY: List[str] = [
+    "CARD_DRAW_BURST", "DRAW_REPLACEMENT", "WHEEL_EFFECT",
+    "CARD_SELECTION_SCRY_SURVEIL", "TUTOR_ANY_TO_HAND",
+]
+_REMOVAL_FALLBACK_QUERY: List[str] = [
+    "TARGETED_REMOVAL_CREATURE", "COUNTERSPELL", "STACK_COUNTERSPELL",
+    "PERMISSION_OVERRIDE",
+]
+_WIN_CONDITION_FALLBACK_QUERY: List[str] = [
+    "EXTRA_TURN", "EXTRA_COMBAT", "STORM", "DAMAGE_MULTIPLIER",
+]
+
+
+def _inject_slot_fallback_candidates(
+    *,
+    db_snapshot_id: str,
+    color_identity: List[str],
+    by_name: Dict[str, Dict[str, Any]],
+    forbidden_set: Set[str],
+) -> Dict[str, Any]:
+    """For each slot below its fallback floor, query the DB for color-legal
+    cards whose primitives match the missing slot and inject them into
+    by_name. Returns a trace dict.
+
+    Bypasses search_cards_v1 because that Pillar A endpoint silently
+    disables the primitives_any SQL filter when the inverted-index match
+    set exceeds 950 oids (>SQLite param limit) — a known substrate quirk
+    we can't fix from the agent layer per the v7 scope. Direct DB query
+    chunks the IN clause and applies the color-identity filter in Python.
+
+    The injected cards get SLOT_FALLBACK_SCORE — below archetype_staple
+    baseline so they never crowd out theme/staple picks; they only fill
+    slots that would otherwise be empty (the iter-7 sweep failure mode).
+    """
+    import json as _j
+    from engine.db import connect as db_connect
+    from api.engine.version_resolve_v1 import resolve_runtime_taxonomy_version
+
+    pre_counts = _classify_pool_slots(list(by_name.values()))
+    triggered: List[str] = []
+    added_per_slot: Dict[str, int] = {}
+
+    slot_query: Dict[str, List[str]] = {
+        "ramp": _RAMP_FALLBACK_QUERY,
+        "card_draw": _DRAW_FALLBACK_QUERY,
+        "removal": _REMOVAL_FALLBACK_QUERY,
+        "win_condition": _WIN_CONDITION_FALLBACK_QUERY,
+    }
+
+    ci_set = {c.upper() for c in (color_identity or []) if isinstance(c, str)}
+
+    try:
+        with db_connect() as con:
+            tv = resolve_runtime_taxonomy_version(
+                snapshot_id=db_snapshot_id, requested=None, db=con
+            )
+            if not tv:
+                return {
+                    "triggered": [], "added_per_slot": {},
+                    "pre_counts": pre_counts, "post_counts": pre_counts,
+                    "note": "taxonomy_resolve_failed",
+                }
+            for slot, floor in _SLOT_FALLBACK_FLOORS.items():
+                current = pre_counts.get(slot, 0)
+                if current >= floor:
+                    continue
+                gap = floor - current
+                prims_query = slot_query.get(slot)
+                if not prims_query:
+                    continue
+                # 1. Get oracle_ids with any of these primitives.
+                ph = ",".join("?" for _ in prims_query)
+                sql_oids = (
+                    "SELECT DISTINCT oracle_id FROM primitive_to_cards "
+                    f"WHERE snapshot_id = ? AND taxonomy_version = ? AND primitive_id IN ({ph})"
+                )
+                oids = [
+                    r[0] for r in con.execute(
+                        sql_oids, [db_snapshot_id, tv] + prims_query
+                    ).fetchall() if r and r[0]
+                ]
+                if not oids:
+                    continue
+                # 2. Fetch card metadata in chunks (SQLite has 999-param cap).
+                card_rows: List[Any] = []
+                for chunk_start in range(0, len(oids), 900):
+                    chunk = oids[chunk_start : chunk_start + 900]
+                    cph = ",".join("?" for _ in chunk)
+                    sql_cards = (
+                        "SELECT name, type_line, cmc, color_identity, primitives_json "
+                        f"FROM cards WHERE snapshot_id = ? AND oracle_id IN ({cph})"
+                    )
+                    card_rows.extend(
+                        con.execute(sql_cards, [db_snapshot_id] + chunk).fetchall()
+                    )
+                # 3. Filter color identity in Python; dedupe vs by_name + forbidden.
+                color_legal: List[Dict[str, Any]] = []
+                for row in card_rows:
+                    name = row["name"]
+                    if not name or name in by_name:
+                        continue
+                    if name.strip().lower() in forbidden_set:
+                        continue
+                    card_ci = _normalize_color_identity(row["color_identity"])
+                    # Colorless commander accepts only colorless cards.
+                    if not ci_set:
+                        if card_ci:
+                            continue
+                    elif card_ci and not set(card_ci).issubset(ci_set):
+                        continue
+                    color_legal.append({
+                        "name": name,
+                        "type_line": row["type_line"],
+                        "cmc": row["cmc"],
+                        "color_identity": card_ci,
+                        "primitives_json": row["primitives_json"],
+                    })
+                # 4. Sort by name for determinism, inject up to gap.
+                color_legal.sort(key=lambda c: c["name"])
+                added = 0
+                for c in color_legal:
+                    if added >= gap:
+                        break
+                    prims: List[str] = []
+                    pj = c["primitives_json"]
+                    if pj:
+                        try:
+                            parsed = _j.loads(pj) if isinstance(pj, str) else pj
+                            if isinstance(parsed, list):
+                                prims = [str(p) for p in parsed if isinstance(p, str)]
+                        except Exception:
+                            pass
+                    by_name[c["name"]] = {
+                        "name": c["name"],
+                        "score": SLOT_FALLBACK_SCORE,
+                        "source": f"slot_fallback:{slot}",
+                        "rationale_components": [
+                            f"Slot fallback: pool needed more {slot} cards "
+                            f"(had {current} of floor {floor})."
+                        ],
+                        "primitives": prims,
+                        "type_line": c["type_line"],
+                        "cmc": c["cmc"],
+                        "color_identity": c["color_identity"],
+                        "is_user_pick": False,
+                        "is_combo_half": False,
+                    }
+                    added += 1
+                if added > 0:
+                    triggered.append(slot)
+                    added_per_slot[slot] = added
+    except Exception as exc:
+        return {
+            "triggered": triggered,
+            "added_per_slot": added_per_slot,
+            "pre_counts": pre_counts,
+            "post_counts": _classify_pool_slots(list(by_name.values())),
+            "error": f"{exc.__class__.__name__}: {exc}",
+        }
+
+    return {
+        "triggered": triggered,
+        "added_per_slot": added_per_slot,
+        "pre_counts": pre_counts,
+        "post_counts": _classify_pool_slots(list(by_name.values())),
+    }
+
+
 def _build_candidate_pool(
     *,
     db_snapshot_id: str,
@@ -1494,6 +1734,17 @@ def _build_candidate_pool(
             )
 
     # Insert archetype staples (descriptive baseline, frequency-penalized).
+    # v7 Phase 1: hydrate type_line + primitives + cmc + ci from DB so the
+    # downstream slot classifier in _select_deck can route them correctly.
+    # Before this fix, staples entered the pool with type_line=None +
+    # primitives=[] → _classify_card defaulted them to "flex" → lands like
+    # Command Tower and ramp like Sol Ring never landed in their proper
+    # slots, the slot fill found 0 lands/ramp/draw in the pool, and Pass 4
+    # padded with 25-32 extra basics (POOL_UNDER_FILL_PADDED_WITH_BASICS).
+    staple_meta = _hydrate_card_metadata(
+        db_snapshot_id,
+        [s.get("name") for s in (brief.get("staple_cards") or []) if isinstance(s.get("name"), str)],
+    )
     for s in brief.get("staple_cards", []) or []:
         name = s.get("name")
         if not isinstance(name, str):
@@ -1503,11 +1754,16 @@ def _build_candidate_pool(
             continue
         freq = float(s.get("usage_pct") or 0.0)
         score = _score_archetype_staple(freq)
+        meta = staple_meta.get(name, {})
         _upsert(
             name,
             score=score,
             source="archetype_staple",
             rationale=f"Corpus staple for {commander} (usage_pct={freq:.2f}).",
+            primitives=list(meta.get("primitives") or []),
+            type_line=meta.get("type_line"),
+            cmc=meta.get("cmc"),
+            color_identity_=_normalize_color_identity(meta.get("color_identity")),
         )
 
     # Iteration 2 Phase B2: apply LLM-suggested-extension boost. Cards
@@ -1565,6 +1821,45 @@ def _build_candidate_pool(
                 ),
             })
 
+    # v7 Phase 1: per-slot fallback injection. After hydration + filtering,
+    # count current slot classification distribution. For slots that fall
+    # below their fallback floor, query the DB for color-legal candidates
+    # whose primitives match the missing slot and inject them. This closes
+    # the "POOL_UNDER_FILL_PADDED_WITH_BASICS" failure mode the kickoff
+    # documents: thin theme corpora (e.g. vampire tribal) leave ramp/draw/
+    # removal slots starved → 25-32 basics get padded in. With fallback
+    # injection the pool has 10+ ramp / 10+ draw / 7+ removal candidates
+    # before _select_deck runs.
+    fallback_trace = _inject_slot_fallback_candidates(
+        db_snapshot_id=db_snapshot_id,
+        color_identity=color_identity,
+        by_name=by_name,
+        forbidden_set=forbidden_set or set(),
+    )
+    if fallback_trace.get("triggered"):
+        warnings.append({
+            "code": "POOL_SLOT_FALLBACK_TRIGGERED",
+            "message": (
+                f"Slot fallback injected candidates for "
+                f"{', '.join(fallback_trace['triggered'])}; "
+                f"per-slot adds: {fallback_trace['added_per_slot']}."
+            ),
+        })
+
+    # v7 Phase 1: per-stage instrumentation. Surfaces in pool response so
+    # callers + tests can verify which filter pruned the pool.
+    pool_filter_trace = {
+        "staples_in_brief": len(brief.get("staple_cards") or []),
+        "staples_hydrated": len(staple_meta),
+        "theme_hints_used": list(theme_hints),
+        "forbidden_filtered_count": sum(
+            1 for w in warnings if w.get("code") == "POOL_FORBIDDEN_FILTERED"
+        ),
+        "slot_fallback": fallback_trace,
+        "final_pool_size": len(by_name),
+        "slot_distribution": _classify_pool_slots(list(by_name.values())),
+    }
+
     # Deterministic tie-break. When seed is provided, hash(name, seed) gives a
     # stable seed-dependent ordering for equal-score candidates without
     # depending on the non-deterministic `random` module (which is banned in
@@ -1598,6 +1893,8 @@ def _build_candidate_pool(
         # Iteration 2 — needed by Phase C2.1 candidate critic so it can
         # hydrate oracle text for the LLM via find_card_by_name.
         "db_snapshot_id": db_snapshot_id,
+        # v7 Phase 1: per-stage filter instrumentation for diagnosis.
+        "pool_filter_trace": pool_filter_trace,
     }
 
 
@@ -1625,12 +1922,47 @@ _DEFAULT_SLOT_TARGETS: Dict[str, int] = {
 
 # Primitive markers per category. Type-line wins over primitives ("Land" beats
 # "MANA_RAMP_LAND_SEARCH"), and primitives are checked in priority order.
-_RAMP_PRIMITIVES: set = {"MANA_ROCK", "MANA_RAMP_LAND_SEARCH", "MANA_RAMP_CREATURE_DORK", "MANA_RAMP_SPELL"}
-_DRAW_PRIMITIVES: set = {"CARD_DRAW_BURST", "CARD_DRAW_REPEATABLE", "DRAW_REPLACEMENT", "CARD_DRAW"}
-_REMOVAL_PRIMITIVES: set = {"TARGETED_REMOVAL_CREATURE", "TARGETED_REMOVAL_ARTIFACT",
-                            "TARGETED_REMOVAL_ENCHANTMENT", "TARGETED_REMOVAL_PLANESWALKER",
-                            "BOARDWIPE_CREATURES", "COUNTERSPELL_GENERIC", "COUNTERSPELL_CREATURE"}
-_WIN_CONDITION_PRIMITIVES: set = {"WINCON_COMBAT", "WINCON_COMBO", "WINCON_ALT", "INFINITE_COMBO"}
+#
+# v7 Phase 1: sets now match BOTH the legacy primitive_to_cards inverted-index
+# vocabulary AND the v6 Phase 3 cards.primitives_v1_json vocabulary. Pre-v7,
+# the classifier sets included only the legacy index names (MANA_ROCK,
+# TARGETED_REMOVAL_CREATURE, etc.) — but live builds hydrate primitives via
+# find_card_by_name, which returns the new ontology names (RAMP_MANA,
+# REMOVAL_SINGLE, COUNTERSPELL). Result: Sol Ring + Swords to Plowshares
+# + Counterspell + Cultivate all routed to "flex" because none of their
+# primitives matched. Including BOTH vocabularies makes the classifier
+# substrate-agnostic — once the primitive_to_cards index is rebuilt on the
+# v2 ontology (iter 9+ work), the legacy names can be retired.
+_RAMP_PRIMITIVES: set = {
+    # Legacy primitive_to_cards vocabulary:
+    "MANA_ROCK", "MANA_RAMP_LAND_SEARCH", "MANA_RAMP_CREATURE_DORK",
+    "MANA_RAMP_SPELL", "MANA_RITUAL_BURST", "TUTOR_LAND",
+    # v6 Phase 3 cards.primitives_v1_json vocabulary:
+    "RAMP_MANA", "RAMP_LAND", "MANA_FIXING",
+}
+_DRAW_PRIMITIVES: set = {
+    # Legacy primitive_to_cards vocabulary:
+    "CARD_DRAW_BURST", "CARD_DRAW_REPEATABLE", "DRAW_REPLACEMENT",
+    "CARD_SELECTION_SCRY_SURVEIL", "WHEEL_EFFECT", "TUTOR_ANY_TO_HAND",
+    # v6 Phase 3 cards.primitives_v1_json vocabulary:
+    "CARD_DRAW", "CARD_SELECTION",
+}
+_REMOVAL_PRIMITIVES: set = {
+    # Legacy primitive_to_cards vocabulary:
+    "TARGETED_REMOVAL_CREATURE", "TARGETED_REMOVAL_ARTIFACT",
+    "TARGETED_REMOVAL_ENCHANTMENT", "TARGETED_REMOVAL_PLANESWALKER",
+    "BOARDWIPE_CREATURES", "COUNTERSPELL_GENERIC", "COUNTERSPELL_CREATURE",
+    "COUNTERSPELL", "STACK_COUNTERSPELL", "PERMISSION_OVERRIDE",
+    # v6 Phase 3 cards.primitives_v1_json vocabulary:
+    "REMOVAL_SINGLE", "BOARD_WIPE", "DIRECT_DAMAGE",
+}
+_WIN_CONDITION_PRIMITIVES: set = {
+    # Legacy primitive_to_cards vocabulary (alt-win signals):
+    "EXTRA_TURN", "EXTRA_COMBAT", "STORM", "DAMAGE_MULTIPLIER",
+    "STORM", "COMBAT_DAMAGE_PAYOFF",
+    # New-ontology canonical (kept for forward compat):
+    "WINCON_COMBAT", "WINCON_COMBO", "WINCON_ALT", "INFINITE_COMBO",
+}
 
 
 def _classify_card(*, name: str, type_line: Optional[str], primitives: Optional[List[str]]) -> str:
@@ -2081,6 +2413,63 @@ def _select_deck(
     needed_basics = max(0, slot_targets["land"] - slot_counts["land"])
     selected.extend(_fill_mana_base(color_identity, needed_basics))
     slot_counts["land"] += needed_basics
+
+    # ---- Pass 3.5 (v7 Phase 1): backfill from remaining pool candidates ----
+    # Pre-v7, Pass 2 stopped once each slot hit its target — but when one
+    # slot's pool was short of target (e.g., ramp target 10, pool has 7),
+    # the deficit went straight to Pass 4 → padded with extra basics.
+    # Backfill: when len(selected) < target_size and the pool still has
+    # unused non-land candidates, take them irrespective of slot caps to
+    # close the gap. Caps were a soft preference for slot balance; the
+    # hard constraint is "99 non-commander cards." Combo policy still applies.
+    deficit_before_backfill = target_size - len(selected)
+    if deficit_before_backfill > 0:
+        backfill_added = 0
+        for c in candidates:
+            if backfill_added >= deficit_before_backfill:
+                break
+            if c.get("is_user_pick"):
+                continue
+            name = c["name"]
+            name_lower = name.strip().lower()
+            if name_lower in selected_names_lower:
+                continue
+            slot = _classify_card(
+                name=name, type_line=c.get("type_line"), primitives=c.get("primitives"),
+            )
+            # Pass 3 already handled lands; basics get padded last if anything.
+            if slot == "land":
+                continue
+            violates, _ = _combo_violates_bracket(
+                candidate_name=name,
+                selected_names_lower=selected_names_lower,
+                user_pick_names_lower=user_pick_names_lower,
+                bracket=bracket,
+                pair_index=pair_index,
+                current_pair_count=pair_count,
+            )
+            if violates:
+                continue
+            selected.append({
+                "card_name": name,
+                "reason": _format_reason(c, slot) + " [pool_backfill]",
+                "source": c.get("source", "agent_select"),
+            })
+            selected_names_lower.add(name_lower)
+            slot_counts[slot] = slot_counts.get(slot, 0) + 1
+            backfill_added += 1
+            if bracket == "B4":
+                pair_count = _count_existing_combo_pairs(
+                    selected_names_lower=selected_names_lower, pair_index=pair_index,
+                )
+        if backfill_added > 0:
+            warnings.append({
+                "code": "POOL_BACKFILL_USED_OVERFLOW_CANDIDATES",
+                "message": (
+                    f"Slot caps were short; backfilled {backfill_added} cards "
+                    f"from overflow pool candidates to avoid basic-pad."
+                ),
+            })
 
     # ---- Pass 4: pad up to target_size with basics if anything is short ----
     deficit = target_size - len(selected)
