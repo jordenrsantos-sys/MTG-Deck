@@ -1583,6 +1583,88 @@ _WIN_CONDITION_FALLBACK_QUERY: List[str] = [
 ]
 
 
+def _collect_pool_theme_primitives(
+    by_name: Dict[str, Dict[str, Any]],
+) -> Tuple[Set[str], Set[str]]:
+    """v8 Phase 1: derive theme_primitives + deck_primitives sets from the
+    pool's current state. Used by the fallback ranker to score candidates
+    by archetype relevance (tier 1 / tier 2 / tier 3 chain).
+
+    Returns:
+        theme_primitives: primitives appearing on theme-tagged candidates
+            (source contains 'theme:'). These define the deck's primary
+            archetype signal — e.g., Edgar vampire tribal has DEATH_PAYOFF,
+            DIES_TRIGGER, COMBAT_DAMAGE_PAYOFF, EVASION as theme primitives.
+        deck_primitives: primitives appearing on ANY candidate in the pool
+            (theme + staple + user-pick + wild-combo). Broader "what's the
+            deck about" signal — used as the tier-2 overlap target.
+    """
+    theme_primitives: Set[str] = set()
+    deck_primitives: Set[str] = set()
+    for cand in by_name.values():
+        src = cand.get("source") or ""
+        prims = set(cand.get("primitives") or [])
+        deck_primitives |= prims
+        if "theme:" in src:
+            theme_primitives |= prims
+    # When no theme cards exist (rare — corpus-thin commander), fall back
+    # to deck_primitives so tier-1 and tier-2 effectively merge. Better
+    # than a 0/0 ranking that drops to tier-3 (alphabetical drift).
+    if not theme_primitives:
+        theme_primitives = deck_primitives
+    return theme_primitives, deck_primitives
+
+
+def _score_fallback_candidate(
+    card_prims: Set[str],
+    theme_primitives: Set[str],
+    deck_primitives: Set[str],
+    cmc: Any,
+) -> Tuple[int, int, int, float]:
+    """v8 Phase 1: tier-ordered relevance score for a slot-fallback
+    candidate. Returns a tuple sorted DESCENDING so higher tiers dominate:
+
+      tier 1 — archetype-tagged: overlap count with theme_primitives.
+      tier 2 — primitive-overlapping: overlap count with deck_primitives.
+      tier 3 — primitive-rich: total primitive count (non-empty beats empty).
+      cmc tie-break — descending negative-cmc puts lower cmc first.
+
+    Critical: this tuple's final element is NEGATIVE cmc, not card name.
+    Alphabetical ordering NEVER survives into the ranked output. Two
+    candidates with identical (tier1, tier2, tier3, cmc) tuples remain
+    in the input order via Python's stable sort — but THAT order is the
+    SQL fetch order, NOT alphabetical.
+    """
+    tier1 = len(card_prims & theme_primitives)
+    tier2 = len(card_prims & deck_primitives)
+    tier3 = len(card_prims)
+    try:
+        cmc_neg = -float(cmc) if cmc is not None else 0.0
+    except (TypeError, ValueError):
+        cmc_neg = 0.0
+    return (tier1, tier2, tier3, cmc_neg)
+
+
+def _resolve_fallback_score(
+    card_prims: Set[str],
+    theme_primitives: Set[str],
+    deck_primitives: Set[str],
+) -> float:
+    """v8 Phase 1: per-candidate fallback SCORE (distinct from sort tuple).
+    The pool's final sort uses `score` as the primary key — so within the
+    slot_fallback batch, archetype-relevant candidates get a higher score
+    than primitive-overlap candidates than no-overlap candidates. This
+    ensures the pool's downstream consumers (selector, semantic injection)
+    see fallback cards in tiered relevance order rather than all tied at
+    SLOT_FALLBACK_SCORE=1.0 (which would resolve to alphabetical).
+    """
+    if card_prims & theme_primitives:
+        return SLOT_FALLBACK_SCORE + 2.0  # tier 1
+    if card_prims & deck_primitives:
+        return SLOT_FALLBACK_SCORE + 1.0  # tier 2
+    return SLOT_FALLBACK_SCORE              # tier 3
+
+
 def _inject_slot_fallback_candidates(
     *,
     db_snapshot_id: str,
@@ -1594,15 +1676,18 @@ def _inject_slot_fallback_candidates(
     cards whose primitives match the missing slot and inject them into
     by_name. Returns a trace dict.
 
+    v8 Phase 1: candidates are ranked by archetype-relevance tier chain
+    (tier 1 archetype-tagged > tier 2 primitive-overlap > tier 3 generic).
+    Alphabetical ordering is NEVER a tier. Pre-v8 the post-filter sort
+    was `color_legal.sort(key=lambda c: c["name"])`, which made the
+    fallback functionally alphabetical — Edgar B3 builds landed ~30
+    A-prefix cards (A-Karn, A-Visions of Phyrexia, Academic Dispute,
+    Abeyance, etc.) because they sorted first by name.
+
     Bypasses search_cards_v1 because that Pillar A endpoint silently
     disables the primitives_any SQL filter when the inverted-index match
-    set exceeds 950 oids (>SQLite param limit) — a known substrate quirk
-    we can't fix from the agent layer per the v7 scope. Direct DB query
-    chunks the IN clause and applies the color-identity filter in Python.
-
-    The injected cards get SLOT_FALLBACK_SCORE — below archetype_staple
-    baseline so they never crowd out theme/staple picks; they only fill
-    slots that would otherwise be empty (the iter-7 sweep failure mode).
+    set exceeds 950 oids (>SQLite param limit). Direct DB query chunks
+    the IN clause and applies the color-identity filter in Python.
     """
     import json as _j
     from engine.db import connect as db_connect
@@ -1611,6 +1696,11 @@ def _inject_slot_fallback_candidates(
     pre_counts = _classify_pool_slots(list(by_name.values()))
     triggered: List[str] = []
     added_per_slot: Dict[str, int] = {}
+
+    # v8 Phase 1: derive theme + deck primitives once for relevance scoring.
+    theme_primitives, deck_primitives = _collect_pool_theme_primitives(by_name)
+    # Track tier counts per slot for instrumentation.
+    tier_counts: Dict[str, Dict[str, int]] = {}
 
     slot_query: Dict[str, List[str]] = {
         "ramp": _RAMP_FALLBACK_QUERY,
@@ -1666,6 +1756,8 @@ def _inject_slot_fallback_candidates(
                         con.execute(sql_cards, [db_snapshot_id] + chunk).fetchall()
                     )
                 # 3. Filter color identity in Python; dedupe vs by_name + forbidden.
+                #    v8 Phase 1: also parse primitives now so the relevance
+                #    score can rank candidates before the gap-truncating slice.
                 color_legal: List[Dict[str, Any]] = []
                 for row in card_rows:
                     name = row["name"]
@@ -1674,27 +1766,14 @@ def _inject_slot_fallback_candidates(
                     if name.strip().lower() in forbidden_set:
                         continue
                     card_ci = _normalize_color_identity(row["color_identity"])
-                    # Colorless commander accepts only colorless cards.
                     if not ci_set:
                         if card_ci:
                             continue
                     elif card_ci and not set(card_ci).issubset(ci_set):
                         continue
-                    color_legal.append({
-                        "name": name,
-                        "type_line": row["type_line"],
-                        "cmc": row["cmc"],
-                        "color_identity": card_ci,
-                        "primitives_json": row["primitives_json"],
-                    })
-                # 4. Sort by name for determinism, inject up to gap.
-                color_legal.sort(key=lambda c: c["name"])
-                added = 0
-                for c in color_legal:
-                    if added >= gap:
-                        break
+                    # Parse primitives here so we can score before truncation.
                     prims: List[str] = []
-                    pj = c["primitives_json"]
+                    pj = row["primitives_json"]
                     if pj:
                         try:
                             parsed = _j.loads(pj) if isinstance(pj, str) else pj
@@ -1702,15 +1781,50 @@ def _inject_slot_fallback_candidates(
                                 prims = [str(p) for p in parsed if isinstance(p, str)]
                         except Exception:
                             pass
+                    color_legal.append({
+                        "name": name,
+                        "type_line": row["type_line"],
+                        "cmc": row["cmc"],
+                        "color_identity": card_ci,
+                        "primitives": prims,
+                    })
+                # 4. v8 Phase 1: rank by archetype-relevance tier chain,
+                #    descending. Replaces the alphabetical sort that caused
+                #    the A-prefix wave in iter-8 Edgar B3 builds.
+                color_legal.sort(
+                    key=lambda c: _score_fallback_candidate(
+                        set(c["primitives"]),
+                        theme_primitives, deck_primitives, c.get("cmc"),
+                    ),
+                    reverse=True,
+                )
+                tier1_in_slot = 0
+                tier2_in_slot = 0
+                tier3_in_slot = 0
+                added = 0
+                for c in color_legal:
+                    if added >= gap:
+                        break
+                    card_prims_set = set(c["primitives"])
+                    # Tier classification for instrumentation (matches the
+                    # _resolve_fallback_score tiers exactly).
+                    if card_prims_set & theme_primitives:
+                        tier1_in_slot += 1
+                    elif card_prims_set & deck_primitives:
+                        tier2_in_slot += 1
+                    else:
+                        tier3_in_slot += 1
                     by_name[c["name"]] = {
                         "name": c["name"],
-                        "score": SLOT_FALLBACK_SCORE,
+                        "score": _resolve_fallback_score(
+                            card_prims_set, theme_primitives, deck_primitives,
+                        ),
                         "source": f"slot_fallback:{slot}",
                         "rationale_components": [
-                            f"Slot fallback: pool needed more {slot} cards "
-                            f"(had {current} of floor {floor})."
+                            f"Slot fallback (v8 archetype-ranked): pool needed "
+                            f"more {slot} cards (had {current} of floor {floor})."
                         ],
-                        "primitives": prims,
+                        "primitives": c["primitives"],
                         "type_line": c["type_line"],
                         "cmc": c["cmc"],
                         "color_identity": c["color_identity"],
@@ -1721,6 +1835,11 @@ def _inject_slot_fallback_candidates(
                 if added > 0:
                     triggered.append(slot)
                     added_per_slot[slot] = added
+                    tier_counts[slot] = {
+                        "tier1_archetype": tier1_in_slot,
+                        "tier2_primitive_overlap": tier2_in_slot,
+                        "tier3_generic": tier3_in_slot,
+                    }
     except Exception as exc:
         return {
             "triggered": triggered,
@@ -1735,6 +1854,7 @@ def _inject_slot_fallback_candidates(
         "added_per_slot": added_per_slot,
         "pre_counts": pre_counts,
         "post_counts": _classify_pool_slots(list(by_name.values())),
+        "tier_counts": tier_counts,  # v8 Phase 1 instrumentation
     }
 
 
