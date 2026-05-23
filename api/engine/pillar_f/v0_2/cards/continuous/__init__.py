@@ -21,4 +21,25 @@ Layer mapping reminder (CR 613):
   7c — P/T modifications (anthems +1/+1)
   7d — P/T switches (Inverter of Truth)
 """
-# Phase 4 modules wire in as cards are added.
+# Framework first.
+from api.engine.pillar_f.v0_2.cards.continuous import framework  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.continuous.framework import (
+    ContinuousEffectBuilder, register_continuous_effect,
+    get_continuous_effect_builder, attach_layered_effects_for,
+    detach_layered_effects_for, StaticModifier,
+    register_static_modifier, get_static_modifiers,
+    all_static_modifier_card_names, query_active_static_modifiers,
+)
+
+# Per-card modules.
+from api.engine.pillar_f.v0_2.cards.continuous import type_adders  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.continuous import anthems_and_keywords  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.continuous import static_modifiers  # noqa: F401
+
+__all__ = [
+    "ContinuousEffectBuilder", "register_continuous_effect",
+    "get_continuous_effect_builder", "attach_layered_effects_for",
+    "detach_layered_effects_for", "StaticModifier",
+    "register_static_modifier", "get_static_modifiers",
+    "all_static_modifier_card_names", "query_active_static_modifiers",
+]
