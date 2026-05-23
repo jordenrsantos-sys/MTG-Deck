@@ -287,3 +287,64 @@ Full combat-phase integration (LLM driving declare → first-strike →
 normal damage) deferred to Phase 9.
 
 **Commit message:** "Phase 4 (mega-task v10): combat-phase prompt + attackers/blockers parsers".
+
+Committed as `e124aca13`. (Inadvertently swept in v11's untracked
+`tests/pillar_f_v0_2_cards/test_phase1_simple.py`; module is disjoint
+from v10's scope and content unmodified — left in place rather than
+churning a revert.)
+
+---
+
+## Phase 5 — Response-window prompt (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/policy/`:
+
+1. **prompts/response_window.py** —
+   - `RESPONSE_WINDOW_SYSTEM_PROMPT` — Commander-piloting role focused
+     on the decision "respond or pass" with explicit default-to-pass
+     guidance (per scoping doc — most stack objects don't warrant a
+     response). Includes counter-war escalation math + ally-protection
+     etiquette + JSON contract.
+   - `build_response_window_prompt(compact, stack_top_summary,
+     eligible_actions, politics_context?, deck_archetype_hint?,
+     rationale_history?, last_error_message?)` — STACK TOP first, then
+     current state, politics, recent rationales, eligible responses,
+     re-prompt error.
+   - `summarize_stack_top(stack_entry)` — produces a 5-6-line summary
+     from a StackEntry dataclass OR its to_dict() form. Handles None +
+     unparseable inputs gracefully.
+
+2. **llm_responder.py** — Branches on `bool(state.stack)`:
+   - non-empty stack → RESPONSE_WINDOW_SYSTEM_PROMPT +
+     build_response_window_prompt + cost purpose="response_window".
+   - empty stack → MAIN_PHASE_SYSTEM_PROMPT + build_main_phase_prompt
+     + cost purpose="main_phase_priority" (unchanged).
+   - Re-prompt loop, fallback-pass, cost tracking unchanged.
+   - Parser reused: JSON shape is identical (action_type +
+     action_index + rationale), so `parse_action_response` handles
+     both prompt types.
+
+**Tests** in `tests/pillar_f_v0_2_policy/test_phase5_response_window.py`:
+17 tests across 5 classes:
+- **SummarizeStackTopTests** (4): None, dataclass, dict form,
+  unparseable.
+- **ResponseWindowPromptAssemblyTests** (6): stack-top + eligible
+  shown, no-eligible shows "(none — must pass)", politics, deck
+  archetype, last-error re-prompt, rationale history.
+- **ResponseWindowParserReuseTests** (3): pass parses, cast
+  counterspell parses, out-of-range index rejected (parser shared
+  with main-phase).
+- **ResponseWindowSystemPromptTests** (2): JSON contract present,
+  "default to pass" guidance present.
+- **ResponderRoutingTests** (2): non-empty stack routes to response-
+  window prompt + cost purpose; empty stack routes to main-phase
+  prompt with no STACK TOP section.
+
+**All 17 pass.** ~150 LOC production + ~290 LOC test.
+
+Full counter-war integration test (3-deep chain with all 4 players
+holding priority opportunities at each level) deferred to Phase 9.
+
+**Full policy regression: 98/98 passing.**
+
+**Commit message:** "Phase 5 (mega-task v10): response-window prompt + responder routing".

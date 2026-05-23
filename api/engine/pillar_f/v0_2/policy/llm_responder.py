@@ -30,6 +30,9 @@ from api.engine.pillar_f.v0_2.policy.cost import CostTracker
 from api.engine.pillar_f.v0_2.policy.prompts import (
     compact_view, build_main_phase_prompt,
     MAIN_PHASE_SYSTEM_PROMPT,
+    build_response_window_prompt,
+    RESPONSE_WINDOW_SYSTEM_PROMPT,
+    summarize_stack_top,
 )
 from api.engine.pillar_f.v0_2.policy.parsers import (
     ActionResponse, parse_action_response, fallback_pass_response,
@@ -111,19 +114,41 @@ def make_llm_priority_responder(
         politics_ctx = politics_state_by_player.get(player_id)
         rationale_hist = rationale_history_by_player.get(player_id, [])
 
+        # Branch on stack state: non-empty stack → response-window
+        # prompt (focused on the stack-top object). Empty stack →
+        # main-phase prompt. Scoping section 2c.
+        is_response_window = bool(state.stack)
+        if is_response_window:
+            system_prompt = RESPONSE_WINDOW_SYSTEM_PROMPT
+            call_purpose = "response_window"
+            stack_top_text = summarize_stack_top(state.stack[-1])
+        else:
+            system_prompt = MAIN_PHASE_SYSTEM_PROMPT
+            call_purpose = "main_phase_priority"
+            stack_top_text = ""
+
         last_error: Optional[str] = None
         response: Optional[ActionResponse] = None
         attempts = 0
         while attempts <= MAX_REPROMPTS:
-            user_prompt = build_main_phase_prompt(
-                compact, eligible,
-                politics_context=politics_ctx,
-                deck_archetype_hint=deck_hint,
-                rationale_history=rationale_hist,
-                last_error_message=last_error,
-            )
+            if is_response_window:
+                user_prompt = build_response_window_prompt(
+                    compact, stack_top_text, eligible,
+                    politics_context=politics_ctx,
+                    deck_archetype_hint=deck_hint,
+                    rationale_history=rationale_hist,
+                    last_error_message=last_error,
+                )
+            else:
+                user_prompt = build_main_phase_prompt(
+                    compact, eligible,
+                    politics_context=politics_ctx,
+                    deck_archetype_hint=deck_hint,
+                    rationale_history=rationale_hist,
+                    last_error_message=last_error,
+                )
             result = llm_client.call_with_budget(
-                system=MAIN_PHASE_SYSTEM_PROMPT,
+                system=system_prompt,
                 user=user_prompt,
                 max_input_tokens=DEFAULT_MAX_INPUT_TOKENS,
                 max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
@@ -131,7 +156,7 @@ def make_llm_priority_responder(
             cost_tracker.record_call(
                 player_id=player_id, turn_number=state.turn_number,
                 cost_usd=getattr(result, "cost_usd", 0.0),
-                purpose="main_phase_priority",
+                purpose=call_purpose,
             )
             # If cost guardrail flipped DURING this call, fall back now.
             if cost_tracker.game_halted_for_cost:
