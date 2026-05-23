@@ -474,3 +474,63 @@ to be safe.
 v8 ships clean.
 
 **Commit message:** "Phase 7 (mega-task v8): iter 9 final validation sweep — 5/5 pass 7/7 gates".
+
+Committed as `88e30812c`.
+
+---
+
+## Phase 8 — Final regression + memory + Pillar F v0.2 scoping doc (2026-05-23)
+
+**Full pytest:** 1628 passed / 25 skipped / 0 failed / 88 subtests
+(was 1608 at v7 ship; +20 new across v8 Phases 1-6).
+
+**Full vitest:** 774 passed / 2 pre-existing failed (unchanged from v7
+baseline — no UI changes in v8).
+
+**Iter-9 sweep:** 5/5 cases pass 7/7 gates each (Phase 7).
+
+**Pillar F v0.2 scoping document landed:**
+`MTG-Deck-Builder-Claude/pillar_f_v0_2_game_engine_scoping.md` covers
+all 6 kickoff-required sections:
+(a) game-state object model (4 hands, 4 boards, 4 graveyards, 4
+libraries with hidden information)
+(b) stack + priority + replacement effects + layers
+(c) LLM strategic policy with politics + threat assessment
+(d) eventual distilled fast policy (iter-12+)
+(e) multi-month timeline broken into 3 sub-mega-tasks (~16 weeks total)
+(f) integration plan with graduated playtest framework for Stage 2
+
+**Final report landed:** `MTG-Deck-Builder-Claude/mega_task_v8_final_report.md`
+covering executive summary, headline metrics, per-phase commits +
+architectural patterns, iter-9 → iter-10 hand-off, commit chain, test
+deltas, spend ($3-4 of $70), deferred items.
+
+**Memory updates** (Cowork memory at
+`C:/Users/jorde/.claude/projects/E--MTG-Root/memory/`):
+- NEW: `project_mega_task_v8_shipped.md` — v8 commit chain + 10
+  load-bearing substrate invariants iter 10 must honor.
+- UPDATED: `MEMORY.md` — added v8 entry to index (replaced index list
+  with the 5 active memories).
+- UPDATED: `project_5_pillar_forward_plan.md` — Pillar E v0.7
+  completion status; Pillar F v0.2 scoping doc landed; 3 top iter-10
+  priorities + 5 smaller-scope items documented.
+
+**Mega-task v8 success criteria check (per kickoff):**
+1. PASS All 9 phases committed; Phase 8 final regression passes.
+2. PASS Phase 7 sweep: 5/5 cases pass 7/7 gates each (no halt;
+   threshold was <3/5).
+3. PASS pytest 1628 + vitest 774 baselines preserved + new tests pass.
+4. PASS A-prefix wave closed (Phase 1: 32 → 2).
+5. PASS Singleton safety-net upstream fix (Phase 2: 0/5 trigger).
+6. PASS Pillar E v0.7 iterate-until-target + category extension
+   (Phase 3 + Phase 6: all 5 cases fire 4-8 iters, 10-26 swaps).
+7. PASS Bracket-proportional interaction bounds (Phase 5: Atraxa
+   0/5 → 5/5).
+8. PASS Pillar E critique coverage extension (Phase 6: Edgar/Krenko/
+   Ur-Dragon swap-no-fire closed).
+9. PASS Pillar F v0.2 scoping doc landed (Phase 8 deliverable).
+10. PASS Total spend ~$3-4 of $70 budget.
+
+v8 SHIPPED at 5/5 sweep 7/7 gates.
+
+**Commit message:** "Phase 8 (mega-task v8): final regression + memory + Pillar F v0.2 scoping doc — v8 SHIPPED".
