@@ -281,6 +281,31 @@ class CandidatePoolFillRateTests(unittest.TestCase):
                     f"{[c.get('card_name') for c in a_prefix_from_fallback]}",
                 )
 
+    def test_v8_phase2_commander_excluded_from_mainboard_pool(self) -> None:
+        """v8 Phase 2: the commander name must NEVER appear in the
+        mainboard candidate pool. Pre-v8 the brief.staple_cards list
+        included the commander for any commander that was also an
+        archetype staple (Edgar Markov, Krenko, Yuriko), and _select_deck
+        would select it into the mainboard alongside the commander slot,
+        triggering STRUCTURAL_SAFETY_NET_SINGLETON_FIXED. Upstream
+        filter removes it before _select_deck ever sees it."""
+        for case in SWEEP_CASES:
+            with self.subTest(case=case["id"]):
+                pool, _, _ = _run_case(case)
+                names_lower = {
+                    (c.get("name") or "").strip().lower()
+                    for c in pool.get("candidates") or []
+                }
+                self.assertNotIn(
+                    case["commander"].strip().lower(), names_lower,
+                    f"{case['id']}: commander {case['commander']!r} found in "
+                    f"mainboard candidate pool — singleton violation upstream",
+                )
+                # Warning fires when the upstream filter triggered (always
+                # true for commanders that are corpus staples; some commanders
+                # may not be in the staple list and the warning won't fire).
+                # So the warning is informational, not asserted.
+
     def test_v8_phase1_tier_counts_surface_in_trace(self) -> None:
         """v8 Phase 1: the slot_fallback trace now reports per-slot
         tier_counts (tier1_archetype, tier2_primitive_overlap, tier3_generic)

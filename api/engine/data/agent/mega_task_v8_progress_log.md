@@ -161,3 +161,38 @@ sensible vampire-coherent cards:
 - 7 fill-rate tests pass + 25 subtests pass.
 
 **Commit message:** "Phase 1 (mega-task v8): slot-fallback archetype-relevance scoring — closes A-prefix wave".
+
+Committed as `4e9b03f44`.
+
+---
+
+## Phase 2 — Singleton safety-net upstream fix (BLOCKING) (2026-05-23)
+
+**Root cause:** `compute_archetype_brief_v1` returns the commander as
+part of `staple_cards` for any commander that's also a staple of its
+archetype (Edgar Markov for vampire tribal, Krenko for goblins, etc.).
+`_build_candidate_pool` adds all staples to the pool via the
+`archetype_staple` source. `_select_deck` Pass 2 then picks the
+commander into the mainboard, triggering
+`STRUCTURAL_SAFETY_NET_SINGLETON_FIXED: 'Edgar Markov' appeared 2× →
+reduced to 1 + 1 basic(s)`.
+
+**Fix in `_build_candidate_pool`:** added an upstream filter that
+removes the commander from `by_name` after staple insertion and before
+the LLM extension boost / forbidden filter. Emits new warning
+`POOL_COMMANDER_EXCLUDED_FROM_MAINBOARD` when triggered. Safety net
+stays in place as belt-and-suspenders for synthetic duplicates injected
+in tests.
+
+**Verification:** Edgar/Krenko/Ur-Dragon/Atraxa/Yuriko all 5 commanders
+correctly excluded from mainboard pool. POOL_COMMANDER_EXCLUDED_FROM_MAINBOARD
+fires on all 5 (every test-sweep commander is also an archetype staple).
+
+**Tests:**
+- `tests/test_candidate_pool_fill_rate.py`:
+  - NEW `test_v8_phase2_commander_excluded_from_mainboard_pool`:
+    asserts commander name NEVER appears in pool candidates for all 5
+    sweep cases.
+- 8 fill-rate tests pass + 30 subtests pass.
+
+**Commit message:** "Phase 2 (mega-task v8): exclude commander from mainboard candidate pool".

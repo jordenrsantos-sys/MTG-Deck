@@ -2022,6 +2022,30 @@ def _build_candidate_pool(
             color_identity_=_normalize_color_identity(meta.get("color_identity")),
         )
 
+    # v8 Phase 2: exclude the commander from the mainboard candidate pool.
+    # The brief.staple_cards list includes the commander itself for any
+    # commander that's also a staple of its archetype (Edgar Markov is
+    # both commander AND archetype staple of vampire tribal). Without
+    # this filter, the commander can be selected into the mainboard
+    # during _select_deck Pass 2, causing a singleton violation that the
+    # structural safety net silently swaps for a basic. Removing the
+    # commander from the pool upstream eliminates the cause; the safety
+    # net stays in place as belt-and-suspenders.
+    commander_lower = (commander or "").strip().lower()
+    if commander_lower and commander_lower in {k.strip().lower() for k in by_name.keys()}:
+        for name in list(by_name.keys()):
+            if name.strip().lower() == commander_lower:
+                del by_name[name]
+                warnings.append({
+                    "code": "POOL_COMMANDER_EXCLUDED_FROM_MAINBOARD",
+                    "message": (
+                        f"Commander {commander!r} appeared in the mainboard "
+                        f"candidate pool (via archetype_staple or theme path); "
+                        f"removed upstream to prevent singleton violation."
+                    ),
+                })
+                break
+
     # Iteration 2 Phase B2: apply LLM-suggested-extension boost. Cards
     # named by the intent interpreter get LLM_EXTENSION_BOOST added to
     # their existing score (theme/staple/whatever). User picks (INF)
