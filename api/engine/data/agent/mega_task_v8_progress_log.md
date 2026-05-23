@@ -261,3 +261,51 @@ v0.7's swap picks default to archetype-relevant fallback.
   always fill the land slot.
 
 **Commit message:** "Phase 3 (mega-task v8): Pillar E v0.7 iterate-until-target + win_con category".
+
+Committed as `dafe75337`.
+
+---
+
+## Phase 4 — Vocabulary tech debt (TIER-3 SKIP per escalation protocol) (2026-05-23)
+
+**Scope assessment:** Kickoff estimate "3-5 days CC time" for full
+`primitive_to_cards` rebuild + risky data migration across 36k cards.
+v8 budget envelope ($70 ceiling) + remaining phase scope (Phases 5-8
+include the BLOCKING sweep + scoping doc) makes a full rebuild
+substantively risky within iter-9. Tier-3 skip per kickoff escalation
+protocol; iter-10 dispatch owns the rebuild as its own focused arc.
+
+**Discovery during scope analysis:** the codebase actually has THREE
+vocabularies, not two:
+1. Legacy v1 ontology UPPERCASE in `primitive_to_cards` inverted
+   index (MANA_ROCK, TARGETED_REMOVAL_CREATURE, CARD_DRAW_BURST).
+2. Theme/bridge signals lowercase-hyphenated in
+   `deck_theme_classifier_v1._SIGNAL_VOCAB` + `win_con_coherence._WIN_CON_PATTERNS`
+   (combo-assembly, counterspell-hard, sac-outlet, death-trigger).
+3. v6 Phase 3 ontology v2 UPPERCASE in `cards.primitives_v1_json`
+   (RAMP_MANA, REMOVAL_SINGLE, COUNTERSPELL, PROLIFERATE).
+
+The "rebuild" the kickoff prescribes assumes single-source ground
+truth in v2, but vocab 2 (lowercase-hyphenated) underpins the
+theme classifier + win-con patterns and isn't a simple alias for
+vocab 1 or 3. Migration plan needs to either:
+(a) re-extract all 36k cards with v2 extractor + drop vocab 1
+    (preserves vocab 2 in classifier/patterns; safest),
+(b) full collapse to a single canonical v2 vocab everywhere (deeper
+    refactor; requires regenerating theme classifier signals too).
+
+Iter-10 dispatch should pick one approach explicitly.
+
+**Phase 4 deliverable:** `tests/test_v8_phase4_dual_vocabulary_regression.py`
+locks in the dual-vocabulary invariants as a SAFETY NET. Six tests
+assert legacy + v2 vocab both present in `_classify_card`,
+`_PRIMITIVES_TO_CATEGORY`, `_WIN_CON_PATTERNS`. Seventh test asserts
+v8 Phase 3's `_WIN_CON_ENABLER_PRIMS` is v2-canonical only (the
+forward-pattern iter-10 should converge everyone to).
+
+Iter-10 should INVERT this test file: replace dual-vocab assertions
+with single-vocab assertions after the rebuild ships.
+
+**Tests:** 7 v8 Phase 4 regression tests pass.
+
+**Commit message:** "Phase 4 (mega-task v8): vocabulary tech debt — Tier-3 skip + regression safety net".
