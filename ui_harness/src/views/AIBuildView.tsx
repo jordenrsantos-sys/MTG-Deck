@@ -39,6 +39,12 @@ const ACTIVE_DECK_STORAGE_KEY = "mtg-engine.active-deck";
 // Mega-task v5 Phase 4: client-side stopwatch + 240s timeout.
 // Iter 5 5-case sweep observed wallclock 110-130s; we use this for the
 // "typical" expectation anchor + the 240s safety ceiling.
+// Mega-task v6 Phase 1: kept at 240. The earlier 240→480 bump was based on
+// a misread (zero events arriving looked like slow builds); the real cause
+// was a React 18 StrictMode mountedRef regression in useBuildStreaming
+// (now fixed). Iter-7 budget per criterion #5 is ≤130s — 240 stays plenty
+// of headroom even with Pillar E v0.5/v0.6 critique + semantic injection
+// added later in this mega-task.
 const BUILD_TIMEOUT_SECONDS = 240;
 const BUILD_TYPICAL_LOW_S = 110;
 const BUILD_TYPICAL_HIGH_S = 130;

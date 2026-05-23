@@ -2537,6 +2537,13 @@ async def agent_build_deck_v1_stream(req: AgentBuildDeckV1Request):
         event_q.put(event)
 
     def _run_build() -> None:
+        # compute_agent_build_deck_v1 emits the final {"phase":"complete",
+        # "status":"completed","response":...} event itself via
+        # progress_callback (see agent_build_deck_v1._emit_progress(... phase=
+        # "complete", extra={"response": ...})). No synthetic re-emission
+        # needed here — earlier v6 P1 diagnostic attempt added one based on
+        # a misread of the bug (the real cause was a UI-side React 18
+        # StrictMode mountedRef regression in useBuildStreaming, now fixed).
         try:
             compute_agent_build_deck_v1(
                 db_snapshot_id=req.db_snapshot_id,

@@ -29,6 +29,20 @@ export default defineConfig({
       "/health": { target: API_TARGET, changeOrigin: true },
       "/snapshots": { target: API_TARGET, changeOrigin: true },
       "/snapshot": { target: API_TARGET, changeOrigin: true },
+      // Mega-task v6 Phase 1: route /agent through the proxy so SSE streaming
+      // is same-origin in dev. Server-side CORS+SSE both verified clean via
+      // tools/mega_task_v6_phase1_browser_simulation.py; this entry removes
+      // the cross-origin variable entirely from the dev workflow so a vite
+      // port outside the CORSMiddleware allowlist (e.g. 5175 when 5173 is
+      // taken) cannot silently break the build UI.
+      "/agent": { target: API_TARGET, changeOrigin: true },
+      // Agent surface also includes a few other paths the UI may call later.
+      "/deck": { target: API_TARGET, changeOrigin: true },
+      "/commander": { target: API_TARGET, changeOrigin: true },
+      "/theme": { target: API_TARGET, changeOrigin: true },
+      "/card": { target: API_TARGET, changeOrigin: true },
+      "/playtest": { target: API_TARGET, changeOrigin: true },
+      "/corpus": { target: API_TARGET, changeOrigin: true },
     },
   },
 });

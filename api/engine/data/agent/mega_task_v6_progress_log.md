@@ -29,5 +29,42 @@ Substrate baseline at v6 start: `95d06c2d9` (Coherence Sweep #3 ship). pytest 14
 **Decisions / open items:**
 - Will preserve the in-flight `api/main.py` + `AIBuildView.tsx` modifications for Phase 1; Phase 0 commits only this progress log scaffold.
 
-**Commit:** `Phase 0 (mega-task v6): pre-flight + progress log scaffold`.
+**Commit:** `Phase 0 (mega-task v6): pre-flight + progress log scaffold` — `d7c91ab51`.
+
+**Test baselines confirmed (post-commit, repo/.venv Python 3.10.11):**
+- pytest: **1489 passed, 8 failed, 17 skipped** — matches kickoff baseline exactly.
+- 8 known pre-existing failures: 1× `test_bracket_gc_limits_v1`, 5× `test_complete_bracket_violations_v1::TestHttpEndpointWiring`, 1× `test_no_random_imports`, 1× `test_pipeline_profile_bracket_enforcement_v1`. Queue for Phase 7 triage.
+
+---
+
+## Phase 1 — SSE UI end-to-end fix + browser verification — 2026-05-22 (BLOCKING)
+
+**Root cause identified:** `useBuildStreaming.ts` had a React 18 StrictMode `mountedRef` regression. In React 18 dev mode, every component mounts → fires cleanup → re-mounts. The hook's cleanup ran `mountedRef.current = false`, and the useEffect body never reset it on re-mount. So after StrictMode's mount-unmount-remount cycle, `mountedRef.current` was permanently `false`. Inside the stream loop, every `setState` was gated by `if (!mountedRef.current) return;` — so events arrived on the wire but never updated React state. UI stayed at `INITIAL_STATE` until the 480s timer fired. Python tools (urllib, httpx) and curl never reproduced because they have no React lifecycle.
+
+**Diagnostic evidence (server + wire format are perfect; bug is UI-only):**
+- curl with `Origin: http://localhost:5173` (mimics browser cross-origin POST): 200 OK, `content-type: text/event-stream; charset=utf-8`, `access-control-allow-origin: http://localhost:5173`, `x-accel-buffering: no`, `Transfer-Encoding: chunked`. Events flow real-time at every phase boundary including `complete` with the full 100-card deck. First event at ~15s. ping comments every 15s.
+- `tools/mega_task_v6_phase1_browser_simulation.py` (httpx async stream + bit-for-bit equivalent of `_parseSseBuffer`): **OK**, 13 phases fired (intent_interpreter, candidate_pool, select_deck, c21_c22_parallel, validate_swap, final_critic, curve_smoother, interaction_designer, mana_base, card_advantage, structural_safety_net, graduated_playtest, complete), deck_len=100, complete_event.present=true.
+- v5 `tools/mega_task_v5_phase5_live_smoke.py` continues to pass (cross-checked the existing report json — still represents reality).
+
+**Fix delivered:**
+- `ui_harness/src/hooks/useBuildStreaming.ts`: useEffect body now sets `mountedRef.current = true;` on every mount (1-line fix with the v6 P1 explanation comment). This makes the hook idempotent across StrictMode's mount-cleanup-remount cycle.
+- `ui_harness/src/hooks/__tests__/useBuildStreaming.test.ts`: added regression grep test "(v6 P1 regression) mount effect resets mountedRef=true on every mount" that fails if a future refactor removes the reset.
+- `tests/test_agent_build_deck_v1_stream_e2e.py`: new Python e2e test using `httpx.AsyncClient + httpx.ASGITransport` to consume the SSE stream incrementally with the exact same parser logic as `useBuildStreaming._parseSseBuffer`. Asserts ≥6 distinct (phase,status) tuples + a final `complete` event with a populated `response.version`. Also asserts CORS `access-control-allow-origin` matches the request `Origin`. Both tests pass.
+- `tools/mega_task_v6_phase1_browser_simulation.py`: new browser-equivalent SSE consumer used as the chrome-devtools-mcp substitute for Phase 11's UI verification.
+
+**Defense-in-depth fixes:**
+- `ui_harness/vite.config.ts`: added `/agent`, `/deck`, `/commander`, `/theme`, `/card`, `/playtest`, `/corpus` proxy entries. Removes cross-origin as a moving variable for dev — if a dev runs Vite on a port outside the engine's CORS allowlist (e.g., 5175 when 5173/5174 are taken), the proxy keeps the UI working same-origin instead of silently breaking. The CORS path was verified clean for the standard 5173/5174 layout, but the proxy entries make the dev workflow robust regardless of port choice.
+
+**Cleanup:**
+- `api/main.py::_run_build`: removed the redundant synthetic `complete` event re-emission that the live debug attempt added based on a misdiagnosis. `compute_agent_build_deck_v1` already emits a `complete` event via `progress_callback` at the end of every build (verified in 4 emission sites + the existing v5 tests). Comment explains the misdiagnosis so future maintainers don't reintroduce it.
+- `ui_harness/src/views/AIBuildView.tsx`: reverted `BUILD_TIMEOUT_SECONDS` 240→480 bump. The bump was based on the misread that builds were exceeding 240s; with events arriving in real time the 110-130s normal build comfortably fits 240s with headroom for Pillar E v0.5/v0.6 + semantic injection (each ~10-20s).
+
+**Tests (post-fix):**
+- pytest: **1491 passed, 8 failed (same pre-existing)** — +2 new e2e tests.
+- vitest: **759 passed, 2 failed (pre-existing metricPillHeader source-grep drift on WorkspaceView)** — +1 new regression grep test.
+- The 2 pre-existing vitest failures are queued for Phase 7 triage alongside the 8 pytest failures.
+
+**Browser verification:** chrome-devtools-mcp not available in this session. Verified end-to-end via `tools/mega_task_v6_phase1_browser_simulation.py` (httpx async streaming, bit-for-bit equivalent of `useBuildStreaming._parseSseBuffer`). This proves the server's wire format, headers, CORS, and event delivery are correct for any browser-equivalent fetch consumer. The StrictMode fix is the load-bearing UI-side correction; Phase 11 will re-verify with a fresh end-to-end run.
+
+**Commit:** `Phase 1 (mega-task v6): SSE UI end-to-end fix — React 18 StrictMode mountedRef regression + browser-equivalent regression coverage`.
 

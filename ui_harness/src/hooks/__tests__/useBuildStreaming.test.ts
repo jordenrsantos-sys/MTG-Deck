@@ -119,4 +119,20 @@ describe("useBuildStreaming — source contract checks", () => {
   test("aborts the in-flight stream on unmount", () => {
     expect(SOURCE).toMatch(/return\s*\(\)\s*=>\s*\{[\s\S]*?abortRef\.current\?\.abort\(\)/m);
   });
+
+  test("(v6 P1 regression) mount effect resets mountedRef=true on every mount", () => {
+    // React 18 StrictMode mounts useEffect, immediately fires cleanup
+    // (mountedRef=false), then remounts. If the body of the effect does
+    // not re-set mountedRef=true, the ref stays false forever, every
+    // setState inside the stream loop is gated out, and the UI shows
+    // INITIAL_STATE the entire build until the 480s timeout fires.
+    //
+    // This grep asserts the explicit reset is in place. Removing it
+    // reproduces the v6 Phase 1 bug exactly.
+    const effectBody = SOURCE.match(
+      /useEffect\(\(\)\s*=>\s*\{([\s\S]*?)\},\s*\[\]\);/
+    );
+    expect(effectBody, "useEffect with [] deps must exist").not.toBeNull();
+    expect(effectBody![1]).toMatch(/mountedRef\.current\s*=\s*true/);
+  });
 });

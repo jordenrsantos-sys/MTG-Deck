@@ -123,6 +123,14 @@ export function useBuildStreaming(
   const mountedRef = useRef(true);
 
   useEffect(() => {
+    // Mega-task v6 Phase 1 root-cause fix: React 18 StrictMode mounts
+    // useEffect, immediately fires the cleanup (setting mountedRef=false),
+    // then remounts. Without resetting mountedRef here, the ref stays
+    // permanently false, and every setState below is gated by
+    // `if (!mountedRef.current) return;` — so events arrive on the wire
+    // but never update React state. UI stays at INITIAL_STATE and the
+    // client-side timeout fires after 480s. Reset on every mount.
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       abortRef.current?.abort();
