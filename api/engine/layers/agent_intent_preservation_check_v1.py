@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
 
-INTENT_PRESERVATION_VERSION = "agent_intent_preservation_check_v1.1_archetype_aware"
+INTENT_PRESERVATION_VERSION = "agent_intent_preservation_check_v1.2_archetype_aware_extended"
 
 # Mega-task v5 Phase 7: archetype-aware drift thresholds. Iter 5 outliers:
 # Atraxa B2 (counters_matter primary) drift=0.869; Ur-Dragon B3
@@ -41,6 +41,42 @@ INTENT_PRESERVATION_VERSION = "agent_intent_preservation_check_v1.1_archetype_aw
 # expression of its archetype, allow a higher drift threshold. The
 # baseline 0.3 still applies everywhere else.
 _ARCHETYPE_AWARE_DRIFT_THRESHOLD = 0.7
+
+# v7 Phase 5: per-archetype effective drift thresholds (CC iter-7 sweep
+# gap #2). v5 Phase 7 only handled counters_matter + tribal+value_engine
+# (2 archetypes); iter-7 sweep reported 3/5 cases pass vs ≥4/5 target.
+# Edgar B3 (tribal, no value_engine) fails default 0.5 threshold at
+# 0.579 drift; Ur-Dragon B3 fails at 0.679. The fundamental problem
+# stays the same — v1 primitives undercount theme-specific signals —
+# but each archetype has its own "ontology blindness" pattern that
+# warrants a calibrated threshold rather than a single 0.7 cliff.
+#
+# Calibration per kickoff Phase 5 spec:
+#   combo:       0.65 (combos use cards across many themes)
+#   storm:       0.70 (cantrips + rituals + storm payoffs span themes)
+#   control:     0.65 (control decks have wide cardpools)
+#   aristocrats: 0.55 (relatively focused)
+#   voltron:     0.55 (relatively focused)
+#   default:     0.50 (kickoff baseline; existing base_threshold of 0.3
+#                still applies if caller passes that explicitly)
+#
+# tribal + counters_matter + tribal+value_engine retain 0.70 from v5 P7.
+_PER_ARCHETYPE_DRIFT_THRESHOLDS: Dict[str, float] = {
+    "counters_matter": 0.70,
+    "combo":           0.65,
+    "storm":           0.70,
+    "control":         0.65,
+    "aristocrats":     0.55,
+    "voltron":         0.55,
+    "tribal":          0.55,  # bare tribal (no value_engine) — Edgar B3 case
+    "reanimator":      0.60,
+    "stax":            0.60,
+    "landfall":        0.55,
+    "tokens":          0.55,
+    "blink":           0.55,
+    "value_engine":    0.55,
+}
+_DEFAULT_ARCHETYPE_AWARE_DRIFT_THRESHOLD = 0.50
 
 # Map from theme names (B2 theme_profile vocabulary) to the v1 primitive
 # tags that signal them. Reused from Phase 5's
@@ -117,21 +153,28 @@ def _resolve_drift_threshold(
     theme_profile: Optional[Dict[str, Any]],
     base_threshold: float,
 ) -> float:
-    """Mega-task v5 Phase 7: pick the right drift threshold for the
-    archetype the user signaled.
+    """v7 Phase 5: per-archetype effective drift thresholds.
 
-    The default `base_threshold` (0.3) applies to most decks. Two
-    archetypes get the looser `_ARCHETYPE_AWARE_DRIFT_THRESHOLD` (0.7)
-    because the v1 primitive ontology can't faithfully classify their
-    real-world expression (no proliferate / counter / cost-reduction
-    primitive tags exist yet):
+    The default `base_threshold` (typically 0.3) applies when no archetype-
+    specific calibration exists. When the user's primary theme signals an
+    archetype with documented v1-ontology blindness, return the calibrated
+    threshold from `_PER_ARCHETYPE_DRIFT_THRESHOLDS` (always max'd with
+    base_threshold so the caller can't accidentally tighten an archetype's
+    look-aside).
 
-      1. `counters_matter` primary (e.g. Atraxa B2 proliferate).
-      2. `tribal` primary with `value_engine` secondary (e.g. Ur-Dragon —
-         cost-reduction + ETB-trigger value tribal, distinct from a pure
-         aggro tribal which classifies cleanly via `tribal-anchor`).
+    History:
+      v5 Phase 7: counters_matter + tribal+value_engine got 0.70.
+      v7 Phase 5: extended to 11 archetypes per kickoff spec (combo,
+        storm, control, aristocrats, voltron, tribal-bare, plus several
+        ancillary archetypes from the B2 theme vocabulary). Each
+        archetype's threshold reflects its primitive-coverage breadth:
+        focused archetypes (aristocrats, voltron, tribal-bare) get 0.55;
+        breadth archetypes (combo, control) get 0.65; degenerate-spread
+        archetypes (storm, counters_matter) get 0.70.
 
-    Note: `tribal` primary + ANY OTHER secondary keeps the 0.3 threshold.
+    Note: `tribal` primary + `value_engine` secondary keeps the v5
+    Phase 7 0.70 special-case for backward compatibility — Ur-Dragon
+    fits this pattern and its drift sat at 0.679 in iter-7 sweep.
     """
     if not isinstance(theme_profile, dict):
         return base_threshold
@@ -144,10 +187,22 @@ def _resolve_drift_threshold(
 
     primary = _theme_at("primary")
     secondary = _theme_at("secondary")
-    if primary == "counters_matter":
-        return max(base_threshold, _ARCHETYPE_AWARE_DRIFT_THRESHOLD)
+
+    # v5 Phase 7 special-case: tribal + value_engine combination keeps
+    # the higher 0.70 threshold (Ur-Dragon pattern).
     if primary == "tribal" and secondary == "value_engine":
-        return max(base_threshold, _ARCHETYPE_AWARE_DRIFT_THRESHOLD)
+        return max(base_threshold, 0.70)
+
+    # v7 Phase 5: per-archetype lookup.
+    if primary in _PER_ARCHETYPE_DRIFT_THRESHOLDS:
+        return max(base_threshold, _PER_ARCHETYPE_DRIFT_THRESHOLDS[primary])
+
+    # Fall back to the v7 default (slightly above legacy 0.3) when any
+    # primary theme is set but unmapped; preserves behavior for callers
+    # that explicitly pass a higher base_threshold.
+    if primary:
+        return max(base_threshold, _DEFAULT_ARCHETYPE_AWARE_DRIFT_THRESHOLD)
+
     return base_threshold
 
 

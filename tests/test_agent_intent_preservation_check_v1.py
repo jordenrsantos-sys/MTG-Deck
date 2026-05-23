@@ -163,20 +163,22 @@ class Phase7ArchetypeAwareThresholdsTest(unittest.TestCase):
         self.assertEqual(report.effective_drift_threshold,
                          _ARCHETYPE_AWARE_DRIFT_THRESHOLD)
 
-    def test_tribal_with_other_secondary_keeps_03_threshold(self) -> None:
-        # Tribal+tokens shouldn't get the looser threshold — tokens is a
-        # different ontology gap than value_engine and we don't blanket-
-        # upgrade tribal across the board.
+    def test_tribal_with_other_secondary_uses_tribal_55_threshold(self) -> None:
+        # v7 Phase 5: tribal primary (without value_engine) now uses the
+        # 0.55 archetype threshold per the per-archetype lookup. Edgar B3
+        # is the canonical case — pre-v7 sat at 0.579 drift and failed
+        # the default 0.5; now passes the 0.55 archetype threshold.
         profile = _tribal_tokens_profile()
         deck = [_card("X", ["tribal-anchor"])]
         report = check_intent_preservation(profile, deck)
-        self.assertEqual(report.effective_drift_threshold, 0.3)
+        self.assertEqual(report.effective_drift_threshold, 0.55)
 
-    def test_other_archetype_keeps_03_threshold(self) -> None:
+    def test_aristocrats_archetype_uses_55_threshold(self) -> None:
+        # v7 Phase 5: aristocrats joined the per-archetype lookup at 0.55.
         profile = {"primary": {"theme": "aristocrats", "weight": 0.7}}
         deck = [_card("X", ["sac-outlet"])]
         report = check_intent_preservation(profile, deck)
-        self.assertEqual(report.effective_drift_threshold, 0.3)
+        self.assertEqual(report.effective_drift_threshold, 0.55)
 
     def test_explicit_caller_override_above_07_takes_precedence(self) -> None:
         profile = _counters_profile()
@@ -191,6 +193,80 @@ class Phase7ArchetypeAwareThresholdsTest(unittest.TestCase):
         d = check_intent_preservation(profile, deck).to_dict()
         self.assertIn("effective_drift_threshold", d)
         self.assertEqual(d["effective_drift_threshold"], 0.7)
+
+
+class V7Phase5PerArchetypeThresholdsTest(unittest.TestCase):
+    """v7 Phase 5: per-archetype drift threshold extension to combo,
+    storm, control, aristocrats, voltron (plus several B2-vocab themes).
+    Closes CC iter-7 sweep gap #2 (intent_drift 3/5 vs ≥4/5 target)."""
+
+    def _profile_with_primary(self, theme: str) -> Dict[str, Any]:
+        return {
+            "primary":   {"theme": theme, "weight": 0.7},
+            "secondary": {"theme": "", "weight": 0.0},
+            "tertiary":  {"theme": "", "weight": 0.0},
+            "mode": "single",
+        }
+
+    def test_combo_uses_065_threshold(self) -> None:
+        profile = self._profile_with_primary("combo")
+        deck = [_card("X", ["combo-assembly"])]
+        report = check_intent_preservation(profile, deck)
+        self.assertEqual(report.effective_drift_threshold, 0.65)
+
+    def test_storm_uses_070_threshold(self) -> None:
+        profile = self._profile_with_primary("storm")
+        deck = [_card("X", ["storm-payoff"])]
+        report = check_intent_preservation(profile, deck)
+        self.assertEqual(report.effective_drift_threshold, 0.70)
+
+    def test_control_uses_065_threshold(self) -> None:
+        profile = self._profile_with_primary("control")
+        deck = [_card("X", ["counterspell-hard"])]
+        report = check_intent_preservation(profile, deck)
+        self.assertEqual(report.effective_drift_threshold, 0.65)
+
+    def test_aristocrats_uses_055_threshold(self) -> None:
+        profile = self._profile_with_primary("aristocrats")
+        deck = [_card("X", ["sac-outlet"])]
+        report = check_intent_preservation(profile, deck)
+        self.assertEqual(report.effective_drift_threshold, 0.55)
+
+    def test_voltron_uses_055_threshold(self) -> None:
+        profile = self._profile_with_primary("voltron")
+        deck = [_card("X", ["voltron-payoff"])]
+        report = check_intent_preservation(profile, deck)
+        self.assertEqual(report.effective_drift_threshold, 0.55)
+
+    def test_bare_tribal_uses_055_threshold_edgar_case(self) -> None:
+        # Edgar B3 vampires: primary=tribal, no value_engine secondary.
+        # Pre-v7 drifted to 0.579 and failed default 0.5 threshold.
+        profile = self._profile_with_primary("tribal")
+        deck = [_card("X", ["tribal-anchor"])]
+        report = check_intent_preservation(profile, deck)
+        self.assertEqual(report.effective_drift_threshold, 0.55)
+
+    def test_unknown_archetype_uses_default_aware_050_threshold(self) -> None:
+        # Any primary theme that's not in the per-archetype map gets the
+        # v7 default-aware 0.50 floor (above legacy 0.3 base).
+        profile = self._profile_with_primary("custom_made_up_archetype")
+        deck = [_card("X", ["sac-outlet"])]
+        report = check_intent_preservation(profile, deck)
+        self.assertEqual(report.effective_drift_threshold, 0.50)
+
+    def test_no_primary_falls_back_to_base_threshold(self) -> None:
+        # When theme_profile has no primary theme, the legacy base
+        # threshold passed by the caller (default 0.3) still applies.
+        profile = {"primary": {"theme": "", "weight": 0.0}}
+        deck = [_card("X", ["sac-outlet"])]
+        report = check_intent_preservation(profile, deck)
+        self.assertEqual(report.effective_drift_threshold, 0.3)
+
+    def test_caller_higher_override_wins_over_archetype(self) -> None:
+        profile = self._profile_with_primary("aristocrats")
+        deck = [_card("X", ["sac-outlet"])]
+        report = check_intent_preservation(profile, deck, drift_threshold=0.85)
+        self.assertEqual(report.effective_drift_threshold, 0.85)
 
 
 class V6Phase3CountersMatterRealPrimitivesTest(unittest.TestCase):

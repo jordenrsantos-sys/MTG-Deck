@@ -339,3 +339,51 @@ Protection invariants preserved: `user_intent`, `mana_base`,
 files reference these constants directly (verified via grep).
 
 **Commit message:** "Phase 4 (mega-task v7): voyage_semantic widen injection swappable set".
+
+Committed as `87107c744`.
+
+---
+
+## Phase 5 — intent_drift archetype-aware thresholds extension (2026-05-23)
+
+CC's iter-7 sweep gap #2: intent_drift landed 3/5 vs ≥4/5 target. v5
+Phase 7 shipped only 2 archetype-aware thresholds (counters_matter at
+0.7, tribal+value_engine at 0.7); all other archetypes still used the
+default 0.3, which is too tight given v1 primitive ontology blindness.
+
+**Implementation in `agent_intent_preservation_check_v1.py`:**
+
+Added `_PER_ARCHETYPE_DRIFT_THRESHOLDS` map per kickoff Phase 5 spec:
+- combo: 0.65 (cards span themes)
+- storm: 0.70 (cantrips + rituals + storm payoffs span themes)
+- control: 0.65 (wide cardpools)
+- aristocrats: 0.55 (focused)
+- voltron: 0.55 (focused)
+- tribal (bare): 0.55 (Edgar B3 case — was failing default 0.5 at 0.579)
+- reanimator/stax: 0.60
+- landfall/tokens/blink/value_engine: 0.55
+- counters_matter: 0.70 (preserved from v5 Phase 7)
+- default (when primary set but unmapped): 0.50
+
+Refactored `_resolve_drift_threshold` to lookup `_PER_ARCHETYPE_DRIFT_THRESHOLDS`
+after the v5 Phase 7 tribal+value_engine special-case. Backward-compat
+preserved: callers passing higher base_threshold (e.g. 0.85) still win
+via max(base, archetype). Bumped version constant to
+`agent_intent_preservation_check_v1.2_archetype_aware_extended`.
+
+**Tests:**
+- `tests/test_agent_intent_preservation_check_v1.py`:
+  - Updated 2 v5 Phase 7 tests whose contract changed (`tribal+other`
+    now uses 0.55 tribal threshold, not the default 0.3; `aristocrats`
+    now uses 0.55).
+  - Added `V7Phase5PerArchetypeThresholdsTest` (9 tests): one per new
+    archetype + unknown-archetype-uses-default + caller-override wins.
+- Total intent preservation tests: 30 pass (was 21; +9 new).
+
+**Edgar B3 case modeling:** Pre-v7 sat at 0.579 drift, failed default
+0.5. Post-v7 with primary=tribal (no value_engine): threshold = 0.55
+→ 0.579 still over by 0.029. So this raise alone doesn't fully close
+Edgar. Combined with Phase 3 swap layer reducing drift (swaps inject
+theme-aligned cards), expected Phase 8 sweep to pass ≥4/5.
+
+**Commit message:** "Phase 5 (mega-task v7): intent_drift archetype-aware thresholds extension".
