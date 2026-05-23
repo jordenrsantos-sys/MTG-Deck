@@ -46,6 +46,13 @@ _BASIC_LAND_NAMES: Set[str] = {
 # least one canonical primitive set; multi-set patterns let us recognize
 # both "the engine card" (anthem+token) and "the payoff card" (token-
 # producer or anthem-effect alone) variants.
+#
+# v7 Phase 8 self-correction: primitive sets now include BOTH the legacy
+# lowercase-hyphenated vocabulary AND the v6 Phase 3 cards.primitives_v1_json
+# uppercase vocabulary. Pre-v7P8 the pattern matcher saw all zero scores
+# because Phase 7's DB hydration brought in v2 primitives (PROLIFERATE,
+# COUNTERSPELL, etc.) but the patterns only matched the legacy names.
+# Same vocabulary-bridge pattern as Phase 1's _classify_card fix.
 _WIN_CON_PATTERNS: Dict[str, Dict[str, Any]] = {
     "combo_win": {
         "label": "Two-card combo (Thoracle / Kiki-Jiki / Heliod+Ballista pattern)",
@@ -55,6 +62,9 @@ _WIN_CON_PATTERNS: Dict[str, Dict[str, Any]] = {
             {"infinite-untap-source"},
             {"deck-out"},
             {"x-spell-payoff", "infinite-mana-source"},
+            # v2 vocab:
+            {"INFINITE_COMBO"},
+            {"COMBO_PIECE"},
         ],
     },
     "tutor_chain": {
@@ -63,6 +73,12 @@ _WIN_CON_PATTERNS: Dict[str, Dict[str, Any]] = {
             {"tutor-broad"},
             {"tutor-narrow"},
             {"tutor-creature"},
+            # v2 vocab:
+            {"TUTOR_ANY"},
+            {"TUTOR_CREATURE"},
+            {"TUTOR_LAND"},
+            {"TUTOR_ANY_TO_HAND"},
+            {"TUTOR_TO_TOP"},
         ],
     },
     "voltron_combat": {
@@ -71,6 +87,11 @@ _WIN_CON_PATTERNS: Dict[str, Dict[str, Any]] = {
             {"voltron-payoff"},
             {"extra-combat"},
             {"evasion-grant"},
+            # v2 vocab:
+            {"EXTRA_COMBAT"},
+            {"EVASION"},
+            {"EQUIPMENT_SYNERGY"},
+            {"AURA_SYNERGY"},
         ],
     },
     "go_wide_anthem": {
@@ -78,6 +99,11 @@ _WIN_CON_PATTERNS: Dict[str, Dict[str, Any]] = {
         "primitive_sets": [
             {"token-producer", "anthem-effect"},
             {"token-producer"},
+            # v2 vocab:
+            {"TOKEN_PRODUCTION"},
+            {"TOKEN_DOUBLING"},
+            {"TOKEN_COPY"},
+            {"REPLACEMENT_TOKEN_DOUBLING"},
         ],
     },
     "aristocrats": {
@@ -85,6 +111,11 @@ _WIN_CON_PATTERNS: Dict[str, Dict[str, Any]] = {
         "primitive_sets": [
             {"sac-outlet", "death-trigger"},
             {"sac-outlet", "persist-creature"},
+            # v2 vocab:
+            {"SAC_OUTLET", "DEATH_PAYOFF"},
+            {"SAC_OUTLET", "DIES_TRIGGER"},
+            {"DEATH_PAYOFF"},
+            {"DIES_TRIGGER"},
         ],
     },
     "storm_spellslinger": {
@@ -92,6 +123,12 @@ _WIN_CON_PATTERNS: Dict[str, Dict[str, Any]] = {
         "primitive_sets": [
             {"storm-payoff"},
             {"cantrip", "storm-payoff"},
+            # v2 vocab:
+            {"STORM"},
+            {"CAST_TRIGGER_PAYOFF"},
+            {"CAST_COUNT_SCALING"},
+            {"MAGECRAFT_TRIGGER"},
+            {"SPELL_COPY"},
         ],
     },
     "reanimator": {
@@ -99,12 +136,21 @@ _WIN_CON_PATTERNS: Dict[str, Dict[str, Any]] = {
         "primitive_sets": [
             {"recursion-graveyard"},
             {"self-mill"},
+            # v2 vocab:
+            {"GRAVEYARD_RECURSION"},
+            {"GRAVEYARD_REANIMATION"},
+            {"CAST_FROM_GRAVEYARD"},
+            {"RETURN_AS_TOKEN"},
+            {"RETURN_ON_DEATH"},
         ],
     },
     "mill_alt_win": {
         "label": "Mill-based alt-win (Bruvac / Maddening Cacophony)",
         "primitive_sets": [
             {"mill-all"},
+            # v2 vocab:
+            {"MOVE_TO_GRAVEYARD"},
+            {"DECK_OUT"},
         ],
     },
     "counters_proliferate": {
@@ -113,6 +159,11 @@ _WIN_CON_PATTERNS: Dict[str, Dict[str, Any]] = {
             {"proliferate-trigger"},
             {"plus1plus1-counter-doubler"},
             {"plus1plus1-counter-payoff", "plus1plus1-counter-distributor"},
+            # v2 vocab:
+            {"PROLIFERATE"},
+            {"COUNTER_SYNERGY"},
+            {"COUNTER_DOUBLING"},
+            {"REPLACEMENT_COUNTER_DOUBLING"},
         ],
     },
     "stax_lock": {
@@ -120,6 +171,13 @@ _WIN_CON_PATTERNS: Dict[str, Dict[str, Any]] = {
         "primitive_sets": [
             {"stax-effect"},
             {"tap-down"},
+            # v2 vocab:
+            {"TAX_EFFECT"},
+            {"ACTIVATED_ABILITY_HATE"},
+            {"FORCED_COMBAT"},
+            {"TIMING_LOCK"},
+            {"CAST_RESTRICTION"},
+            {"COMBAT_RESTRICTION"},
         ],
     },
     "control_grind": {
@@ -128,6 +186,11 @@ _WIN_CON_PATTERNS: Dict[str, Dict[str, Any]] = {
             {"counterspell-hard", "removal-mass-creatures"},
             {"counterspell-hard"},
             {"removal-mass-creatures"},
+            # v2 vocab:
+            {"COUNTERSPELL"},
+            {"STACK_COUNTERSPELL"},
+            {"BOARD_WIPE"},
+            {"PERMISSION_OVERRIDE"},
         ],
     },
     "landfall_aggro": {
@@ -135,6 +198,9 @@ _WIN_CON_PATTERNS: Dict[str, Dict[str, Any]] = {
         "primitive_sets": [
             {"landfall-trigger", "extra-land-drop"},
             {"landfall-trigger"},
+            # v2 vocab:
+            {"LANDFALL"},
+            {"EXTRA_LAND_DROP"},
         ],
     },
 }

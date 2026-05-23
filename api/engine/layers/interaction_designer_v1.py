@@ -80,7 +80,16 @@ _PER_CATEGORY_BOUNDS: Dict[str, tuple] = {
 }
 
 # Map primitive tags to interaction categories.
+#
+# v7 Phase 8 self-correction: vocab now includes BOTH the legacy lowercase
+# hyphenated names (e.g., counterspell-hard) AND the v6 Phase 3 cards.
+# primitives_v1_json uppercase names (e.g., COUNTERSPELL, REMOVAL_SINGLE,
+# BOARD_WIPE). Pre-v7P8 the per-category counts were always 0 because the
+# DB-hydrated primitives via win_con's hydration helper carry the v2 vocab,
+# and the legacy lowercase keys never matched. Same pattern as the Phase 1
+# fix for _classify_card.
 _PRIMITIVES_TO_CATEGORY: Dict[str, str] = {
+    # Legacy primitive_to_cards inverted-index vocabulary (lowercase-hyphenated).
     "counterspell-hard":          "counterspells",
     "counterspell-soft":          "counterspells",
     "free-counter":               "counterspells",
@@ -89,14 +98,22 @@ _PRIMITIVES_TO_CATEGORY: Dict[str, str] = {
     "removal-enchantment":        "targeted_enchantment_removal",
     "removal-mass-creatures":     "mass_removal",
     "removal-mass-board":         "mass_removal",
-    # Bounce + tap-down often function as soft removal. Treat as
-    # targeted_creature_removal for the count — same role at table.
     "bounce":                     "targeted_creature_removal",
     "tap-down":                   "targeted_creature_removal",
-    # Graveyard hate via exile-recursion + mill-all-graveyard targeting.
-    # The v1 ontology has no dedicated "graveyard-hate" tag, so we proxy:
     "recursion-exile":            "graveyard_interaction",
     "mill-all":                   "graveyard_interaction",
+    # v6 Phase 3 cards.primitives_v1_json vocabulary (UPPERCASE_UNDERSCORED).
+    "COUNTERSPELL":               "counterspells",
+    "STACK_COUNTERSPELL":         "counterspells",
+    "PERMISSION_OVERRIDE":        "counterspells",
+    "COUNTERSPELL_PROTECTION":    "counterspells",
+    "TARGETED_REMOVAL_CREATURE":  "targeted_creature_removal",
+    "REMOVAL_SINGLE":             "targeted_creature_removal",
+    "DIRECT_DAMAGE":              "targeted_creature_removal",
+    "BOARDWIPE_CREATURES":        "mass_removal",
+    "BOARD_WIPE":                 "mass_removal",
+    "REMOVAL_ARTIFACT_ENCHANTMENT": "targeted_artifact_removal",
+    "GRAVEYARD_RECURSION_TO_HAND": "graveyard_interaction",
 }
 
 # Per-color enablement — when a color is NOT in the commander's CI, the
