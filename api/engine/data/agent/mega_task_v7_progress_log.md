@@ -212,3 +212,93 @@ criterion as met via Python TestClient + vitest source contract.
   remain, all unchanged).
 
 **Commit message:** "Phase 2 (mega-task v7): commander typeahead + fuzzy match".
+
+Committed as `b78db3e5c`.
+
+---
+
+## Phase 3 — LLM critique aggression on Pillar E flags (BLOCKING) (2026-05-23)
+
+**Diagnosis:**
+
+Pre-v7, the 4 swappable Pillar E optimizers (v0.1 mana base, v0.2 card
+advantage, v0.3 curve smoother, v0.4 interaction designer) flagged
+discrepancies correctly but no engine path closed the gaps:
+
+- `_run_mana_base_critique` and `_run_card_advantage_critique` exist + ask
+  the LLM "is each discrepancy justified?" — the LLM returns
+  `justified: false` + a `suggested_swaps` list — but the engine NEVER
+  applies the swaps. The UNJUSTIFIED warning fires and the discrepancy
+  persists to the final deck.
+- v0.3 curve_smoother + v0.4 interaction_designer have NO LLM critique
+  at all — they emit `CURVE_DISCREPANCY` / `INTERACTION_DISCREPANCY` and
+  that's it.
+
+Result on the iter-7 sweep: Edgar B3 ran with `actual=68, target=36,
+delta+32` for lands + `1 vs target 10` for card advantage + 7 holes for
+curve + 0/4 mass_removal — all flagged, none closed.
+
+**Architectural decision: deterministic post-hoc, not LLM-driven.**
+
+The `feedback_pool_score_does_not_drive_llm_picking` memory says the only
+mechanism that GUARANTEES outcomes is a deterministic post-hoc layer
+running after the LLM picks. The kickoff Phase 3 spec asks for "LLM
+critique pass refactor" — but the spec's actual closing requirement is
+"the engine APPLIES swaps." Pre-v7 the LLM critiques already returned
+swaps; the gap was the engine not applying them. The deterministic
+post-hoc pattern resolves both: existing LLM critiques continue to fire
+(for justification reporting in the response), but the new v0.7
+deterministic swap layer is what actually closes the gaps. Same pattern
+as v6 Phase 2's semantic-injection guarantee.
+
+**Implementation:**
+
+1. New module `repo/api/engine/layers/pillar_e_aggressive_swaps_v1.py`:
+   - `compute_pillar_e_aggressive_swaps(...)` reads the 4 optimizer
+     blocks + the deck + the pool and returns a validated swap plan
+     (`applied_swaps`, `skipped_swaps`, `new_deck`, `per_category_count`).
+   - Per-category swap budgets: mana_base=6, card_advantage=4,
+     curve_smoother=3, interaction_designer=4. TOTAL_SWAP_BUDGET=12.
+   - Per-swap validation: card_out not commander, not user must-include;
+     card_in not already in deck (singleton), color-identity legal, not
+     in forbidden_set; falls back to find_card_by_name when card_in is
+     not in pool (allows DB-resolvable swap-ins).
+   - Per-category swap heuristics:
+     * mana_base: surplus lands → swap basics for ramp; deficit lands →
+       swap low-priority spells for dual lands.
+     * card_advantage: deficit → swap low-priority for draw piece.
+     * curve_smoother: each hole → find pool card at that CMC; each
+       brick → swap for lower-CMC alternative.
+     * interaction_designer: each per-category deficit → swap low-priority
+       for matching primitive.
+   - Lowest-priority swap-out tiers (in order): slot_fallback:* (v7
+     Phase 1's injected cards) → archetype_staple → theme: → agent_select.
+     User picks + commander never swap out.
+   - win_con_coherence is NOT addressed here (needs Phase 7 DB hydration
+     to even compute correctly). The coherence report stays in the
+     response for diagnostic visibility.
+
+2. Integration in `agent_build_deck_v1.py`:
+   - New v0.7 block added BEFORE `_enforce_structural_invariants`.
+   - When swaps applied, re-runs v0.1-v0.4 optimizers on the post-swap
+     deck and stores results under `post_swap_recommendation` /
+     `post_swap_analysis` on the respective blocks. v0.5/v0.6 don't
+     re-run (passive / hydration-gated).
+   - New summary field `pillar_e_v0_7_aggressive_swaps` exposes
+     applied + skipped + per_category_count to the UI.
+   - New warning code `PILLAR_E_AGGRESSIVE_SWAPS_APPLIED` per swap batch,
+     `PILLAR_E_AGGRESSIVE_SWAP_FAILED` on layer exception.
+
+**Tests added:**
+- `tests/test_pillar_e_aggressive_swaps_v1.py` — 9 unit tests covering:
+  surplus-land swap, no-ramp-in-pool skip, must-include never swapped
+  out, draw deficit triggers swap, removal deficit per-category triggers
+  swap, total swap budget cap, color-identity violation skip, singleton
+  rule excludes already-in-deck candidates, empty result when no flags.
+
+**Regression checks:**
+- 12 phase-organized agent_build_deck tests + 9 new swap tests: 144/144
+  pass.
+- Full pytest baseline check pending (background).
+
+**Commit message:** "Phase 3 (mega-task v7): Pillar E v0.7 aggressive swap layer".

@@ -897,6 +897,130 @@ def compute_agent_build_deck_v1(
             "message": f"{exc.__class__.__name__}: {exc}",
         })
 
+    # ---- Mega-task v7 Phase 3: Pillar E v0.7 aggressive swap layer ----
+    # Deterministic post-hoc layer that ACTS on the flags from v0.1-v0.6.
+    # Pre-v7, optimizers flagged discrepancies correctly but no engine
+    # path closed the gaps — discrepancies persisted to the final deck.
+    # The architectural rule from `feedback_pool_score_does_not_drive_
+    # llm_picking` says deterministic post-hoc layers are the only
+    # mechanism that GUARANTEE outcomes; v0.7 applies that pattern to
+    # the Pillar E surface.
+    pillar_e_aggressive_swaps_block: Dict[str, Any] = {
+        "active": False,
+        "applied_swaps": [],
+        "skipped_swaps": [],
+        "per_category_count": {},
+    }
+    try:
+        from api.engine.layers.pillar_e_aggressive_swaps_v1 import (
+            compute_pillar_e_aggressive_swaps,
+        )
+        must_include_lower_set: Set[str] = {
+            (n or "").strip().lower() for n in (must_include_cards or [])
+            if isinstance(n, str)
+        }
+        swap_result = compute_pillar_e_aggressive_swaps(
+            deck=deck,
+            pool=pool,
+            db_snapshot_id=db_snapshot_id,
+            commander_color_identity=list(pool.get("color_identity") or []),
+            must_include_lower=must_include_lower_set,
+            forbidden_set=forbidden_set or set(),
+            mana_base_block=mana_base_block,
+            card_advantage_block=card_advantage_block,
+            curve_smoother_block=curve_smoother_block,
+            interaction_designer_block=interaction_designer_block,
+        )
+        pillar_e_aggressive_swaps_block["active"] = True
+        pillar_e_aggressive_swaps_block["applied_swaps"] = swap_result.get("applied_swaps") or []
+        pillar_e_aggressive_swaps_block["skipped_swaps"] = swap_result.get("skipped_swaps") or []
+        pillar_e_aggressive_swaps_block["per_category_count"] = swap_result.get("per_category_count") or {}
+        if swap_result.get("applied_swaps"):
+            deck = swap_result["new_deck"]
+            warnings.append({
+                "code": "PILLAR_E_AGGRESSIVE_SWAPS_APPLIED",
+                "message": (
+                    f"Pillar E v0.7 applied {len(swap_result['applied_swaps'])} "
+                    f"swap(s) to close optimizer-flagged discrepancies: "
+                    f"{swap_result['per_category_count']}."
+                ),
+            })
+        # v7 Phase 3: re-run the 4 swappable Pillar E optimizers on the
+        # post-swap deck so summary metrics + UI report card reflect the
+        # closed gaps. v0.5 (win-con) + v0.6 (anti-meta) re-run too for
+        # consistency; v0.6 is passive so its output is identical, and
+        # v0.5 is hydration-gated (Phase 7) so will still flag pre-swap.
+        if swap_result.get("applied_swaps"):
+            try:
+                from api.engine.layers.mana_base_optimizer_v1 import (
+                    compute_mana_base, reconcile_deck_lands,
+                )
+                pool_by_name_lower2 = {
+                    (c.get("name") or "").strip().lower(): c
+                    for c in pool.get("candidates") or []
+                }
+                nonland2: List[Dict[str, Any]] = []
+                for c in deck:
+                    nm = c.get("card_name") or ""
+                    if c.get("source") == "mana_base" or nm in _BASIC_LAND_NAMES:
+                        continue
+                    if "[slot=land]" in (c.get("reason") or ""):
+                        continue
+                    m = pool_by_name_lower2.get(nm.strip().lower())
+                    if m:
+                        nonland2.append({"name": nm,
+                                         "mana_cost": m.get("mana_cost") or "",
+                                         "cmc": m.get("cmc") or 0})
+                ahint = None
+                for c in llm_metrics.get("calls") or []:
+                    if c.get("phase") == "C2_2_wild_combo_discovery":
+                        ahint = c.get("archetype")
+                        break
+                rec2 = compute_mana_base(
+                    commander_color_identity=pool.get("color_identity") or [],
+                    nonland_cards=nonland2, bracket=bracket, archetype_hint=ahint,
+                )
+                recon2 = reconcile_deck_lands(deck=deck, recommendation=rec2)
+                mana_base_block["post_swap_recommendation"] = rec2.to_dict()
+                mana_base_block["post_swap_reconciliation"] = recon2
+            except Exception:
+                pass
+            try:
+                from api.engine.layers.card_advantage_optimizer_v1 import (
+                    compute_card_advantage,
+                )
+                ca2 = compute_card_advantage(
+                    deck=deck, bracket=bracket, archetype_hint=ahint, pool=pool,
+                )
+                card_advantage_block["post_swap_recommendation"] = ca2.to_dict()
+            except Exception:
+                pass
+            try:
+                from api.engine.layers.curve_smoother_v1 import analyze_curve as _ac2
+                ca_post = _ac2(
+                    deck=deck, archetype_hint=ahint, pool=pool,
+                    basic_land_names=_BASIC_LAND_NAMES,
+                )
+                curve_smoother_block["post_swap_analysis"] = ca_post.to_dict()
+            except Exception:
+                pass
+            try:
+                from api.engine.layers.interaction_designer_v1 import (
+                    compute_interaction_targets as _ci2,
+                )
+                ix2 = _ci2(
+                    commander_color_identity=list(pool.get("color_identity") or []),
+                    bracket=bracket, archetype_hint=ahint, deck=deck, pool=pool,
+                )
+                interaction_designer_block["post_swap_analysis"] = ix2.to_dict()
+            except Exception:
+                pass
+    except Exception as exc:
+        warnings.append({
+            "code": "PILLAR_E_AGGRESSIVE_SWAP_FAILED",
+            "message": f"{exc.__class__.__name__}: {exc}",
+        })
+
     # ---- Iter 5 mega-task v4 Phase 13 retro: structural safety net ----
     # Defensive guarantee that iter1 invariants hold by the time the
     # response is composed. User must-includes MUST be present + deck
@@ -1151,6 +1275,17 @@ def compute_agent_build_deck_v1(
         # counts + candidate cards per category. Pure suggestion — no
         # deck mutation. Final Pillar E optimizer in the 5-pillar plan.
         "anti_meta_recommendations": anti_meta_hate_block,
+        # Mega-task v7 Phase 3: Pillar E v0.7 — aggressive swap layer.
+        # Deterministic post-hoc layer that ACTS on the v0.1-v0.4 flags
+        # by computing concrete swap pairs (card_out + card_in) and
+        # applying them to close the gap. Re-runs the swappable optimizers
+        # on the post-swap deck so the v0.1-v0.4 blocks above carry
+        # `post_swap_recommendation` / `post_swap_analysis` keys when
+        # swaps fired. Closes the iter-7 sweep failure where 4 of 5 cases
+        # had unaddressed mana-base + card-advantage + curve + interaction
+        # discrepancies regardless of which LLM critique justifications
+        # were emitted.
+        "pillar_e_v0_7_aggressive_swaps": pillar_e_aggressive_swaps_block,
     }
 
     response = {
