@@ -49,3 +49,84 @@ Plus `repo/tests/pillar_f_v0_2/__init__.py` for the test tree.
 **Phase 0 cost:** $0 (no LLM calls).
 
 **Commit message:** "Phase 0 (mega-task v9): pre-flight + Pillar F v0.2 module scaffold".
+
+Committed as `6a76fcb4d`.
+
+---
+
+## Phase 1 — Game-state object model + serialization (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/state/`:
+
+1. **card.py** — `Card` dataclass per scoping doc section (a). Identity
+   fields (name, oracle_id, mana_cost, cmc, type_line, subtypes,
+   oracle_text, power, toughness, loyalty, colors, color_identity,
+   keywords, owner) + mutable state (controller, face_down, tapped,
+   summoning_sick, damage_marked, counters, attached_to, attached_by,
+   card_id). `card_id` is UUID4 hex prefix (12 chars). Helpers:
+   is_creature, is_land, is_planeswalker, is_legendary, has_keyword,
+   power_int (handles `*` CDA), toughness_int, to_dict/from_dict,
+   to_opaque.
+
+2. **zones.py** — `PlayerZones` dataclass with 6 zones (hand, library,
+   battlefield, graveyard, exile, command). Zones hold card_ids
+   (Card objects live in GameState.cards_by_id by id). Library index 0
+   = top. API: all_card_ids, find_zone, remove_card, add_card (with
+   `to_top` for library), to_dict/from_dict.
+
+3. **player.py** — `ManaPool` (W/U/B/R/G/C buckets + empty/total/dict),
+   `PlayerState` (player_id, name, life_total=40, zones, mana_pool,
+   commander_damage_taken_from {oracle_id → int}, lands_played_this_turn,
+   cards_drawn_this_turn, spells_cast_this_turn,
+   priority_passed_this_round, has_lost, has_drawn_from_empty_library,
+   politics_state {sub-mega-task B slot}).
+
+4. **state.py** — `GameState` aggregating players, cards_by_id, global
+   turn state (turn_number, Phase enum, Step enum, active_player,
+   priority_holder, priority_passes_this_round Set, stack), optional
+   designations (the_monarch, the_initiative, day_or_night DayNight enum),
+   effect registries (replacement_effects, continuous_effects,
+   delayed_triggers_pending), commander_card_ids, game-result fields.
+   `StackEntry`, `ReplacementEffect`, `ContinuousEffect` dataclasses
+   defined here (used by Phases 2/4/5).
+
+   API:
+   - `get_card(card_id)`, `add_card(card)`, `move_card(card_id,
+     from_player, from_zone, to_player, to_zone, to_top=False)`
+   - `to_dict()`, `to_json()`, `from_dict(d)`, `from_json(s)`
+   - `perspective_view(viewer_player_id)` redacts hidden info:
+     * Opponents' hand cards → opaque markers.
+     * ALL libraries (including viewer's) → opaque markers (CR: nobody
+       sees library order).
+     * Face-down battlefield/exile cards → opaque (except to controller).
+     * Stack + battlefield (face-up) + graveyard + exile (face-up) +
+       command zone fully visible.
+   - STATE_VERSION = "pillar_f_v0_2_state_v1" for JSON forward-compat.
+
+5. **state/\_\_init\_\_.py** — exposes public API for Phases 2-6.
+
+**Tests** in `tests/pillar_f_v0_2/test_phase1_state.py`:
+
+22 tests across 6 classes:
+- **CardModelTests** (5): card_id uniqueness, creature/legendary/land
+  detection, keyword case-insensitive, power_int handles `*`, controller
+  defaults to owner.
+- **ZonesMutationTests** (5): move_card between zones, move with
+  controller change, raise on missing card, library to_top semantics,
+  find_zone correctness.
+- **CommanderDamageTests** (2): per-commander damage tracking,
+  commander_card_ids per player.
+- **ManaPoolTests** (2): empty clears pool, dict round-trip.
+- **JsonRoundTripTests** (2): full 4-player game state round-trip
+  (turn_number, phase, step, active_player, monarch, day_or_night,
+  3-deep stack, zones); per-card mutable state round-trip
+  (tapped/damage_marked/counters/summoning_sick).
+- **PerspectiveViewTests** (6): opponent hand opaque, ALL libraries
+  opaque (incl. viewer's), battlefield public, face-down
+  battlefield opaque to non-controller, viewer_player_id carried,
+  stack public.
+
+**All 22 pass.** Total ~600 LOC across 4 production files + 320 LOC test
+file. Pure data modeling — no game logic yet.
+
+**Commit message:** "Phase 1 (mega-task v9): game-state object model + perspective_view + serialization".
