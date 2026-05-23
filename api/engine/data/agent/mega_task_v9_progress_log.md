@@ -569,3 +569,51 @@ All 224 pass. Substrate works end-to-end.
 ship gate cleared.
 
 **Commit message:** "Phase 8 (mega-task v9): 100-interaction fixture suite — 100/100 green (ship gate ≥85% cleared)".
+
+Committed as `b66bba78c`.
+
+---
+
+## Phase 9 — Final regression + report + memory + sub-B scoping prep (2026-05-23)
+
+**Full pytest:** 1852 passed / 25 skipped / 0 failed / 88 subtests
+(was 1628 at v8 ship; **+224 new pillar_f tests** across v9 Phases 1-8).
+
+**Vitest:** 774 / 2 pre-existing failed (unchanged — no UI changes
+in iter 10).
+
+**Iter 10 ship gate (Phase 8): 100/100 fixtures green (≥85% required).**
+
+**Out-of-repo deliverables landed in `MTG-Deck-Builder-Claude/`:**
+- `mega_task_v9_final_report.md` — executive + per-phase commits +
+  architectural decisions + iter 10 → 11 hand-off + commit chain +
+  spend + deferred items.
+- `pillar_f_v0_2_sub_b_llm_policy_scoping.md` — 3-page scoping doc
+  for sub-mega-task B covering prompt template design (main-phase,
+  combat, response-window, mulligan), perspective_view feeding the
+  LLM, politics state tracker schema, threat-vector feature
+  extraction, token budget refinement, integration plug-points with
+  the iter-10 substrate.
+
+**Memory updates** (cowork at `C:/Users/jorde/.claude/projects/E--MTG-Root/memory/`):
+- NEW: `project_mega_task_v9_shipped.md` — v9 commit chain + 11
+  load-bearing substrate invariants iter 11 must honor.
+- UPDATED: `MEMORY.md` — added v9 entry to index (now 6 active memories).
+- UPDATED: `project_5_pillar_forward_plan.md` — Pillar F v0.2 sub-A
+  marked COMPLETE; sub-B + sub-C iter-11+ priorities documented.
+
+**Mega-task v9 success criteria check (per kickoff):**
+1. PASS All 10 phases committed.
+2. PASS Phase 8 fixture suite ≥85% green (achieved 100/100 = 100%).
+3. PASS pytest baseline preserved + new tests pass (+224).
+4. PASS vitest baseline preserved (unchanged; no UI work).
+5. PASS Pillar A-E untouched (substrate is fully isolated under
+   `pillar_f/v0_2/`).
+6. PASS All 6 substrate areas implemented per scoping (state, stack,
+   turn, replacement, layers, combat) + 7th (mulligan).
+7. PASS Sub-mega-task B scoping doc landed.
+8. PASS Total spend ~$0 of $80 budget.
+
+v9 SHIPPED — Pillar F v0.2 sub-mega-task A complete.
+
+**Commit message:** "Phase 9 (mega-task v9): final regression + report + memory + sub-B scoping — v9 SHIPPED".
