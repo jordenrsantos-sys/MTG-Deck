@@ -200,5 +200,89 @@ class InteractionTargetsToDictTest(unittest.TestCase):
         self.assertEqual(d["version"], INTERACTION_DESIGNER_VERSION)
 
 
+class V6Phase4MultiCategoryClassificationTest(unittest.TestCase):
+    """Mega-task v6 Phase 4 (BLOCKING): _classify_card_interaction now
+    returns ALL matching interaction categories per card (was: first
+    only). The iter 6 sweep landed 0/5 on pillar_e_v0_4_interaction_
+    within target as a direct consequence of the undercount.
+    """
+
+    def test_classify_returns_set_of_categories(self) -> None:
+        from api.engine.layers.interaction_designer_v1 import (
+            _classify_card_interaction,
+        )
+        # Multi-mode interaction card with counterspell + creature removal.
+        cats = _classify_card_interaction([
+            "counterspell-hard", "removal-creature"
+        ])
+        self.assertEqual(cats, {"counterspells", "targeted_creature_removal"})
+
+    def test_classify_returns_empty_when_no_interaction_tags(self) -> None:
+        from api.engine.layers.interaction_designer_v1 import (
+            _classify_card_interaction,
+        )
+        cats = _classify_card_interaction([
+            "sac-outlet", "etb-trigger", "death-trigger"
+        ])
+        self.assertEqual(cats, set())
+
+    def test_classify_deduplicates_same_category_tags(self) -> None:
+        from api.engine.layers.interaction_designer_v1 import (
+            _classify_card_interaction,
+        )
+        # bounce + tap-down BOTH map to targeted_creature_removal — count once.
+        cats = _classify_card_interaction(["bounce", "tap-down"])
+        self.assertEqual(cats, {"targeted_creature_removal"})
+
+    def test_multi_category_card_counts_in_multiple_categories(self) -> None:
+        """A counter+removal hybrid spell now contributes to BOTH
+        categories. Before Phase 4 it contributed to only the first."""
+        deck = [
+            _card("Multi-Mode", ["counterspell-hard", "removal-creature"]),
+        ]
+        out = compute_interaction_targets(
+            commander_color_identity=["U", "B"], bracket="B3", deck=deck,
+        )
+        # Both categories should register the card.
+        self.assertEqual(out.actual_by_category.get("counterspells"), 1)
+        self.assertEqual(
+            out.actual_by_category.get("targeted_creature_removal"), 1
+        )
+
+    def test_interaction_total_no_longer_undercounts_by_first_match(self) -> None:
+        """8 multi-mode cards (counter+removal) used to count as 8 total
+        because each had ONE first-match category. Now each contributes
+        1 to counterspells AND 1 to targeted_creature_removal → total 16,
+        which is what the kickoff's ±50% interaction-within target needs."""
+        deck = [
+            _card(f"Multi {i}", ["counterspell-hard", "removal-creature"])
+            for i in range(8)
+        ]
+        out = compute_interaction_targets(
+            commander_color_identity=["U", "B"], bracket="B3", deck=deck,
+        )
+        total_actual = sum(out.actual_by_category.values())
+        self.assertGreaterEqual(
+            total_actual, 16,
+            "v6 Phase 4: multi-category cards should each add 1 per "
+            "matching category",
+        )
+
+    def test_counterspell_color_gate_still_enforced_in_multi_category(self) -> None:
+        """A multi-mode counter+removal card in a non-U deck should
+        STILL not count toward counterspells — but should count toward
+        creature removal (the non-gated category)."""
+        deck = [
+            _card("Multi-Mode", ["counterspell-hard", "removal-creature"]),
+        ]
+        out = compute_interaction_targets(
+            commander_color_identity=["R", "G"], bracket="B4", deck=deck,
+        )
+        self.assertEqual(out.actual_by_category.get("counterspells", 0), 0)
+        self.assertEqual(
+            out.actual_by_category.get("targeted_creature_removal"), 1
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

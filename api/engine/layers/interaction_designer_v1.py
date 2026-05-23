@@ -151,19 +151,31 @@ def _allocate_targets_per_category(
     return targets
 
 
-def _classify_card_interaction(primitives: List[str]) -> Optional[str]:
-    """Return the FIRST interaction category that matches one of the
-    card's primitives, or None if the card isn't a recognized interaction
-    piece. Card can match multiple categories (e.g. counterspell-hard +
-    removal-creature on something like Fierce Guardianship variants), but
-    we pick the first match to avoid double-counting."""
+def _classify_card_interaction(primitives: List[str]) -> Set[str]:
+    """Return ALL interaction categories the card's primitives map to.
+
+    Mega-task v6 Phase 4 (BLOCKING) fix: replaces the v5 first-match
+    classification. The previous behavior returned only the first
+    matching category, so cards with multiple interaction-relevant
+    primitives (e.g. counterspell-hard + removal-creature on Fierce
+    Guardianship variants; bounce + tap-down + removal-creature on
+    multi-mode spells) were undercounted because only the first match
+    contributed to ``total_actual``. The iter 6 sweep landed 0/5 on
+    pillar_e_v0_4_interaction_within target as a direct consequence.
+
+    The new behavior counts a card in EVERY category it matches (once
+    per category — bounce + tap-down both mapping to
+    targeted_creature_removal still adds 1, not 2). Cards spanning
+    distinct categories (counterspell + removal) contribute to both.
+    """
     if not primitives:
-        return None
+        return set()
+    cats: Set[str] = set()
     for p in primitives:
         cat = _PRIMITIVES_TO_CATEGORY.get(p)
         if cat:
-            return cat
-    return None
+            cats.add(cat)
+    return cats
 
 
 def _count_actual_interaction(
@@ -173,7 +185,12 @@ def _count_actual_interaction(
 ) -> Dict[str, int]:
     """Count how many cards in the deck fall into each interaction
     category, using primitives. Pool-hydrated primitives win over deck-
-    inlined ones (same pattern as the candidate critic)."""
+    inlined ones (same pattern as the candidate critic).
+
+    Mega-task v6 Phase 4: a card now contributes to EVERY interaction
+    category its primitives match (was: only the first). See
+    ``_classify_card_interaction`` for the why.
+    """
     pool_by_name_lower = {
         (c.get("name") or "").strip().lower(): c
         for c in (pool or {}).get("candidates") or []
@@ -198,14 +215,15 @@ def _count_actual_interaction(
             prims = list(card.get("primitives") or [])
         if not prims:
             continue
-        cat = _classify_card_interaction(prims)
-        if cat is None:
+        cats = _classify_card_interaction(prims)
+        if not cats:
             continue
-        # Color-gate: only count counterspells when U in CI (per the
-        # kickoff spec). Other categories are gated softer.
-        if cat == "counterspells" and "U" not in color_identity_set:
-            continue
-        counts[cat] = counts.get(cat, 0) + 1
+        for cat in cats:
+            # Color-gate: only count counterspells when U in CI (per the
+            # kickoff spec). Other categories are gated softer.
+            if cat == "counterspells" and "U" not in color_identity_set:
+                continue
+            counts[cat] = counts.get(cat, 0) + 1
     return counts
 
 

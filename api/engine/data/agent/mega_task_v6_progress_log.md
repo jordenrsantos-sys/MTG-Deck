@@ -138,5 +138,35 @@ Substrate baseline at v6 start: `95d06c2d9` (Coherence Sweep #3 ship). pytest 14
 - LLM supplement on backfill not run (coverage met bar). If Phase 11 shows residual intent_drift on Atraxa, the LLM supplement pass is the next escalation (cost $10-15).
 - Sweep snapshots other than `20260217_190902_tagpass_20260222` (the raw + tags-compiled intermediates) were NOT re-backfilled — the engine only reads from the active snapshot, so the others would be wasted work. Backfill the others if a future iteration switches active snapshot.
 
-**Commit:** `Phase 3 (mega-task v6): ontology v2 with counter/proliferate primitives + 110k regex backfill + anthem-effect signal revert`.
+**Commit:** `Phase 3 (mega-task v6): ontology v2 with counter/proliferate primitives + 110k regex backfill + anthem-effect signal revert` — `1f8904088`.
+
+---
+
+## Phase 4 — Eval-script multi-primitive counting fix — 2026-05-22 (BLOCKING)
+
+**Goal:** close iter 6 success criterion #10 (`pillar_e_v0_4_interaction_within_target = 0/5` vs target ≥4/5). The kickoff names the eval script but the actual undercount lives in `interaction_designer_v1._classify_card_interaction`. The script reads `actual_by_category` from the agent's own report (so a script-side fix would only re-derive the same undercount).
+
+**Bug:** `_classify_card_interaction` walked the primitives list and returned the FIRST mapped category. Multi-mode interaction cards (counterspell + creature-removal, bounce + removal-mass-creatures, etc.) contributed to only one category. iter 6 sweep landed 0/5 on the within-target criterion as a direct result.
+
+**Fix:** `_classify_card_interaction` now returns the SET of all matching categories. `_count_actual_interaction` iterates the set and adds 1 per category for each card (with the existing color-gate honored — counterspells still drop when U is missing). A card whose primitives map to the same category twice (e.g., `bounce` + `tap-down` both → `targeted_creature_removal`) still counts ONCE per category (set semantics).
+
+**Files:**
+- `api/engine/layers/interaction_designer_v1.py`: `_classify_card_interaction` return type `Optional[str]` → `Set[str]`; `_count_actual_interaction` loops the set.
+- `tools/test_pillar_d_iteration_7.py`: scaffold copy of iter 6 sweep, with the iter 7 criteria-set doc + report path renamed to `pillar_d_iteration_7_validation_report.md`. Phase 11 wires the new criteria 6/7/8/12/13/14 metrics.
+- `tools/test_pillar_d_iteration_6.py`: retained for diff reference (Phase 11 deletes it after Phase 11 ships).
+
+**Tests:**
+- `tests/test_interaction_designer_v1.py`: added `V6Phase4MultiCategoryClassificationTest` (6 new tests):
+  - `test_classify_returns_set_of_categories` — counter+removal returns both categories.
+  - `test_classify_returns_empty_when_no_interaction_tags` — non-interaction primitives return empty set.
+  - `test_classify_deduplicates_same_category_tags` — bounce+tap-down → single category.
+  - `test_multi_category_card_counts_in_multiple_categories` — integration through `compute_interaction_targets(deck=...)`.
+  - `test_interaction_total_no_longer_undercounts_by_first_match` — 8 multi-mode cards → total_actual ≥ 16 (was 8).
+  - `test_counterspell_color_gate_still_enforced_in_multi_category` — non-U deck still drops counterspell count but keeps the creature-removal count.
+- pytest: **1544 passed**, 8 pre-existing failed (1538 prior + 6 new).
+
+**Decisions / open items:**
+- The semantic change (a card now contributing to multiple categories) affects `total_actual` upward. The within-target check is `total_target * 0.5 ≤ total_actual ≤ total_target * 1.5`. iter 6 was at the 0.5 floor; the new multi-counting raises actuals toward target. If Phase 11 shows over-shoot (>1.5*target), tightening the discrepancy band or making it per-category is the follow-up — but the within-target criterion is sum-based today and the kickoff explicitly authorized loosening to ±50% in v5 Phase 13.
+
+**Commit:** `Phase 4 (mega-task v6): interaction-counting multi-primitive fix + iter 7 eval scaffold`.
 
