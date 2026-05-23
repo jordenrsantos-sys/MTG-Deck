@@ -15,5 +15,18 @@ follows the same trigger-dict shape: `{"source_card_id": ..., "controller":
 "<Card name> ETB"}`. The resolver fn is registered via the substrate's
 `register_resolver`.
 """
-# Phase 2 modules wire in as cards are added. Empty initially —
-# populated by the Phase 2 commit.
+# Framework first — the per-card modules depend on it.
+from api.engine.pillar_f.v0_2.cards.etb import framework  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.etb.framework import (
+    register_etb_trigger, get_etb_trigger, fire_etb_triggers,
+    build_etb_trigger_dict,
+)
+
+# Per-card modules — importing triggers their registration calls.
+from api.engine.pillar_f.v0_2.cards.etb import creatures  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.etb import lands_and_enchantments  # noqa: F401
+
+__all__ = [
+    "register_etb_trigger", "get_etb_trigger", "fire_etb_triggers",
+    "build_etb_trigger_dict",
+]
