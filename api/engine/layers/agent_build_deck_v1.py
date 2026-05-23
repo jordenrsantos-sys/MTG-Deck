@@ -432,6 +432,59 @@ def compute_agent_build_deck_v1(
         t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
     )
 
+    # ---- Mega-task v6 Phase 2: semantic-injection GUARANTEE ----
+    # Closes iter 6 success criterion #6. Pool-score boosts (iter 5) and
+    # prompt-level "MUST SELECT 3 SEMANTIC NEIGHBORS" guidance (iter 5/6)
+    # both failed to lift voyage_semantic_avg above 2.0. The only
+    # mechanism that GUARANTEES outcomes is a deterministic post-hoc
+    # layer running AFTER the LLM picks. Runs before D2 rationale
+    # rewrite so D2 writes rationales for the post-injection composition.
+    semantic_injection_log: List[Dict[str, Any]] = []
+    try:
+        from api.engine.layers.agent_semantic_injection_v1 import (
+            inject_semantic_picks as _inject_semantic_picks,
+            resolve_n_target as _resolve_n_target,
+            SEMANTIC_INJECTION_VERSION,
+        )
+
+        _injection_anchors: List[str] = [commander.strip()]
+        for mic in must_include_cards:
+            if isinstance(mic, str) and mic.strip():
+                _injection_anchors.append(mic.strip())
+        # Creative outliers from C2.2 (wild-discovery additions) also
+        # make strong semantic anchors — their neighbors tend to share
+        # the combo/tempo theme that won them their slot.
+        for c in deck:
+            src = c.get("source") or ""
+            if "wild_combo_discovery" in src or "creative_outlier" in src:
+                nm = (c.get("card_name") or "").strip()
+                if nm and nm not in _injection_anchors:
+                    _injection_anchors.append(nm)
+
+        _n_target = _resolve_n_target(bracket)
+        deck, semantic_injection_log = _inject_semantic_picks(
+            deck,
+            anchor_cards=_injection_anchors,
+            color_identity=pool.get("color_identity") or [],
+            n_target=_n_target,
+            forbidden_set=forbidden_set,
+        )
+        if semantic_injection_log:
+            warnings.append({
+                "code": "SEMANTIC_INJECTION_APPLIED",
+                "message": (
+                    f"{SEMANTIC_INJECTION_VERSION}: injected "
+                    f"{len(semantic_injection_log)} Voyage-neighbor cards "
+                    f"(target {_n_target} for bracket {bracket}); displaced "
+                    f"low-priority C2.2 wild picks."
+                ),
+            })
+    except Exception as exc:
+        warnings.append({
+            "code": "SEMANTIC_INJECTION_FAILED",
+            "message": f"{exc.__class__.__name__}: {exc}",
+        })
+
     # ---- Iteration 2 Phase D2: final critic + rationale rewrite ----
     # Replace per-card `reason` fields with LLM-generated, deck-context-
     # aware text. Generate a summary_narrative paragraph and 0-3
@@ -889,6 +942,18 @@ def compute_agent_build_deck_v1(
         # (high-tier / cEDH) with advancement gates, plus Stage-3-stub
         # tweak suggestions when a tier stalls.
         "graduated_playtest_report": graduated_playtest_report,
+        # Mega-task v6 Phase 2: post-hoc semantic-injection log. Cards
+        # with ``source: semantic_injection`` in the final deck were
+        # injected here; ``semantic_injection_count`` is the iter-7
+        # sweep metric closing voyage_semantic_avg ≥ 3.
+        "semantic_injection": {
+            "count": sum(
+                1
+                for c in deck
+                if "semantic_injection" in (c.get("source") or "")
+            ),
+            "swap_log": semantic_injection_log,
+        },
     }
 
     response = {

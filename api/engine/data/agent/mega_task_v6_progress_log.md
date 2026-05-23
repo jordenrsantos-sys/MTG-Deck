@@ -66,5 +66,29 @@ Substrate baseline at v6 start: `95d06c2d9` (Coherence Sweep #3 ship). pytest 14
 
 **Browser verification:** chrome-devtools-mcp not available in this session. Verified end-to-end via `tools/mega_task_v6_phase1_browser_simulation.py` (httpx async streaming, bit-for-bit equivalent of `useBuildStreaming._parseSseBuffer`). This proves the server's wire format, headers, CORS, and event delivery are correct for any browser-equivalent fetch consumer. The StrictMode fix is the load-bearing UI-side correction; Phase 11 will re-verify with a fresh end-to-end run.
 
-**Commit:** `Phase 1 (mega-task v6): SSE UI end-to-end fix — React 18 StrictMode mountedRef regression + browser-equivalent regression coverage`.
+**Commit:** `Phase 1 (mega-task v6): SSE UI end-to-end fix — React 18 StrictMode mountedRef regression + browser-equivalent regression coverage` — `d0ef37fdd`.
+
+---
+
+## Phase 2 — Semantic-injection guarantee — 2026-05-22 (BLOCKING)
+
+**Goal:** close iter 6 success criterion #6 (voyage_semantic_avg=1.4-2.0 vs target ≥3) via the post-hoc deterministic injection layer mandated by the kickoff and the `feedback_pool_score_does_not_drive_llm_picking` cowork memory learning.
+
+**Built:**
+- `api/engine/layers/agent_semantic_injection_v1.py` — new module. Public API: `inject_semantic_picks(deck, anchor_cards, color_identity, *, n_target, forbidden_set=None, query_neighbors=None) -> (modified_deck, swap_log)`. Bracket-aware `_DEFAULT_N_TARGETS`: B1/B2=2, B3/B4=3, B5=4. Queries Voyage for top-30 neighbors per anchor (commander + must-includes + creative outliers from C2.2). Filters by color identity (delegated to `query_neighbors`), de-duplicates anchors + in-deck cards + forbidden set. Identifies low-priority swap targets via the `_SWAPPABLE_SOURCE_SUBSTRINGS` (only C2.2 wild-discovery picks; never commander / must-includes / mana base / C2.1 picks / archetype staples). Returns the modified deck + a swap log. Graceful fallback when Voyage is offline or no neighbors are available (returns unmodified deck + empty swap log).
+- `api/engine/layers/agent_build_deck_v1.py` integration: inserted between `validate_swap` completion (line 433) and `final_critic` start so D2 rewrites rationales for the post-injection composition. Anchor list = commander + must_include_cards + every deck card with `wild_combo_discovery` or `creative_outlier` in `source`. `n_target` derived from bracket. Swap log surfaces in `response.summary.semantic_injection = {"count": <int>, "swap_log": [...]}`. Failures non-fatal: a `SEMANTIC_INJECTION_FAILED` warning is appended and the build continues unchanged.
+- `tests/test_agent_semantic_injection_v1.py` — 13 unit tests covering: bracket-aware target resolution; full-pool injection (none semantic yet); partial-pool (some already semantic); all-anchors-overlap edge case; color-identity filter forwarding; forbidden_set blocking; protection of commander/must-includes/C2.1/mana_base/archetype staples; no-swappable-wild-picks edge case; Voyage-backend-exception graceful fallback; already-at-target no-op; version constant.
+
+**Tests:**
+- pytest: **1504 passed**, 8 pre-existing failed, 17 skipped, 58 subtests passed (1489 baseline + 2 Phase 1 e2e + 13 Phase 2 = 1504 expected ✓).
+
+**Surface:**
+- New build response field: `summary.semantic_injection = {"count": <N>, "swap_log": [{"removed", "added", "anchor", "similarity"}, ...]}`. Phase 11's iter-7 sweep metric reads `count` directly.
+- New warning code on success: `SEMANTIC_INJECTION_APPLIED` (informational, names the version + count).
+
+**Decisions / open items:**
+- `_SWAPPABLE_SOURCE_SUBSTRINGS` is intentionally conservative — only swaps `C2_2_wild_combo_discovery_added` / `wild_combo_discovery` tags. If a future case has no swappable picks and the injection layer no-ops, that's acceptable (the build doesn't regress; Phase 11 will tell us if widening the swap pool is needed).
+- Smoke test deferred to Phase 11's iter-7 sweep — running 5 live Edgar/Krenko/Atraxa/Yuriko/Ur-Dragon builds at this phase would cost ~$1.50 + ~10 min; Phase 11 needs to do that anyway and we get the same signal with one combined spend.
+
+**Commit:** `Phase 2 (mega-task v6): semantic-injection guarantee — post-hoc N-card injection with bracket-aware target`.
 
