@@ -455,3 +455,51 @@ per blocker.
 **All 15 pass.** ~310 LOC production + ~290 LOC test.
 
 **Commit message:** "Phase 6 (mega-task v9): combat phase — attackers/blockers/damage/keywords".
+
+Committed as `1eadb9131`.
+
+---
+
+## Phase 7 — Mulligan + draw + cleanup polish (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/turn/mulligan.py`:
+
+- `MulliganDeciderFn = (state, player_id, hand, num_mulligans) → bool`
+  callback type. Sub-mega-task B plugs LLM here in iter 11+.
+- `BottomPickerFn = (state, player_id, hand, n) → list` callback type
+  for choosing which N cards to put on the bottom after mulliganing.
+- `always_keep_decider` + `keep_after_n_mulligans_decider(n)` defaults.
+- `default_bottom_picker` picks the last N cards (insertion order).
+- `shuffle_library(state, player_id, seed)` — seedable for deterministic
+  tests + reproducible Stage-2 playtest runs.
+- `draw_n(state, player_id, n)` — draws from top (index 0); sets
+  `has_drawn_from_empty_library` SBA flag on empty.
+- `opening_hand_size(num_mulligans) = 7` always per London mulligan
+  (CR 103.4d).
+- `mulligan_setup(state, decider_fn, bottom_picker_fn, seed_per_player,
+  max_mulligans)` — full mulligan loop:
+    1. Shuffle library.
+    2. Draw 7.
+    3. Decider chooses keep vs mulligan; iterate up to max_mulligans.
+    4. After keep: put `num_mulligans` cards on bottom of library
+       (via bottom_picker_fn).
+  Returns `{player_id → num_mulligans_taken}`.
+
+**Phase 3 already shipped** `draw_step` (first-turn skip for P0) and
+`cleanup_step` (discard to 7, clear damage, expire until-end-of-turn).
+Phase 7 verified those behaviors hold via integration tests.
+
+**Tests** in `tests/pillar_f_v0_2/test_phase7_mulligan_cleanup.py`:
+13 tests across 5 classes:
+- **DrawNTests** (2): draws from top, empty library flag.
+- **ShuffleLibraryTests** (1): same-seed determinism.
+- **MulliganSetupTests** (4): 7-per-player no mulligan, 3-mulligan puts
+  3 on bottom, max_mulligans cap, default bottom-picker.
+- **FirstTurnDrawSkipTests** (3): P0 skips, P1 doesn't skip, turn 2 P0
+  draws.
+- **CleanupStepTests** (3): discard to 7, clear damage,
+  until-end-of-turn expiration.
+
+**All 13 pass.** ~160 LOC production + ~210 LOC test.
+
+**Commit message:** "Phase 7 (mega-task v9): London mulligan + draw + cleanup polish".
