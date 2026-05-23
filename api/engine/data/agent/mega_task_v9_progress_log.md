@@ -310,3 +310,76 @@ Committed as `943771d9a`.
 **All 22 pass.** ~450 LOC production across 3 files + ~330 LOC test.
 
 **Commit message:** "Phase 4 (mega-task v9): replacement effects + state-based actions".
+
+Committed as `5ab8a0d68` (per next git log).
+
+---
+
+## Phase 5 — Continuous (layered) effects + 7-layer system (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/layers/`:
+
+1. **characteristics.py** — `Characteristics` dataclass: per-permanent
+   AT-THIS-MOMENT view (name, type_line, subtypes, supertypes, types,
+   colors, color_identity, keywords, abilities, P/T int, loyalty,
+   controller, is_copy_of_card_id).
+
+2. **layer_engine.py** — full 7-layer engine:
+   - `_LAYER_ORDER`: 10 (layer, sublayer) tuples — 1, 2, 3, 4, 5, 6,
+     7a, 7b, 7c, 7d.
+   - `apply_continuous_effects(state)` — builds fresh Characteristics
+     from printed values, walks layers, applies each registered effect
+     in insertion order. Counters applied at end (CR 613.4
+     simplification).
+   - `parse_type_line` / `reassemble_type_line` — type-line parser
+     (supertypes, types, subtypes) with em-dash split.
+   - 9 built-in layer effects across 6 layers:
+     * **Layer 1**: `clone_of` — copies target permanent's characteristics
+       onto the clone; controller stays with clone.
+     * **Layer 2**: `change_control` — Mind Control / Threaten.
+     * **Layer 4**: `add_subtype`, `remove_supertype` (Mind Bend).
+     * **Layer 5**: `set_color` — sets colors of matching permanents.
+     * **Layer 6**: `grant_keyword`, `lose_all_abilities` (Humility-style).
+     * **Layer 7a**: `set_base_pt` — sets P/T to specific values.
+     * **Layer 7b**: `cda_set_pt` — characteristic-defining abilities
+       via `_CDA_REGISTRY` ({"tarmogoyf", "mortivore"}).
+     * **Layer 7c**: `anthem_pt_mod` — Glorious Anthem / Honor of the Pure
+       (+p/+t to matching).
+     * **Layer 7d**: `switch_pt` — Inverter of Truth.
+   - `_select_targets(pattern)` selector: card_id / all_creatures /
+     all_creatures_controller / controller / subtype / type / name.
+
+3. **layers/\_\_init\_\_.py** — exposes public API.
+
+**Iter-10 simplifications documented:**
+- CR 613.7c dependency resolution → insertion-order (= timestamp).
+  Dependency graphs deferred to iter 11+.
+- CR 613.4 counters-as-own-sub-process → applied at end of layer pipeline
+  rather than as a separate phase between layers 7b and 7c.
+- Layer 3 (text-changing) ships only `remove_supertype` for Mind Bend.
+  Full text rewriting is iter 11+.
+- Effect-fn errors silently swallowed (logged in iter 11+).
+
+**Tests** in `tests/pillar_f_v0_2/test_phase5_layers.py`: 15 tests
+across 9 classes:
+- **TypeLineParsingTests** (4): legendary parse, no-subtypes, basic
+  land, round-trip.
+- **BasicSnapshotTests** (2): printed-values snapshot, +1/+1 counters
+  added to P/T.
+- **Layer6AbilityGrantTests** (2): keyword grant to all creatures,
+  Humility strips keywords.
+- **AnthemAndHumilityTests** (2): Honor 2/2 → 3/3, **Humility + Honor =
+  2/2** (canonical layer-ordering test).
+- **TarmogoyfCDATests** (1): P/T = card-types across all graveyards
+  (3 types → 3/4).
+- **CloneTests** (1): Clone copies P/T + keywords; controller stays.
+- **InverterSwitchTests** (1): 2/6 → 6/2 in layer 7d.
+- **MindBendTests** (1): legendary supertype removal cleans type_line.
+- **ControlChangeTests** (1): Mind Control updates controller.
+
+**All 15 pass.** ~470 LOC production across 2 files + ~280 LOC test.
+
+**Highest-complexity phase confirmed working** end-to-end. The Humility +
+Honor canonical test passes — that's the key gate per kickoff.
+
+**Commit message:** "Phase 5 (mega-task v9): 7-layer continuous effects per CR 613".
