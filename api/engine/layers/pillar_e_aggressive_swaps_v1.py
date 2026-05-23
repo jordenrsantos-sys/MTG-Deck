@@ -357,22 +357,38 @@ def compute_pillar_e_aggressive_swaps(
     if interaction_designer_block and interaction_designer_block.get("active"):
         analysis = interaction_designer_block.get("analysis") or {}
         if analysis.get("significant"):
+            # v7 Phase 6 added `per_category` with min/max/actual/in_range
+            # per category. Prefer that shape; fall back to a synthesized
+            # version from `targets_by_category` + `actual_by_category`
+            # for tests / older outputs.
             per_cat = analysis.get("per_category") or {}
-            # Each category's gap: target - actual. Only act on shortages.
+            if not per_cat:
+                targets_legacy = analysis.get("targets_by_category") or {}
+                actual_legacy = analysis.get("actual_by_category") or {}
+                per_cat = {
+                    cat: {"target": int(t), "actual": int(actual_legacy.get(cat, 0)),
+                          "min": 0, "max": int(t) * 2 if t else 0,
+                          "in_range": True}  # legacy fallback — assume in range
+                    for cat, t in targets_legacy.items()
+                }
             category_to_prims = {
                 "mass_removal": _MASS_REMOVAL_PRIMS,
                 "targeted_creature_removal": _TARGETED_CREATURE_PRIMS,
-                "counterspell": _COUNTERSPELL_PRIMS,
+                "counterspells": _COUNTERSPELL_PRIMS,
             }
             for cat_name, prims in category_to_prims.items():
                 cat_data = per_cat.get(cat_name)
                 if not isinstance(cat_data, dict):
                     continue
-                target = int(cat_data.get("target") or 0)
-                actual = int(cat_data.get("actual") or 0)
-                if actual >= target:
+                # v7 Phase 6: only act on UNDER-bound. Over-bound (above
+                # max) is a different shape — would need swap-OUT logic
+                # which we don't have here. Surplus is also rare in
+                # iter-7 sweep (the failure mode was under-fill).
+                lo = int(cat_data.get("min", 0))
+                actual = int(cat_data.get("actual", 0))
+                if actual >= lo:
                     continue
-                gap = target - actual
+                gap = lo - actual
                 candidates_in_pool = _filter_pool_by_primitives(
                     pool_candidates, prims, exclude_names=deck_names_lower,
                 )
@@ -385,7 +401,7 @@ def compute_pillar_e_aggressive_swaps(
                         "interaction_designer",
                         card_out=low_priority_out[i],
                         card_in=candidates_in_pool[i]["name"],
-                        rationale=f"{cat_name} shortage {actual}/{target}; inject",
+                        rationale=f"{cat_name} below min {actual}/{lo}; inject",
                     )
 
     return {

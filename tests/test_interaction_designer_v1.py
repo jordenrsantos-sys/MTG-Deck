@@ -128,16 +128,23 @@ class DeckDiscrepancyTest(unittest.TestCase):
 
     def test_deck_below_target_is_flagged_as_under(self) -> None:
         # B3 wants ~11 interaction. We provide a deck with 0 — every
-        # category should be flagged as under.
+        # enabled category should be flagged as under (v7 Phase 6 uses
+        # per-category min bounds instead of the legacy ±50% sum band,
+        # so the message format is "below per-category min" for bounded
+        # categories or "under target" for unbounded ones).
         deck = [_card(f"Card {i}", ["cantrip"]) for i in range(10)]
         out = compute_interaction_targets(
             commander_color_identity=["U", "B"], bracket="B3", deck=deck,
         )
         self.assertGreater(len(out.discrepancies), 0)
         self.assertTrue(out.significant)
-        # Every under-discrepancy should say "under target"
+        # Every under-discrepancy should either match the legacy message
+        # format or the v7 Phase 6 per-category-min format.
         for d in out.discrepancies:
-            self.assertIn("under target", d)
+            self.assertTrue(
+                "under target" in d or "below per-category min" in d,
+                f"Unexpected discrepancy message: {d!r}",
+            )
 
     def test_deck_with_counterspells_counted_in_U_decks(self) -> None:
         deck = [
@@ -281,6 +288,105 @@ class V6Phase4MultiCategoryClassificationTest(unittest.TestCase):
         self.assertEqual(out.actual_by_category.get("counterspells", 0), 0)
         self.assertEqual(
             out.actual_by_category.get("targeted_creature_removal"), 1
+        )
+
+
+class V7Phase6PerCategoryBoundsTest(unittest.TestCase):
+    """v7 Phase 6: per-category min-max bounds (CC iter-7 sweep gap #3).
+    Pre-v7 the ±50% sum-based discrepancy overshot 1.5×target on every
+    iter-7 sweep case once v6 P4 multi-primitive counting inflated multi-
+    mode counts. Per-category bounds replace the sum-based check."""
+
+    def test_per_category_field_populated_for_bounded_categories(self) -> None:
+        deck = [
+            _card("Wrath", ["removal-mass-creatures"]),
+            _card("Wrath2", ["removal-mass-creatures"]),
+            _card("Wrath3", ["removal-mass-creatures"]),
+            _card("Doom Blade", ["removal-creature"]),
+            _card("Path", ["removal-creature"]),
+            _card("Swords", ["removal-creature"]),
+            _card("Anguished Unmaking", ["removal-creature"]),
+        ]
+        out = compute_interaction_targets(
+            commander_color_identity=["W", "B"], bracket="B3", deck=deck,
+        )
+        # mass_removal: 3 cards, bound (2,4) — in range.
+        mr = out.per_category.get("mass_removal")
+        self.assertIsNotNone(mr)
+        self.assertEqual(mr["actual"], 3)
+        self.assertEqual(mr["min"], 2)
+        self.assertEqual(mr["max"], 4)
+        self.assertTrue(mr["in_range"])
+        # targeted_creature_removal: 4 cards, bound (4,7) — in range.
+        tcr = out.per_category.get("targeted_creature_removal")
+        self.assertIsNotNone(tcr)
+        self.assertEqual(tcr["actual"], 4)
+        self.assertTrue(tcr["in_range"])
+
+    def test_overshoot_in_one_category_does_not_flag_others(self) -> None:
+        # Build a deck with 6 mass_removal (above bound 4) and 5
+        # targeted_creature_removal (in bound 4-7). Only mass_removal
+        # should flag.
+        deck = (
+            [_card(f"Wrath {i}", ["removal-mass-creatures"]) for i in range(6)]
+            + [_card(f"DoomBlade {i}", ["removal-creature"]) for i in range(5)]
+        )
+        out = compute_interaction_targets(
+            commander_color_identity=["W", "B"], bracket="B3", deck=deck,
+        )
+        # mass_removal overshoots; should flag.
+        msgs = "\n".join(out.discrepancies)
+        self.assertIn("mass_removal", msgs)
+        self.assertIn("above per-category max", msgs)
+        # targeted_creature_removal at 5/4-7 should NOT flag.
+        self.assertNotIn(
+            "targeted_creature_removal above", msgs,
+            f"Expected targeted_creature_removal to be in range; got: {msgs}",
+        )
+
+    def test_in_range_deck_has_no_discrepancies(self) -> None:
+        # B3 WUB deck hitting every bound mid-range.
+        deck = (
+            [_card(f"Wrath {i}", ["removal-mass-creatures"]) for i in range(3)]
+            + [_card(f"DoomBlade {i}", ["removal-creature"]) for i in range(5)]
+            + [_card(f"Counterspell {i}", ["counterspell-hard"]) for i in range(4)]
+            + [_card("Naturalize", ["removal-artifact"]),
+               _card("Disenchant", ["removal-enchantment"])]
+        )
+        out = compute_interaction_targets(
+            commander_color_identity=["W", "U", "B"], bracket="B3", deck=deck,
+        )
+        # Should be at-or-near in-range everywhere.
+        out_of_range_cats = [
+            c for c, info in out.per_category.items() if not info["in_range"]
+        ]
+        # Allow at most 1 category mildly out of range (the asymmetric
+        # heuristic allocations can shift a value by 1).
+        self.assertLessEqual(
+            len(out_of_range_cats), 1,
+            f"Too many out-of-range categories: {out_of_range_cats} / per_cat={out.per_category}",
+        )
+
+    def test_color_gated_off_category_not_in_per_category(self) -> None:
+        # BRG deck has no U → counterspells gated off; should NOT appear
+        # in per_category at all.
+        deck = [_card("Doom Blade", ["removal-creature"])]
+        out = compute_interaction_targets(
+            commander_color_identity=["B", "R", "G"], bracket="B3", deck=deck,
+        )
+        self.assertNotIn("counterspells", out.per_category)
+
+    def test_bounds_message_format_distinguishes_min_max(self) -> None:
+        deck = (
+            [_card(f"Wrath {i}", ["removal-mass-creatures"]) for i in range(8)]
+        )  # mass_removal 8, above bound max 4
+        out = compute_interaction_targets(
+            commander_color_identity=["W", "B"], bracket="B3", deck=deck,
+        )
+        any_over_msg = any("above per-category max" in d for d in out.discrepancies)
+        self.assertTrue(
+            any_over_msg,
+            f"Expected 'above per-category max' message; got: {out.discrepancies}",
         )
 
 

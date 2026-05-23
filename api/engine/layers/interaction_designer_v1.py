@@ -40,7 +40,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
 
-INTERACTION_DESIGNER_VERSION = "interaction_designer_v1.0"
+INTERACTION_DESIGNER_VERSION = "interaction_designer_v1.1_per_category_bounds"
 
 _BRACKET_POLICY: Dict[str, Dict[str, Any]] = {
     "B1": {"total": 9,  "sorcery_pct": 0.70, "mass_removal": 2},
@@ -50,6 +50,34 @@ _BRACKET_POLICY: Dict[str, Dict[str, Any]] = {
     "B5": {"total": 13, "sorcery_pct": 0.20, "mass_removal": 1},
 }
 _DEFAULT_POLICY = {"total": 10, "sorcery_pct": 0.50, "mass_removal": 2}
+
+# v7 Phase 6: per-category min-max bounds (CC iter-7 sweep gap #3).
+# Pre-v7 the discrepancy check used a single ±50% band on the sum-based
+# target, which overshot 1.5×target on every iter-7 sweep case once
+# multi-primitive counting in v6 Phase 4 inflated multi-mode card counts.
+# Per-category bounds replace the sum-based check so a single category
+# overshoot doesn't bleed into the others.
+#
+# Bounds per kickoff Phase 6 spec:
+#   mass_removal:                   2-4
+#   targeted_creature_removal:      4-7
+#   targeted_artifact_removal:      1-3
+#   targeted_enchantment_removal:   0-2
+#   counterspells (U-only):         4-8
+#   graveyard_interaction:          0-3  (kickoff didn't spec; this is
+#                                         a sensible default — most decks
+#                                         have 0-2 dedicated hate slots)
+# Bracket policy still gates which categories are enabled and how the
+# total target is computed; bounds are the hard "in-range" check on the
+# per-category actual count.
+_PER_CATEGORY_BOUNDS: Dict[str, tuple] = {
+    "mass_removal":                 (2, 4),
+    "targeted_creature_removal":    (4, 7),
+    "targeted_artifact_removal":    (1, 3),
+    "targeted_enchantment_removal": (0, 2),
+    "counterspells":                (4, 8),
+    "graveyard_interaction":        (0, 3),
+}
 
 # Map primitive tags to interaction categories.
 _PRIMITIVES_TO_CATEGORY: Dict[str, str] = {
@@ -96,6 +124,12 @@ class InteractionTargets:
     actual_by_category: Dict[str, int] = field(default_factory=dict)
     discrepancies: List[str] = field(default_factory=list)
     significant: bool = False
+    # v7 Phase 6: per-category bounds + in-range report. Each entry:
+    #   {"target": <orig allocation>, "min": <bound>, "max": <bound>,
+    #    "actual": <count>, "in_range": <bool>}
+    # Color-gated-off categories (e.g. counterspells in WUG without U)
+    # are not included.
+    per_category: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     version: str = INTERACTION_DESIGNER_VERSION
 
     def to_dict(self) -> Dict[str, Any]:
@@ -267,24 +301,52 @@ def compute_interaction_targets(
 
     actual_by_category: Dict[str, int] = {}
     discrepancies: List[str] = []
+    per_category: Dict[str, Dict[str, Any]] = {}
     if deck is not None:
         actual_by_category = _count_actual_interaction(deck, pool, color_set)
+        # v7 Phase 6: per-category bounds replace the sum-based ±50% check.
+        # Each enabled category has a hard (min, max) range; discrepancy
+        # fires only when actual is outside that range. Color-gated-off
+        # categories (counterspells without U) are excluded entirely.
+        gated_off_cats: Set[str] = set()
+        for cat, gate in _COLOR_GATES.items():
+            if gate.isdisjoint(color_set):
+                gated_off_cats.add(cat)
         for cat, t in targets_by_category.items():
             actual = actual_by_category.get(cat, 0)
-            if t <= 0:
-                # No target → only flag if deck has some (off-color
-                # counterspells, etc.). Don't penalize the common case.
+            # Color-gate first — never flag a gated-off category as
+            # under-target (e.g., counterspells in BRG).
+            if cat in gated_off_cats:
                 continue
-            low = t * (1 - discrepancy_pct)
-            high = t * (1 + discrepancy_pct)
-            if actual < low:
-                discrepancies.append(
-                    f"{cat} under target: {actual} vs {t}"
-                )
-            elif actual > high:
-                discrepancies.append(
-                    f"{cat} over target: {actual} vs {t}"
-                )
+            bounds = _PER_CATEGORY_BOUNDS.get(cat)
+            if bounds:
+                lo, hi = bounds
+                in_range = lo <= actual <= hi
+                per_category[cat] = {
+                    "target": int(t), "min": int(lo), "max": int(hi),
+                    "actual": int(actual), "in_range": in_range,
+                }
+                if not in_range:
+                    if actual < lo:
+                        discrepancies.append(
+                            f"{cat} below per-category min: {actual} vs [{lo},{hi}]"
+                        )
+                    else:
+                        discrepancies.append(
+                            f"{cat} above per-category max: {actual} vs [{lo},{hi}]"
+                        )
+            else:
+                # No per-category bound defined — fall back to legacy ±50%
+                # sum-based check (preserves backward-compat for any
+                # category not in _PER_CATEGORY_BOUNDS).
+                if t <= 0:
+                    continue
+                low = t * (1 - discrepancy_pct)
+                high = t * (1 + discrepancy_pct)
+                if actual < low:
+                    discrepancies.append(f"{cat} under target: {actual} vs {t}")
+                elif actual > high:
+                    discrepancies.append(f"{cat} over target: {actual} vs {t}")
 
     return InteractionTargets(
         bracket=bracket,
@@ -298,4 +360,5 @@ def compute_interaction_targets(
         actual_by_category=actual_by_category,
         discrepancies=discrepancies,
         significant=bool(discrepancies),
+        per_category=per_category,
     )

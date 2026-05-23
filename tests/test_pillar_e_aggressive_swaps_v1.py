@@ -184,7 +184,9 @@ class InteractionSwapTests(unittest.TestCase):
             "analysis": {
                 "significant": True,
                 "per_category": {
-                    "targeted_creature_removal": {"target": 4, "actual": 0},
+                    "targeted_creature_removal": {
+                        "target": 4, "min": 4, "max": 7, "actual": 0, "in_range": False,
+                    },
                 },
             },
         }
@@ -231,7 +233,9 @@ class GuardrailsTests(unittest.TestCase):
             "analysis": {
                 "significant": True,
                 "per_category": {
-                    "targeted_creature_removal": {"target": 10, "actual": 0},
+                    "targeted_creature_removal": {
+                        "target": 10, "min": 4, "max": 10, "actual": 0, "in_range": False,
+                    },
                 },
             },
         }

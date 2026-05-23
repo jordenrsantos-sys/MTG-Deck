@@ -387,3 +387,67 @@ Edgar. Combined with Phase 3 swap layer reducing drift (swaps inject
 theme-aligned cards), expected Phase 8 sweep to pass ≥4/5.
 
 **Commit message:** "Phase 5 (mega-task v7): intent_drift archetype-aware thresholds extension".
+
+Committed as `853619c8b`.
+
+---
+
+## Phase 6 — interaction_within per-category bounds (2026-05-23)
+
+CC iter-7 sweep gap #3: pillar_e_v0_4_interaction_within at 0/5 vs ≥4/5
+target. v6 Phase 4's multi-primitive counting (correctly) made cards
+contribute to every interaction category they match, but the discrepancy
+check still used a single ±50% band on the sum-based target, so the
+inflation OVERSHOT 1.5×target on every iter-7 sweep case.
+
+**Implementation in `interaction_designer_v1.py`:**
+
+1. New `_PER_CATEGORY_BOUNDS` dict per kickoff Phase 6 spec:
+   - mass_removal: (2, 4)
+   - targeted_creature_removal: (4, 7)
+   - targeted_artifact_removal: (1, 3)
+   - targeted_enchantment_removal: (0, 2)
+   - counterspells (U-gated): (4, 8)
+   - graveyard_interaction: (0, 3)
+
+2. New `per_category` field on `InteractionTargets` dataclass:
+   `{cat: {"target": int, "min": int, "max": int, "actual": int, "in_range": bool}}`.
+   Color-gated-off categories (counterspells without U) are excluded
+   entirely — they don't appear in per_category at all.
+
+3. Refactored discrepancy logic in `compute_interaction_targets`:
+   - For bounded categories, use min-max range check.
+   - For unbounded categories, fall back to legacy ±50% check.
+   - New message formats: "below per-category min: actual vs [lo,hi]"
+     and "above per-category max: actual vs [lo,hi]" (distinguishes
+     the iter-7 over-shoot case from a generic ±50% mismatch).
+
+4. Version bumped to `interaction_designer_v1.1_per_category_bounds`.
+
+**Phase 3 swap code update:**
+
+`pillar_e_aggressive_swaps_v1.py` updated to read the new `per_category`
+shape (was looking for `per_category` but with `target`/`actual` only;
+now reads `min`/`actual`/`in_range`). Acts only on UNDER-min cases
+(injects more cards). Over-max would need different swap-OUT logic;
+deferred to a future iteration since the iter-7 failure mode was
+under-fill.
+
+Fixed Phase 3 fixture: 2 tests in `test_pillar_e_aggressive_swaps_v1.py`
+updated to pass the new per_category shape.
+
+Bonus fix: my Phase 3 swap code had been reading `cat == "counterspell"`
+but the optimizer key is `counterspells` (plural). Phase 6 audit caught
+this; fixed in the same edit.
+
+**Tests:**
+- `tests/test_interaction_designer_v1.py`:
+  - Updated 1 v6 Phase 4 test (message format changed for bounded categories).
+  - Added `V7Phase6PerCategoryBoundsTest` (5 tests): per_category populated,
+    overshoot in one category doesn't flag others, in-range deck has no
+    discrepancies, color-gated category excluded from per_category, min/max
+    message format distinguishes direction.
+- Total interaction tests: 27 pass (was 22; +5 new).
+- Swap layer tests: 9 pass (no count change; 2 fixture updates).
+
+**Commit message:** "Phase 6 (mega-task v7): interaction_within per-category bounds".
