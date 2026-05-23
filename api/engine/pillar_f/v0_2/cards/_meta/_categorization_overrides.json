@@ -1,0 +1,15 @@
+{
+  "_doc": "Per-card overrides for build_top_500.py's regex categorization. Key = card name, value = handler_type bucket. Add entries here whenever the regex heuristic mis-buckets a card. The Phase 0 commit ships the corrections discovered during the initial categorization sanity sweep.",
+  "Path of Ancestry": "activated",
+  "Bojuka Bog": "etb",
+  "Solemn Simulacrum": "complex",
+  "Mana Vault": "activated",
+  "Chrome Mox": "activated",
+  "Mox Diamond": "activated",
+  "Worn Powerstone": "activated",
+  "Hardened Scales": "replacement",
+  "Academy Manufactor": "replacement",
+  "Dauthi Voidwalker": "replacement",
+  "Skullclamp": "complex",
+  "City of Brass": "activated"
+}
