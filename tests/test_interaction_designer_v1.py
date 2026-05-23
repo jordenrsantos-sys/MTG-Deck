@@ -390,5 +390,75 @@ class V7Phase6PerCategoryBoundsTest(unittest.TestCase):
         )
 
 
+class V8Phase5BracketProportionalBoundsTests(unittest.TestCase):
+    """v8 Phase 5: per-category bounds now scale with bracket. B2 mass-
+    removal bound is [1,3] (lighter) vs B4 [2,4] (heavier); B5
+    counterspells [4,10] vs B2 [1,4]."""
+
+    def test_bracket_b1_mass_removal_bound_lighter(self) -> None:
+        from api.engine.layers.interaction_designer_v1 import _resolve_bracket_bounds
+        lo, hi = _resolve_bracket_bounds("mass_removal", "B1")
+        self.assertEqual((lo, hi), (1, 3))
+
+    def test_bracket_b3_mass_removal_bound_mid(self) -> None:
+        from api.engine.layers.interaction_designer_v1 import _resolve_bracket_bounds
+        lo, hi = _resolve_bracket_bounds("mass_removal", "B3")
+        self.assertEqual((lo, hi), (2, 4))
+
+    def test_bracket_b5_counterspells_bound_heaviest(self) -> None:
+        from api.engine.layers.interaction_designer_v1 import _resolve_bracket_bounds
+        lo, hi = _resolve_bracket_bounds("counterspells", "B5")
+        self.assertEqual((lo, hi), (4, 10))
+
+    def test_bracket_b2_counterspells_bound_lighter(self) -> None:
+        from api.engine.layers.interaction_designer_v1 import _resolve_bracket_bounds
+        lo, hi = _resolve_bracket_bounds("counterspells", "B2")
+        self.assertEqual((lo, hi), (1, 4))
+
+    def test_unknown_bracket_falls_back_to_default(self) -> None:
+        from api.engine.layers.interaction_designer_v1 import _resolve_bracket_bounds
+        # Custom bracket key not in the proportional table → universal default.
+        lo, hi = _resolve_bracket_bounds("mass_removal", "CUSTOM_B")
+        self.assertEqual((lo, hi), (2, 4))
+
+    def test_unknown_category_returns_none(self) -> None:
+        from api.engine.layers.interaction_designer_v1 import _resolve_bracket_bounds
+        self.assertIsNone(_resolve_bracket_bounds("imaginary_category", "B3"))
+
+    def test_b2_atraxa_doesnt_flag_low_targeted_creature_removal_anymore(self) -> None:
+        # Atraxa B2 (the iter-8 sweep failure case): targeted_creature_removal
+        # at actual=2 with v7 universal bound [4,7] flagged "below min."
+        # With v8 bracket-proportional [2,5], actual=2 is in range.
+        deck = [
+            _card("Doom Blade", ["removal-creature"]),
+            _card("Path of the Pyromancer", ["removal-creature"]),
+        ]
+        out = compute_interaction_targets(
+            commander_color_identity=["W", "U", "B", "G"],
+            bracket="B2", deck=deck,
+        )
+        tcr = out.per_category.get("targeted_creature_removal")
+        if tcr:
+            self.assertTrue(
+                tcr["in_range"],
+                f"Expected B2 targeted_creature_removal in_range with actual=2; "
+                f"got {tcr}",
+            )
+
+    def test_b5_yuriko_allows_8_counterspells(self) -> None:
+        # Yuriko B5 (cEDH): 8 counterspells is in-range under [4,10].
+        # Pre-v8 universal bound [4,8] would mark this as max.
+        deck = [_card(f"Counterspell {i}", ["counterspell-hard"]) for i in range(8)]
+        out = compute_interaction_targets(
+            commander_color_identity=["U", "B"], bracket="B5", deck=deck,
+        )
+        cs = out.per_category.get("counterspells")
+        self.assertIsNotNone(cs)
+        self.assertTrue(
+            cs["in_range"],
+            f"Expected B5 counterspells with 8 cards in range [4,10]; got {cs}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

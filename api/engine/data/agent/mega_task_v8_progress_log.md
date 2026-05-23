@@ -309,3 +309,58 @@ with single-vocab assertions after the rebuild ships.
 **Tests:** 7 v8 Phase 4 regression tests pass.
 
 **Commit message:** "Phase 4 (mega-task v8): vocabulary tech debt — Tier-3 skip + regression safety net".
+
+Committed as `dbe575a98`.
+
+---
+
+## Phase 5 — Bracket-proportional interaction bounds (2026-05-23)
+
+**Context:** v7 Phase 6 shipped universal per-category bounds. Iter-8
+sweep criterion 8 failed 0/5 because the universal bounds (e.g.,
+targeted_creature_removal [4,7]) exceed the bracket interaction budget
+for low brackets (B2 total=9 with mass_removal=2 leaves 7 for ALL
+6 other categories — can't fit 4-7 in any one). Higher brackets
+(B4/B5) legitimately run more interaction than the universal bound
+permits.
+
+**Implementation:**
+
+New `_PER_CATEGORY_BOUNDS_BY_BRACKET` dict in
+`interaction_designer_v1.py` with per-bracket (min, max) per category:
+
+| Category | B1 | B2 | B3 | B4 | B5 |
+|---|---|---|---|---|---|
+| mass_removal | 1-3 | 1-3 | 2-4 | 2-4 | 0-2 |
+| targeted_creature_removal | 2-4 | 2-5 | 3-6 | 3-7 | 4-8 |
+| targeted_artifact_removal | 0-2 | 0-2 | 1-3 | 1-4 | 1-4 |
+| targeted_enchantment_removal | 0-1 | 0-2 | 0-2 | 0-3 | 0-3 |
+| counterspells (U-only) | 1-3 | 1-4 | 2-6 | 3-7 | 4-10 |
+| graveyard_interaction | 0-2 | 0-2 | 0-3 | 1-4 | 1-4 |
+
+B5 mass_removal lowered to 0-2 because cEDH decks lean instant-speed
++ counters; B5 counterspells widened to 4-10 because cEDH stacks lean
+heavy counter density. B2 keeps light defensive shape.
+
+New `_resolve_bracket_bounds(category, bracket)` helper returns the
+bracket's row; falls back to v7 universal default
+(`_PER_CATEGORY_BOUNDS_DEFAULT`) when bracket key missing.
+
+`compute_interaction_targets` updated to call `_resolve_bracket_bounds`
+instead of indexing `_PER_CATEGORY_BOUNDS` directly. Legacy
+`_PER_CATEGORY_BOUNDS` constant aliased to default for backward compat
+with the v8 Phase 4 dual-vocabulary regression test.
+
+**Verification:**
+- Atraxa B2 with targeted_creature_removal actual=2: in-range under
+  v8 [2,5]; was below-min under v7 [4,7].
+- Yuriko B5 with 8 counterspells: in-range under v8 [4,10]; was at-max
+  under v7 [4,8].
+- All other brackets verified via 5 new Phase 5 tests.
+
+**Tests:** 35 interaction tests pass (+8 new
+V8Phase5BracketProportionalBoundsTests covering each bracket lookup +
+the Atraxa/Yuriko sweep-case scenarios + unknown-bracket fallback +
+unknown-category None return).
+
+**Commit message:** "Phase 5 (mega-task v8): bracket-proportional interaction bounds".

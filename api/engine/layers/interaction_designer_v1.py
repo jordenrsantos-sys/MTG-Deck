@@ -51,26 +51,48 @@ _BRACKET_POLICY: Dict[str, Dict[str, Any]] = {
 }
 _DEFAULT_POLICY = {"total": 10, "sorcery_pct": 0.50, "mass_removal": 2}
 
-# v7 Phase 6: per-category min-max bounds (CC iter-7 sweep gap #3).
-# Pre-v7 the discrepancy check used a single ±50% band on the sum-based
-# target, which overshot 1.5×target on every iter-7 sweep case once
-# multi-primitive counting in v6 Phase 4 inflated multi-mode card counts.
-# Per-category bounds replace the sum-based check so a single category
-# overshoot doesn't bleed into the others.
+# v7 Phase 6: per-category min-max bounds. Pre-v7 the discrepancy check
+# used a single ±50% band on the sum-based target, which overshot
+# 1.5×target on every iter-7 sweep case once multi-primitive counting
+# in v6 Phase 4 inflated multi-mode card counts. Per-category bounds
+# replaced the sum-based check.
 #
-# Bounds per kickoff Phase 6 spec:
-#   mass_removal:                   2-4
-#   targeted_creature_removal:      4-7
-#   targeted_artifact_removal:      1-3
-#   targeted_enchantment_removal:   0-2
-#   counterspells (U-only):         4-8
-#   graveyard_interaction:          0-3  (kickoff didn't spec; this is
-#                                         a sensible default — most decks
-#                                         have 0-2 dedicated hate slots)
-# Bracket policy still gates which categories are enabled and how the
-# total target is computed; bounds are the hard "in-range" check on the
-# per-category actual count.
-_PER_CATEGORY_BOUNDS: Dict[str, tuple] = {
+# v8 Phase 5: bracket-proportional bounds. Pre-v8 the bounds were
+# universal — the per-category min/max applied to every bracket equally.
+# Iter-8 sweep flagged a real problem: kickoff's targeted_creature_removal
+# bound [4,7] exceeds bracket B2's interaction allocation (B2 total=9
+# with mass_removal=2 leaves 7 for ALL 6 other categories — can't fit
+# 4-7 in any single one). Higher brackets (B4/B5) also legitimately run
+# more interaction than the universal bound permits. Bracket-proportional
+# bounds make each bracket's per-category range realistic given its
+# overall interaction budget.
+#
+# Each category gets {bracket: (min, max)} table. Reads the row matching
+# the deck's bracket. Falls back to the v7 universal bounds when bracket
+# key not present.
+_PER_CATEGORY_BOUNDS_BY_BRACKET: Dict[str, Dict[str, tuple]] = {
+    "mass_removal": {
+        "B1": (1, 3), "B2": (1, 3), "B3": (2, 4), "B4": (2, 4), "B5": (0, 2),
+    },
+    "targeted_creature_removal": {
+        "B1": (2, 4), "B2": (2, 5), "B3": (3, 6), "B4": (3, 7), "B5": (4, 8),
+    },
+    "targeted_artifact_removal": {
+        "B1": (0, 2), "B2": (0, 2), "B3": (1, 3), "B4": (1, 4), "B5": (1, 4),
+    },
+    "targeted_enchantment_removal": {
+        "B1": (0, 1), "B2": (0, 2), "B3": (0, 2), "B4": (0, 3), "B5": (0, 3),
+    },
+    "counterspells": {  # U-only
+        "B1": (1, 3), "B2": (1, 4), "B3": (2, 6), "B4": (3, 7), "B5": (4, 10),
+    },
+    "graveyard_interaction": {
+        "B1": (0, 2), "B2": (0, 2), "B3": (0, 3), "B4": (1, 4), "B5": (1, 4),
+    },
+}
+
+# v7 fallback bounds when bracket lookup misses (e.g., custom bracket).
+_PER_CATEGORY_BOUNDS_DEFAULT: Dict[str, tuple] = {
     "mass_removal":                 (2, 4),
     "targeted_creature_removal":    (4, 7),
     "targeted_artifact_removal":    (1, 3),
@@ -78,6 +100,22 @@ _PER_CATEGORY_BOUNDS: Dict[str, tuple] = {
     "counterspells":                (4, 8),
     "graveyard_interaction":        (0, 3),
 }
+
+
+def _resolve_bracket_bounds(category: str, bracket: str) -> Optional[tuple]:
+    """v8 Phase 5: return (min, max) for category at bracket. Falls back
+    to universal default when bracket not in the proportional table."""
+    by_bracket = _PER_CATEGORY_BOUNDS_BY_BRACKET.get(category)
+    if by_bracket and bracket in by_bracket:
+        return by_bracket[bracket]
+    return _PER_CATEGORY_BOUNDS_DEFAULT.get(category)
+
+
+# v7 Phase 6 (deprecated, kept for backward compat with v8 Phase 4 dual-
+# vocab test): the universal bounds — superseded by the bracket-
+# proportional version above. Consumers should call
+# `_resolve_bracket_bounds(cat, bracket)` instead.
+_PER_CATEGORY_BOUNDS: Dict[str, tuple] = _PER_CATEGORY_BOUNDS_DEFAULT
 
 # Map primitive tags to interaction categories.
 #
@@ -335,7 +373,8 @@ def compute_interaction_targets(
             # under-target (e.g., counterspells in BRG).
             if cat in gated_off_cats:
                 continue
-            bounds = _PER_CATEGORY_BOUNDS.get(cat)
+            # v8 Phase 5: bracket-proportional bounds lookup.
+            bounds = _resolve_bracket_bounds(cat, bracket)
             if bounds:
                 lo, hi = bounds
                 in_range = lo <= actual <= hi
