@@ -11,9 +11,19 @@ from api.engine.pillar_f.v0_2.policy.prompts.main_phase import (
     build_main_phase_prompt,
     compute_eligible_actions_passes_only,
 )
+from api.engine.pillar_f.v0_2.policy.prompts.combat import (
+    COMBAT_PROMPT_VERSION,
+    ATTACKERS_SYSTEM_PROMPT,
+    BLOCKERS_SYSTEM_PROMPT,
+    build_attackers_prompt,
+    build_blockers_prompt,
+)
 
 __all__ = [
     "COMPACT_VIEW_VERSION", "compact_view", "estimate_tokens",
     "MAIN_PHASE_PROMPT_VERSION", "MAIN_PHASE_SYSTEM_PROMPT",
     "build_main_phase_prompt", "compute_eligible_actions_passes_only",
+    "COMBAT_PROMPT_VERSION", "ATTACKERS_SYSTEM_PROMPT",
+    "BLOCKERS_SYSTEM_PROMPT",
+    "build_attackers_prompt", "build_blockers_prompt",
 ]

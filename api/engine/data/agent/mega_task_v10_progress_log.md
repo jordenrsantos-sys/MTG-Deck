@@ -230,3 +230,60 @@ polish; the substrate boundary works.
 **Pillar F tests now: 284 (224 v9 + 60 new v10 Phases 1-3).**
 
 **Commit message:** "Phase 3 (mega-task v10): plug LLM into PriorityResponderFn + 2-LLM head-to-head smoke ($0.02)".
+
+Committed as `ad8a5ad36`. (v11 Phase 0 landed in parallel as
+`d635a249f` — disjoint module trees, no conflict.)
+
+---
+
+## Phase 4 — Combat-phase prompt + attacker/blocker (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/policy/`:
+
+1. **prompts/combat.py** —
+   - `ATTACKERS_SYSTEM_PROMPT` + `BLOCKERS_SYSTEM_PROMPT` system
+     templates (Commander piloting role + JSON contract + politics
+     etiquette + iter-10 single-call-per-side semantics).
+   - `build_attackers_prompt(compact, eligible_attackers,
+     attack_targets, politics_context?, deck_archetype_hint?,
+     last_error_message?)` — assembles user message.
+   - `build_blockers_prompt(compact, eligible_blockers,
+     attackers_to_block, politics_context?, last_error_message?)` —
+     one call per defender; iter-10 honors block-declaration order
+     for multi-block damage assignment.
+
+2. **parsers/combat_parser.py** —
+   - `AttackersResponse` / `BlockersResponse` dataclasses.
+   - `parse_attackers_response(raw, eligible_attackers,
+     attack_targets)` — JSON parse + index range checks + duplicate
+     attacker rejection. Empty/missing `attackers` array = legal (no
+     attack).
+   - `parse_blockers_response(raw, eligible_blockers,
+     attackers_to_block)` — JSON parse + index range + duplicate
+     attacker rejection + blocker-assigned-to-multiple-attackers
+     rejection. Empty `blocks` array = legal (take all damage).
+   - Multi-block assignment order preserved (CR 510.1c: active player
+     chooses order; iter-10 takes the LLM's blocker_indices order
+     directly).
+
+**Tests** in `tests/pillar_f_v0_2_policy/test_phase4_combat_prompt.py`:
+21 tests across 5 classes:
+- **AttackersPromptAssemblyTests** (4): eligible attackers,
+  attack targets, none-eligible, politics inclusion.
+- **BlockersPromptAssemblyTests** (2): incoming + your blockers,
+  none-blockers.
+- **AttackersParserTests** (7): clean parse, empty legal, missing
+  key legal, attacker_index out of range, target_index out of range,
+  duplicate attacker rejected, malformed JSON.
+- **BlockersParserTests** (6): clean parse, empty legal, multi-block
+  order preserved, blocker out of range, blocker assigned twice
+  rejected, duplicate attacker rejected.
+- **SystemPromptConstantsTests** (2): both system prompts include
+  JSON contract + key references.
+
+**All 21 pass.** ~290 LOC production across 2 files + ~280 LOC test.
+
+Full combat-phase integration (LLM driving declare → first-strike →
+normal damage) deferred to Phase 9.
+
+**Commit message:** "Phase 4 (mega-task v10): combat-phase prompt + attackers/blockers parsers".
