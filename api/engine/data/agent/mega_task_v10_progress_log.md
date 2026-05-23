@@ -94,3 +94,68 @@ older entries.
 **All 13 pass.** ~230 LOC production + ~190 LOC test.
 
 **Commit message:** "Phase 1 (mega-task v10): compact_view helper — perspective_view → ~3K-token LLM-ready text".
+
+Committed as `f1310dd8f`.
+
+---
+
+## Phase 2 — Main-phase action prompt + parser + validator (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/policy/`:
+
+1. **prompts/main_phase.py** —
+   - `MAIN_PHASE_SYSTEM_PROMPT` constant (Commander piloting role,
+     JSON contract spec, politics/etiquette guidance, "Output ONLY
+     JSON" instruction).
+   - `build_main_phase_prompt(compact_view_text, eligible_actions,
+     politics_context?, deck_archetype_hint?, rationale_history?,
+     last_error_message?)` assembles user message with:
+     CURRENT GAME STATE | YOUR DECK ARCHETYPE | POLITICS CONTEXT (per-
+     opponent threat score + alliances + recent deals) | YOUR RECENT
+     RATIONALES | ELIGIBLE ACTIONS (indexed [0], [1], ...) | ATTENTION:
+     PRIOR RESPONSE FAILED VALIDATION (re-prompt context).
+   - `compute_eligible_actions_passes_only()` stub for unit tests
+     (Phase 3 wires real engine pre-computation).
+
+2. **parsers/action_parser.py** —
+   - `ActionResponse` dataclass with action_type / action_index /
+     rationale + properties for card_id / targets / payment /
+     description (looked up from eligible_action[action_index]).
+   - `parse_action_response(raw_text, eligible_actions)` returns
+     `(ActionResponse|None, error_message|None)`. Handles markdown
+     fences, trailing prose, alternate keys (action_index / index /
+     action_idx).
+   - `_extract_first_json_object(text)` brace-matched extraction with
+     string-aware depth tracking.
+   - Errors: empty text, no JSON found, malformed JSON, missing key,
+     out-of-range index, non-int index.
+   - `fallback_pass_response(eligible_actions)` returns the pass entry
+     wrapped in ActionResponse (for 3rd-validation-failure fallback).
+   - `validate_eligible_action_present(actions)` sanity check.
+
+**Re-prompt loop design:** caller (Phase 3 priority responder)
+wraps parser+validator in up-to-2 retries. On each retry, passes
+`last_error_message` back to build_main_phase_prompt so the LLM sees
+why the previous response failed. On 3rd failure, falls back to
+pass_priority via `fallback_pass_response`.
+
+**Tests** in `tests/pillar_f_v0_2_policy/test_phase2_main_phase_prompt.py`:
+25 tests across 6 classes:
+- **PromptAssemblyTests** (8): compact_view inclusion, indexed actions,
+  politics context, no-politics skip, deck_archetype_hint, rationale
+  history, error on re-prompt, system prompt JSON contract.
+- **ParserHappyPathTests** (3): clean JSON, markdown fences, trailing
+  prose.
+- **ParserErrorHandlingTests** (8): empty, no JSON, malformed,
+  missing key, out-of-range, negative, non-int, alternate keys.
+- **FallbackTests** (2): fallback returns pass when in list, None
+  when not.
+- **ValidationHelperTests** (3): empty list, missing key, ok.
+- **IntegrationTests** (1): full loop build prompt → mock response
+  → parse → executable action.
+
+**All 25 pass.** ~310 LOC production across 2 files + ~250 LOC test.
+
+Iter-11 cost-measurement smoke deferred to Phase 3 (real LLM client).
+
+**Commit message:** "Phase 2 (mega-task v10): main-phase prompt builder + JSON action parser + validator".

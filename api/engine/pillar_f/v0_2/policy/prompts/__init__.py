@@ -5,5 +5,15 @@ from api.engine.pillar_f.v0_2.policy.prompts.compact_view import (
     compact_view,
     estimate_tokens,
 )
+from api.engine.pillar_f.v0_2.policy.prompts.main_phase import (
+    MAIN_PHASE_PROMPT_VERSION,
+    MAIN_PHASE_SYSTEM_PROMPT,
+    build_main_phase_prompt,
+    compute_eligible_actions_passes_only,
+)
 
-__all__ = ["COMPACT_VIEW_VERSION", "compact_view", "estimate_tokens"]
+__all__ = [
+    "COMPACT_VIEW_VERSION", "compact_view", "estimate_tokens",
+    "MAIN_PHASE_PROMPT_VERSION", "MAIN_PHASE_SYSTEM_PROMPT",
+    "build_main_phase_prompt", "compute_eligible_actions_passes_only",
+]
