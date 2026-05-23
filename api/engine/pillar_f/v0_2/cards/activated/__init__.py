@@ -11,4 +11,28 @@ plumbing is iter-11+ scope per the v9 final report). Per-card tests
 construct a stack entry with `payment={"resolver": "<name>", "cost":
 {...}}` and call `resolve_top(state)` to verify the effect lands.
 """
-# Phase 3 modules wire in as cards are added.
+# Framework first — per-card modules depend on it.
+from api.engine.pillar_f.v0_2.cards.activated import framework  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.activated.framework import (
+    ActivatedAbilityMeta, register_activated_ability,
+    get_activated_ability, get_activated_abilities_for_card,
+    all_registered_card_names, build_activation_payload,
+    add_mana_resolver, add_multiple_mana_resolver,
+    add_any_color_resolver, add_commander_color_identity_resolver,
+    fetchland_resolver, equip_resolver,
+)
+
+# Per-card modules — importing triggers their registration calls.
+from api.engine.pillar_f.v0_2.cards.activated import mana_rocks  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.activated import fetchlands  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.activated import mana_lands  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.activated import equipment  # noqa: F401
+
+__all__ = [
+    "ActivatedAbilityMeta", "register_activated_ability",
+    "get_activated_ability", "get_activated_abilities_for_card",
+    "all_registered_card_names", "build_activation_payload",
+    "add_mana_resolver", "add_multiple_mana_resolver",
+    "add_any_color_resolver", "add_commander_color_identity_resolver",
+    "fetchland_resolver", "equip_resolver",
+]
