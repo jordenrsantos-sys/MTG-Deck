@@ -245,5 +245,30 @@ All 8 are **contract drift** between shipped behavior and the tests' original ex
 - Each skip carries a per-test recommended action for iter 8 (rewrite suite vs. update data vs. expand exclusions vs. re-derive synthetic deck).
 - No production code changed in this phase — pure test triage. The shipped behavior tested by the surviving unit-layer tests is unchanged.
 
-**Commit:** `Phase 7 (mega-task v6): triage 8 pre-existing test failures — all contract drift, retired with @skip + iter-8 follow-up notes`.
+**Commit:** `Phase 7 (mega-task v6): triage 8 pre-existing test failures — all contract drift, retired with @skip + iter-8 follow-up notes` — `8279da945`.
+
+---
+
+## Phase 8 — ENGINE_API_GUIDE.md overhaul — 2026-05-22 (non-blocking)
+
+**Scope:** Coherence Sweep #3 flagged the vault doc as stale — last modified 2026-05-17 (Pillar A+C ship date), missing ~10 endpoints added across mega-tasks v3-v5 + the SSE streaming contract + the response.summary fields added by Pillar E v0.3/v0.4 + graduated playtest. Endpoint count today: 36 routes (per `grep -cE "^@app\." api/main.py`), ~18 v1-tier AI-facing endpoints.
+
+**Approach:** rather than rewriting all 521 lines (which would lose existing well-written context on the Pillar A surface), inserted a focused **"AI-facing surface — Pillar D Agent (mega-task v3-v6 additions)"** section between the existing Pillar A catalog and the "How AI agents should use this surface" guidance. This:
+
+- Documents the agent endpoints with request/response schemas:
+  - `/agent/build_deck_v1` — full non-streaming build response (with all v6 summary additions inline)
+  - `/agent/build_deck_v1/stream` — SSE wire format, phase enumeration, browser-fetch + parser reference, CORS handling
+  - `/snapshots/active` — auto-default snapshot
+  - `/corpus/batch_ingest_v1` — v5 Phase 5a strength-oracle corpus ingest
+  - `/playtest/opposition_decks_v1` — v5 Phase 11 tiered registry
+- Lists the v6 build-response additions that ship in `summary` (semantic_injection, voyage_downgrade_pass, voyage_rules_query, the Phase 4 multi-category interaction count). Forward-references the Pillar E v0.5/v0.6 fields landing in Phases 9/10 (the doc itself will be updated when those ship).
+
+**Files:**
+- `Mtg deck building brain/13_AI_AGENT_SURFACE/ENGINE_API_GUIDE.md` — added ~120 lines covering the missing surface.
+
+**Decisions / open items:**
+- Did NOT rewrite the existing Pillar A catalog — it's accurate; the kickoff's "overhaul" target was the missing coverage. Phase 11's review can promote this to a full rewrite if it lands a contract-drift finding I missed.
+- Phase 9/10 will append v0.5/v0.6 sections after those modules ship.
+
+**Commit:** `Phase 8 (mega-task v6): ENGINE_API_GUIDE — add Pillar D agent surface (v3-v6 endpoints + SSE contract + response shape)`.
 
