@@ -50,3 +50,47 @@ work confined to `pillar_f/v0_2/policy/` (new tree).
 **Phase 0 cost:** $0 (no LLM calls).
 
 **Commit message:** "Phase 0 (mega-task v10): pre-flight + Pillar F v0.2 policy scaffold".
+
+Committed as `1684b1476`.
+
+---
+
+## Phase 1 — compact_view helper (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/policy/prompts/compact_view.py`:
+
+- `compact_view(perspective_view, viewer_player_id, last_n_turns,
+  action_log)` → plain text suitable for LLM prompts. Sections:
+  HEADER (turn/phase/step/active/priority/monarch/day_night),
+  PLAYERS (per-player one-line summary: life + hand size + lib + gy +
+  exile + mana_pool + commander damage), STACK (top-down LIFO),
+  BATTLEFIELD per-player (one line per permanent: name + P/T +
+  keywords + TAP flag + counters), YOUR HAND (own; full card detail
+  with mana cost + type_line + oracle_text trunc'd to 200 chars),
+  RECENT ACTIONS (filtered to last N turns).
+- `estimate_tokens(text)` → rough ~chars/4 estimate (Anthropic SDK
+  reports actual usage in CallResult).
+- Determinism via sorted dict iteration everywhere.
+
+**Tests** in `tests/pillar_f_v0_2_policy/test_phase1_compact_view.py`:
+13 tests across 6 classes.
+
+**Token budget gates verified (kickoff Phase 1):**
+- Fresh game (4 players, no cards on battlefield): **< 1000 tokens** ✓
+- Mid-game turn 15 (10 perms/player + 6 hand + 25 lib + 4 gy +
+  2-deep stack): **< 4000 tokens** ✓
+
+**Redaction verified:**
+- Opponent hand contents never leak (only `<opaque:hand>` markers in
+  cards_by_id).
+- All libraries (including viewer's own) never leak per CR.
+- Stack public to all (shows full descriptions + targets).
+- Battlefield public to all (face-down permanents → opaque to non-
+  controller via perspective_view).
+
+**Action log filtering verified:** `last_n_turns=3` correctly trims
+older entries.
+
+**All 13 pass.** ~230 LOC production + ~190 LOC test.
+
+**Commit message:** "Phase 1 (mega-task v10): compact_view helper — perspective_view → ~3K-token LLM-ready text".
