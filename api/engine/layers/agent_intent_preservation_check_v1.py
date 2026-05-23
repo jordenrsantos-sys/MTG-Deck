@@ -60,11 +60,29 @@ _THEME_PRIMITIVE_SIGNALS: Dict[str, Set[str]] = {
     "voltron":             {"voltron-payoff", "extra-combat"},
     "storm":               {"storm-payoff", "free-spell"},
     "aristocrats":         {"sac-outlet", "death-trigger", "persist-creature"},
-    # Mega-task v5 Phase 7: added `anthem-effect` as a +1/+1-counter proxy.
-    # The v1 ontology has no `proliferate-trigger` or `counter-distributor`
-    # tags — until those land in a future ontology pass, anthems are the
-    # broadest reliable signal for counters_matter contribution.
-    "counters_matter":     {"doubler-effect", "anthem-effect"},
+    # Mega-task v6 Phase 3: reverted the v5 Phase 7 `anthem-effect` proxy.
+    # Ontology v2's `counters_and_proliferate` dimension now provides real
+    # signal — every counters_matter staple fires at least one of these
+    # tags directly (Atraxa -> proliferate-trigger; Pir/Toothy ->
+    # plus1plus1-counter-payoff; Hardened Scales -> plus1plus1-counter-
+    # doubler; Aetherworks Marvel -> energy-counter-{producer,payoff}, etc.).
+    # The anthem-effect proxy was over-broad and the iter-6 sweep showed it
+    # diluted tribal weight on Atraxa (mean drift 0.882 vs 0.7 target).
+    "counters_matter":     {
+        "doubler-effect",
+        "proliferate-trigger",
+        "plus1plus1-counter-distributor",
+        "plus1plus1-counter-doubler",
+        "plus1plus1-counter-payoff",
+        "minus1minus1-counter-distributor",
+        "charge-counter-payoff",
+        "loyalty-counter-payoff",
+        "energy-counter-producer",
+        "energy-counter-payoff",
+        "keyword-counter-producer",
+        "counter-removal-or-relocation",
+        "counter-trigger-scaling",
+    },
     "control":             {"counterspell-hard", "counterspell-soft", "free-counter",
                             "removal-mass-creatures"},
     "combo":               {"combo-assembly", "tutor-broad", "tutor-narrow",

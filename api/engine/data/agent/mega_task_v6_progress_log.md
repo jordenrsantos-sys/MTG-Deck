@@ -90,5 +90,53 @@ Substrate baseline at v6 start: `95d06c2d9` (Coherence Sweep #3 ship). pytest 14
 - `_SWAPPABLE_SOURCE_SUBSTRINGS` is intentionally conservative — only swaps `C2_2_wild_combo_discovery_added` / `wild_combo_discovery` tags. If a future case has no swappable picks and the injection layer no-ops, that's acceptable (the build doesn't regress; Phase 11 will tell us if widening the swap pool is needed).
 - Smoke test deferred to Phase 11's iter-7 sweep — running 5 live Edgar/Krenko/Atraxa/Yuriko/Ur-Dragon builds at this phase would cost ~$1.50 + ~10 min; Phase 11 needs to do that anyway and we get the same signal with one combined spend.
 
-**Commit:** `Phase 2 (mega-task v6): semantic-injection guarantee — post-hoc N-card injection with bracket-aware target`.
+**Commit:** `Phase 2 (mega-task v6): semantic-injection guarantee — post-hoc N-card injection with bracket-aware target` — `2b66b273c`.
+
+---
+
+## Phase 3 — Ontology v2 + real counter/proliferate primitives + 110k backfill — 2026-05-22 (BLOCKING)
+
+**Goal:** close iter 6 success criterion #7 (intent_drift mean 0.614, per-case 2/5 vs target ≥4/5). Replace the v5 Phase 7 `anthem-effect` proxy that over-broadly tagged tribal+anthem cards as counters_matter contributors.
+
+**Ontology v2 (93 tags / 8 dimensions):**
+- `api/engine/data/primitives/ontology_v2.md` — copies v1 (81 tags) and adds dimension 8 `counters_and_proliferate` with **12 tags**:
+  - `proliferate-trigger`
+  - `plus1plus1-counter-distributor`
+  - `plus1plus1-counter-doubler`
+  - `plus1plus1-counter-payoff`
+  - `minus1minus1-counter-distributor`
+  - `charge-counter-payoff`
+  - `loyalty-counter-payoff`
+  - `energy-counter-producer`
+  - `energy-counter-payoff`
+  - `keyword-counter-producer`
+  - `counter-removal-or-relocation`
+  - `counter-trigger-scaling`
+- Each tag has id / dimension / definition / extraction_rule / examples / combos_with per the v1 schema. Patterns refined against representative real-card oracle text (Inexorable Tide, Atraxa, Doubling Season, Hardened Scales, Vorel, Whirler Virtuoso, etc.).
+
+**Extractor v2 update:**
+- `api/engine/extractors/primitive_extractor_v2.py`: `extract_primitives_v2()` now defaults to v2 ontology. Backwards-compat shim `load_ontology_v1()` preserved.
+- `tools/backfill_primitives_v2.py`: now loads v2 by default; added `--ontology-version v1|v2` flag for explicit override.
+
+**Backfill (one-time, kickoff-compliant):**
+- Ran regex-only backfill on the active snapshot `20260217_190902_tagpass_20260222`, commander-legal-only filter.
+- **Coverage post-backfill: 90.5% of commander-legal cards-with-abilities tagged** (26,524 / 29,303). Above the kickoff's ≥90% bar; above the hard-halt threshold of 80%.
+- v2-specific tag counts in DB: proliferate-trigger=58, plus1plus1-counter-distributor=1,764, plus1plus1-counter-doubler=44, plus1plus1-counter-payoff=198, minus1minus1-counter-distributor=145, charge-counter-payoff=91, loyalty-counter-payoff=55, energy-counter-producer=91, energy-counter-payoff=52, keyword-counter-producer=62, counter-removal-or-relocation=475, counter-trigger-scaling=53. Atraxa staples sampled (Atraxa itself, Inexorable Tide, Doubling Season, Forgotten Ancient, Cathars' Crusade, Pir) all fire ≥1 counter-related tag.
+- LLM supplement pass deferred: regex coverage met the kickoff bar; the $10-15 LLM spend would be incremental. Re-evaluate after Phase 11 sweep if intent_drift on Atraxa hasn't dropped below 0.7.
+
+**Theme classifier signal-set update:**
+- `api/engine/layers/agent_intent_preservation_check_v1.py::_THEME_PRIMITIVE_SIGNALS["counters_matter"]`: removed the v5 Phase 7 `anthem-effect` proxy; added all 12 v2 dim-8 tags + kept the original `doubler-effect`. Counters_matter is now signaled by REAL counter primitives — no more cross-pollination via anthem-effect that diluted tribal weight on Atraxa.
+
+**Tests:**
+- `tests/test_primitive_extractor_v2_counters_and_proliferate.py` — **30 new golden tests** covering ontology v2 shape (93 tags / 8 dims, 12 counters_and_proliferate, v1 still loads 81, v2 superset-of-v1) + per-tag golden cards for all 12 new tags + a 6-card Atraxa-staple coverage suite.
+- `tests/test_agent_intent_preservation_check_v1.py`: replaced the 3 v5 `Phase7CountersMatterSignalExpansionTest` tests with 7 `V6Phase3CountersMatterRealPrimitivesTest` tests (anthem-effect-NOT-in counters_matter, all 4 key new tags present, proliferate-card contributes, anthem-only no longer dilutes).
+
+**Tests run:**
+- pytest: **1538 passed**, 8 pre-existing failed, 17 skipped (1489 baseline + 2 Phase 1 + 13 Phase 2 + 30 Phase 3 golden + 4 net Phase 7→v6 Phase 3 = 1538 ✓).
+
+**Decisions / open items:**
+- LLM supplement on backfill not run (coverage met bar). If Phase 11 shows residual intent_drift on Atraxa, the LLM supplement pass is the next escalation (cost $10-15).
+- Sweep snapshots other than `20260217_190902_tagpass_20260222` (the raw + tags-compiled intermediates) were NOT re-backfilled — the engine only reads from the active snapshot, so the others would be wasted work. Backfill the others if a future iteration switches active snapshot.
+
+**Commit:** `Phase 3 (mega-task v6): ontology v2 with counter/proliferate primitives + 110k regex backfill + anthem-effect signal revert`.
 

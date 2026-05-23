@@ -193,28 +193,52 @@ class Phase7ArchetypeAwareThresholdsTest(unittest.TestCase):
         self.assertEqual(d["effective_drift_threshold"], 0.7)
 
 
-class Phase7CountersMatterSignalExpansionTest(unittest.TestCase):
-    """Mega-task v5 Phase 7: counters_matter signal set expanded to
-    include `anthem-effect` (the broadest reliable proxy for +1/+1-style
-    counter contribution under the v1 primitive ontology).
+class V6Phase3CountersMatterRealPrimitivesTest(unittest.TestCase):
+    """Mega-task v6 Phase 3: reverted the v5 Phase 7 anthem-effect proxy.
+    Ontology v2's counters_and_proliferate dimension provides REAL signal
+    (proliferate-trigger, plus1plus1-counter-*, charge/energy/loyalty/
+    keyword counter tags). The anthem-effect proxy was over-broad and
+    inflated tribal-dilution drift on Atraxa (iter 6 mean 0.882 vs 0.7).
     """
 
-    def test_anthem_effect_now_in_counters_matter_signal_set(self) -> None:
-        self.assertIn("anthem-effect", _THEME_PRIMITIVE_SIGNALS["counters_matter"])
+    def test_anthem_effect_no_longer_in_counters_matter_signal_set(self) -> None:
+        self.assertNotIn("anthem-effect", _THEME_PRIMITIVE_SIGNALS["counters_matter"])
 
     def test_doubler_effect_still_in_counters_matter_signal_set(self) -> None:
-        # Don't lose the original signal — only add to it.
+        # Don't lose the original signal — only add new dim 8 tags.
         self.assertIn("doubler-effect", _THEME_PRIMITIVE_SIGNALS["counters_matter"])
 
-    def test_anthem_card_contributes_to_counters_matter_weight(self) -> None:
-        # Before Phase 7: a pure-anthem card scored 0 toward
-        # counters_matter (only doubler-effect counted). After Phase 7:
-        # counters_matter picks up some weight.
-        deck = [_card("Anthem A", ["anthem-effect"])]
+    def test_proliferate_trigger_in_counters_matter_signal_set(self) -> None:
+        self.assertIn("proliferate-trigger", _THEME_PRIMITIVE_SIGNALS["counters_matter"])
+
+    def test_plus1plus1_counter_doubler_in_counters_matter_signal_set(self) -> None:
+        self.assertIn("plus1plus1-counter-doubler", _THEME_PRIMITIVE_SIGNALS["counters_matter"])
+
+    def test_plus1plus1_counter_payoff_in_counters_matter_signal_set(self) -> None:
+        self.assertIn("plus1plus1-counter-payoff", _THEME_PRIMITIVE_SIGNALS["counters_matter"])
+
+    def test_proliferate_card_contributes_to_counters_matter_weight(self) -> None:
+        # Pure proliferate card (Inexorable Tide pattern) should score on
+        # counters_matter via the real dim-8 primitive.
+        deck = [_card("Proliferate Anchor", ["proliferate-trigger"])]
         mix = classify_deck_archetype_mix(deck)
-        self.assertGreater(mix.get("counters_matter", 0.0), 0.0,
-                           "Phase 7: anthem-only card should contribute "
-                           "to counters_matter, was 0 pre-Phase-7")
+        self.assertGreater(
+            mix.get("counters_matter", 0.0), 0.0,
+            "v6 Phase 3: proliferate-trigger card should contribute to "
+            "counters_matter via the new dimension-8 signal set"
+        )
+
+    def test_anthem_only_card_no_longer_dilutes_to_counters_matter(self) -> None:
+        # Pure anthem card (no counter-related primitive) should NOT score
+        # on counters_matter — that's the whole tribal-dilution problem
+        # this phase fixes.
+        deck = [_card("Anthem Only", ["anthem-effect"])]
+        mix = classify_deck_archetype_mix(deck)
+        self.assertEqual(
+            mix.get("counters_matter", 0.0), 0.0,
+            "v6 Phase 3: anthem-only card should NOT contribute to "
+            "counters_matter (that was the v5 Phase 7 over-broad proxy)"
+        )
 
 
 if __name__ == "__main__":

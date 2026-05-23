@@ -1,23 +1,21 @@
 """
-primitive_extractor_v2 — Pillar C ontology v1 extractor (iter 5 Phase 3).
+primitive_extractor_v2 — Pillar C ontology extractor.
 
-Loads `ontology_v1.md` (81 tags across 7 dimensions, includes the
-rules_modifiers dimension added in iter 5) and applies all regex
-patterns to a card's text. Cards where regex extraction returns <2
-tags can be routed to the LLM-extractor supplement
-(`primitive_extractor_llm_v1`) for additional tagging.
+Mega-task v6 Phase 3: switched the default ontology from v1 (81 tags
+across 7 dimensions) to v2 (93 tags across 8 dimensions, adds
+`counters_and_proliferate` with 12 tags). Closes iter 6 success
+criterion #7 by replacing the v5 Phase 7 `anthem-effect` proxy with
+real counter / proliferate primitives.
 
-Backwards-compat: re-exports `load_combo_assembly_names` and the
-`ParsedTag` dataclass from v1 for callers that just want the existing
-shape. The `extract_primitives` function in v1 still works; v2 adds:
-
-  - `load_ontology_v1()` — default-loads `ontology_v1.md`
-  - `extract_primitives_v2(...)` — same signature as v1's
-    `extract_primitives` but uses v1 ontology by default
+Backwards-compat preserved:
+  - `load_ontology_v1()` still loads `ontology_v1.md` exactly as before
+  - `extract_primitives_v2()` now defaults to v2 (was v1); pass
+    `ontology=load_ontology_v1()` explicitly for the v1 behavior
+  - all v1 tag IDs remain valid; v2 only ADDS new tags
 
 The Phase 3 backfill walks the cards table, runs v2 extraction, and
-writes results to `cards.primitives_v1_json` (the column shipped in v2
-Phase 5 of mega-task v2).
+writes results to `cards.primitives_v1_json` (column name unchanged
+for SQL compatibility).
 """
 from __future__ import annotations
 
@@ -32,16 +30,25 @@ from api.engine.extractors.primitive_extractor_v1 import (
 )
 
 
-PRIMITIVE_EXTRACTOR_V2_VERSION = "primitive_extractor_v2.0"
+PRIMITIVE_EXTRACTOR_V2_VERSION = "primitive_extractor_v2.1_counters_and_proliferate"
 
 ONTOLOGY_V1_PATH = (
     Path(__file__).resolve().parents[1] / "data" / "primitives" / "ontology_v1.md"
 )
+ONTOLOGY_V2_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "primitives" / "ontology_v2.md"
+)
 
 
 def load_ontology_v1() -> Dict[str, ParsedTag]:
-    """Load the v1 ontology (default) — 81 tags / 7 dimensions."""
+    """Load the v1 ontology — 81 tags / 7 dimensions."""
     return _load_ontology_v0(ontology_path=ONTOLOGY_V1_PATH)
+
+
+def load_ontology_v2() -> Dict[str, ParsedTag]:
+    """Load the v2 ontology — 93 tags / 8 dimensions (adds
+    counters_and_proliferate)."""
+    return _load_ontology_v0(ontology_path=ONTOLOGY_V2_PATH)
 
 
 def extract_primitives_v2(
@@ -52,13 +59,14 @@ def extract_primitives_v2(
     ontology: Optional[Dict[str, ParsedTag]] = None,
     combo_assembly_set: Optional[Set[str]] = None,
 ) -> Set[str]:
-    """Apply v1 ontology regex extraction to a card. Same signature as
-    v1's `extract_primitives` but defaults to the v1 ontology.
+    """Apply v2 ontology regex extraction to a card. Same signature as
+    v1's `extract_primitives` but defaults to the v2 ontology (was v1
+    before mega-task v6 Phase 3).
 
-    Returns: set of v1 tag IDs.
+    Returns: set of v2 tag IDs.
     """
     if ontology is None:
-        ontology = load_ontology_v1()
+        ontology = load_ontology_v2()
     return _extract_primitives_v0(
         oracle_text=oracle_text,
         type_line=type_line,

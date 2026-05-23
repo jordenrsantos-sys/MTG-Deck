@@ -1,9 +1,14 @@
 """
-backfill_primitives_v2 — Pillar C ontology v1 backfill (iter 5 Phase 3).
+backfill_primitives_v2 — Pillar C ontology backfill.
+
+Mega-task v6 Phase 3: now loads ontology v2 by default (was v1).
+Adds 12 counter / proliferate tags that the theme classifier
+consumes to identify counters_matter archetypes on real signal.
 
 Walks the cards table, runs the v2 extractor (regex pass over the
-ontology v1 patterns), optionally calls the LLM supplement for cards
-with <2 regex tags, writes results to `cards.primitives_v1_json`.
+ontology v2 patterns), optionally calls the LLM supplement for cards
+with <2 regex tags, writes results to `cards.primitives_v1_json`
+(column name kept for SQL compat).
 
 Usage:
   python -m tools.backfill_primitives_v2
@@ -12,6 +17,7 @@ Usage:
       --llm-supplement
       --llm-budget-usd 10.0
       --commander-legal-only
+      --ontology-version v2|v1   (default v2 from v6 Phase 3 forward)
 
 Idempotent. Re-runs produce identical regex output (deterministic).
 The LLM supplement adds slight non-determinism (model output varies);
@@ -72,19 +78,21 @@ def main(argv=None) -> int:
                         help="Hard cap on LLM-extractor cost.")
     parser.add_argument("--commander-legal-only", action="store_true",
                         help="Only process Commander-legal cards.")
+    parser.add_argument("--ontology-version", choices=("v1", "v2"), default="v2",
+                        help="Ontology version (default v2 since v6 Phase 3).")
     args = parser.parse_args(argv)
 
     db_path = _resolve_db_path(args.db)
     print(f"DB: {db_path}", file=sys.stderr)
 
     from api.engine.extractors.primitive_extractor_v2 import (
-        extract_primitives_v2, load_ontology_v1,
+        extract_primitives_v2, load_ontology_v1, load_ontology_v2,
     )
     from api.engine.extractors.primitive_extractor_v1 import (
         load_combo_assembly_names,
     )
-    print("Loading ontology v1 + combo registry…", file=sys.stderr)
-    ontology = load_ontology_v1()
+    print(f"Loading ontology {args.ontology_version} + combo registry…", file=sys.stderr)
+    ontology = load_ontology_v2() if args.ontology_version == "v2" else load_ontology_v1()
     combo_assembly = load_combo_assembly_names()
     print(
         f"  ontology tags: {len(ontology)}; combo-assembly set: "
