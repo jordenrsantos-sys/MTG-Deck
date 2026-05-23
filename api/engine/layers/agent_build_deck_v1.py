@@ -838,6 +838,46 @@ def compute_agent_build_deck_v1(
         t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
     )
 
+    # ---- Mega-task v6 Phase 9: Pillar E v0.5 win-con coherence ----
+    # Identifies the deck's primary win condition + a credible backup
+    # plan by primitive-pattern matching. Flags decks where no pattern
+    # clears the bracket-specific primary floor — the "75% pile of good
+    # cards" anti-pattern. Pure analysis; no deck mutation.
+    win_con_coherence_block: Dict[str, Any] = {
+        "active": False,
+        "report": None,
+    }
+    try:
+        from api.engine.layers.win_con_coherence_v1 import (
+            check_win_con_coherence as _check_win_con,
+        )
+
+        _theme_profile_for_coherence = None
+        if isinstance(intent_analysis, dict):
+            _theme_profile_for_coherence = intent_analysis.get("theme_profile")
+
+        win_con_report = _check_win_con(
+            deck=deck,
+            theme_profile=_theme_profile_for_coherence,
+            bracket=bracket,
+            pool=pool,
+        )
+        win_con_coherence_block["active"] = True
+        win_con_coherence_block["report"] = win_con_report.to_dict()
+        if win_con_report.flagged_75pct_pile:
+            warnings.append({
+                "code": "WIN_CON_75PCT_PILE",
+                "message": (
+                    f"Win-con coherence checker flagged the deck as a "
+                    f"'75% pile of good cards' — {win_con_report.flag_reason}"
+                ),
+            })
+    except Exception as exc:
+        warnings.append({
+            "code": "WIN_CON_COHERENCE_FAILED",
+            "message": f"{exc.__class__.__name__}: {exc}",
+        })
+
     # ---- Iter 5 mega-task v4 Phase 13 retro: structural safety net ----
     # Defensive guarantee that iter1 invariants hold by the time the
     # response is composed. User must-includes MUST be present + deck
@@ -1081,6 +1121,11 @@ def compute_agent_build_deck_v1(
         # downstream. ``active=False`` when no queries returned matches
         # (e.g., index not populated yet).
         "voyage_rules_query": rules_query_block,
+        # Mega-task v6 Phase 9: Pillar E v0.5 — win-condition coherence
+        # report. Identifies the deck's primary plan + backup, and flags
+        # the "75% pile of good cards" anti-pattern when no win-con
+        # pattern reaches the bracket's primary floor.
+        "win_con_coherence_report": win_con_coherence_block,
     }
 
     response = {

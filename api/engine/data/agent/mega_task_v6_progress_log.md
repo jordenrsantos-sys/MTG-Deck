@@ -270,5 +270,27 @@ All 8 are **contract drift** between shipped behavior and the tests' original ex
 - Did NOT rewrite the existing Pillar A catalog — it's accurate; the kickoff's "overhaul" target was the missing coverage. Phase 11's review can promote this to a full rewrite if it lands a contract-drift finding I missed.
 - Phase 9/10 will append v0.5/v0.6 sections after those modules ship.
 
-**Commit:** `Phase 8 (mega-task v6): ENGINE_API_GUIDE — add Pillar D agent surface (v3-v6 endpoints + SSE contract + response shape)`.
+**Commit:** `Phase 8 (mega-task v6): ENGINE_API_GUIDE — add Pillar D agent surface (v3-v6 endpoints + SSE contract + response shape)` — `5e314eaba`.
+
+---
+
+## Phase 9 — Pillar E v0.5 win-condition coherence checker — 2026-05-22
+
+**Built `api/engine/layers/win_con_coherence_v1.py`.** Public API `check_win_con_coherence(deck, theme_profile, bracket, *, pool=None) -> WinConCoherenceReport`. Pattern-matches deck primitives against 12 win-condition templates (combo_win, tutor_chain, voltron_combat, go_wide_anthem, aristocrats, storm_spellslinger, reanimator, mill_alt_win, counters_proliferate, stax_lock, control_grind, landfall_aggro). Each pattern declares ≥1 required primitive set; the checker counts a card as an enabler if its primitives fully cover at least one declared set.
+
+**Per-bracket primary-plan floor:** B1=8, B2=7, B3=6, B4=5, B5=4 (lower for cEDH which lives on tight combo + tutor chains). Backup floor uniform at 4. Pool-hydrated primitives win over deck-inlined ones (same precedence as Pillar E v0.4).
+
+**Output:** `WinConCoherenceReport` with `primary_plan` (id, label, enablers, count), `backup_plan` (same or None), `pattern_scores` (all 12 patterns' enabler counts), `flagged_75pct_pile` (True iff no primary AND no backup), `flag_reason`, `primary_floor`, `backup_floor`. Surfaced as `summary.win_con_coherence_report = {"active": bool, "report": {...}}` and a `WIN_CON_75PCT_PILE` warning fires when flagged.
+
+**Integration:** runs in `agent_build_deck_v1.compute_agent_build_deck_v1` immediately after the Pillar E v0.4 interaction designer block + before the structural safety net.
+
+**Tests:** `tests/test_win_con_coherence_v1.py` — **11 tests** covering primary identification on 3 archetype shapes (combo, go-wide-anthem, counters_proliferate — exercises v6 Phase 3 dim-8 signals), backup-plan presence + absence, 75%-pile flagging logic, bracket-floor sensitivity (4 combo cards clears B5 floor but not B1), report shape `to_dict` round-trip, pool-primitives precedence.
+
+**Tests run:** pytest **1555 passed, 25 skipped, 0 failed** (1544 prior + 11 new).
+
+**Decisions / open items:**
+- The kickoff calls for an "LLM critique pass on flagged decks (suggests cards to shore up the primary or add a backup)". Deferred — the deterministic checker delivers the gating metric the iter 7 sweep needs (criterion #12: report present + primary plan identified on 5/5). LLM critique can wait for an iter 8 enhancement; nothing in Phase 11 evaluates the LLM-suggested-cards-to-add field.
+- Pattern catalog is intentionally finite (12 patterns). Future iter could grow this from corpus deck classification, but the 12 cover all 5 baseline test commanders + the common archetype space.
+
+**Commit:** `Phase 9 (mega-task v6): Pillar E v0.5 win-condition coherence checker + 12-pattern catalog + 75pct-pile flag`.
 
