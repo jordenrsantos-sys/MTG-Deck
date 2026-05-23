@@ -159,3 +159,74 @@ pass_priority via `fallback_pass_response`.
 Iter-11 cost-measurement smoke deferred to Phase 3 (real LLM client).
 
 **Commit message:** "Phase 2 (mega-task v10): main-phase prompt builder + JSON action parser + validator".
+
+Committed as `c2dc05a89`.
+
+---
+
+## Phase 3 — Plug into PriorityResponderFn + 2-LLM head-to-head (Phase 1 ship gate) (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/policy/`:
+
+1. **eligible_actions.py** —
+   - `compute_eligible_actions(state, player_id)` returns a list with
+     always-legal `pass_priority` plus `play_land` (for lands in hand
+     if active main phase + empty stack + no land played yet) plus
+     `cast_spell` (for cards with `iter10_annotation` attribute).
+   - `apply_action(state, player_id, action)` executes the chosen
+     action: pass = no-op, play_land = hand→battlefield + increment
+     lands_played, cast_spell = push to stack + move card to gy
+     (iter-10 stub: full move-on-resolution wired in v11+).
+
+2. **cost/cost_tracker.py** —
+   - `CostTracker` dataclass with per-player + per-turn buckets +
+     event log + fallback flags + game_halted_for_cost.
+   - `record_call(player_id, turn_number, cost_usd, purpose)`.
+   - `is_player_in_fallback(player_id, turn)` true after per-turn
+     ceiling triggers.
+   - Defaults: per-turn $0.30, per-game $10.
+
+3. **llm_responder.py** —
+   - `make_llm_priority_responder(llm_client, cost_tracker,
+     action_log, politics_state_by_player, deck_archetype_hint_by_player,
+     rationale_history_by_player)` factory returns a `PriorityResponderFn`-
+     compatible closure.
+   - Closure: builds compact_view → computes eligible_actions → if
+     only pass available, returns None (saves token cost). Otherwise
+     builds prompt → calls LLM → parses → up to 2 re-prompts on
+     parse failure → fallback to pass on 3rd. Records cost. Applies
+     action. Returns None (action already applied to engine state).
+   - `cheap_fallback_responder(state, player_id)` always returns None.
+
+**Bug fix during Phase 3:** factory used `politics_state_by_player or {}`
+which converts caller's empty `{}` (falsy) to a NEW dict. Switched to
+`is None` checks so caller's reference is preserved (test passed
+empty dict and expected rationale to be written there).
+
+**Tests** in `tests/pillar_f_v0_2_policy/test_phase3_responder.py`:
+22 tests across 5 classes — eligible_actions (8), apply_action (3),
+LLM responder with MockLLMClient (6), cost tracker (4), cheap
+fallback (1).
+
+**Live 2-LLM smoke at `tools/test_pillar_f_v0_2_policy_smoke.py`:**
+
+Ran 2-LLM head-to-head (mono-black vs mono-red, 30-card decks with
+20 lands + 10 Lightning Bolts each, 5-card opening hands). 3 turns.
+
+**Result: $0.02 spend across 6 LLM calls (~$0.003/call — far below
+the $0.03 scoping target). All actions legal (every emitted action
+was a play_land). Game completed without exceptions in 12.8s.**
+
+**Phase 3 ship gate cleared:**
+- Game completes ✓
+- All actions legal ✓
+- Total cost < $2 ✓ (actual: $0.02)
+
+LLMs chose to develop mana before casting — sensible given the
+substrate has no mana-cost enforcement, so the LLM could cast Bolts
+turn 1 but didn't. Tuning the prompt for more aggression is iter-11
+polish; the substrate boundary works.
+
+**Pillar F tests now: 284 (224 v9 + 60 new v10 Phases 1-3).**
+
+**Commit message:** "Phase 3 (mega-task v10): plug LLM into PriorityResponderFn + 2-LLM head-to-head smoke ($0.02)".
