@@ -326,5 +326,70 @@ class GuardrailsTests(unittest.TestCase):
         self.assertEqual(result["skipped_swaps"], [])
 
 
+class V8Phase3WinConCoherenceCategoryTests(unittest.TestCase):
+    """v8 Phase 3: extends swap layer coverage to win_con_coherence.
+    When the deck flags 75pct_pile, the swap layer injects cards with
+    win-con enabler primitives."""
+
+    def test_win_con_swap_fires_on_75pct_pile_flag(self) -> None:
+        deck = _make_deck(commander="Edgar Markov", fillers=30, basics=68)
+        pool = {
+            "color_identity": ["B", "R", "W"],
+            "candidates": [
+                {"name": "Combo Engine", "type_line": "Artifact",
+                 "primitives": ["COMBO_PIECE", "TUTOR_ANY"],
+                 "color_identity": [], "cmc": 2.0,
+                 "source": "archetype_staple"},
+                {"name": "Sac Engine", "type_line": "Creature",
+                 "primitives": ["SAC_OUTLET", "DEATH_PAYOFF"],
+                 "color_identity": ["B"], "cmc": 3.0,
+                 "source": "theme:TYPAL_VAMPIRES"},
+                {"name": "Mill Wincon", "type_line": "Enchantment",
+                 "primitives": ["MOVE_TO_GRAVEYARD", "DECK_OUT"],
+                 "color_identity": [], "cmc": 4.0,
+                 "source": "archetype_staple"},
+            ],
+        }
+        wc_block = {
+            "active": True,
+            "report": {
+                "flagged_75pct_pile": True,
+                "primary_floor": 3,
+                "pattern_scores": {"combo_win": 0, "aristocrats": 1},
+            },
+        }
+        result = compute_pillar_e_aggressive_swaps(
+            deck=deck, pool=pool, db_snapshot_id="test",
+            commander_color_identity=["B", "R", "W"],
+            must_include_lower=set(), forbidden_set=set(),
+            win_con_coherence_block=wc_block,
+        )
+        # At least one win_con_coherence swap applied.
+        wc_swaps = [s for s in result["applied_swaps"]
+                    if s["category"] == "win_con_coherence"]
+        self.assertGreaterEqual(
+            len(wc_swaps), 1,
+            f"Expected ≥1 win_con_coherence swap; got {result['applied_swaps']}",
+        )
+
+    def test_win_con_swap_skipped_when_not_flagged(self) -> None:
+        deck = _make_deck(commander="Edgar Markov", fillers=30, basics=68)
+        pool = {"color_identity": ["B"], "candidates": []}
+        wc_block = {
+            "active": True,
+            "report": {"flagged_75pct_pile": False, "primary_floor": 3,
+                       "pattern_scores": {"combo_win": 5}},
+        }
+        result = compute_pillar_e_aggressive_swaps(
+            deck=deck, pool=pool, db_snapshot_id="test",
+            commander_color_identity=["B"],
+            must_include_lower=set(), forbidden_set=set(),
+            win_con_coherence_block=wc_block,
+        )
+        wc_swaps = [s for s in result["applied_swaps"]
+                    if s["category"] == "win_con_coherence"]
+        self.assertEqual(len(wc_swaps), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

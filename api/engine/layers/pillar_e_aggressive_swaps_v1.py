@@ -88,16 +88,51 @@ _COUNTERSPELL_PRIMS: Set[str] = {
 }
 _LAND_PRIMS: Set[str] = {"MANA_FIXING", "RAMP_LAND"}
 
+# v8 Phase 3: win_con coherence enablers — primitives that signal a
+# deck has a concrete win plan. Drawn from win_con_coherence_v1's
+# _WIN_CON_PATTERNS canonical primitive sets (v2 ontology vocabulary).
+# When the deck is flagged as 75pct-pile, the swap layer injects cards
+# with these primitives to surface a primary plan with ≥5 enablers.
+_WIN_CON_ENABLER_PRIMS: Set[str] = {
+    # combo_win / tutor_chain
+    "INFINITE_COMBO", "COMBO_PIECE", "TUTOR_ANY", "TUTOR_CREATURE",
+    "TUTOR_LAND", "TUTOR_ANY_TO_HAND", "TUTOR_TO_TOP",
+    # voltron_combat
+    "EXTRA_COMBAT", "EQUIPMENT_SYNERGY", "AURA_SYNERGY",
+    # go_wide_anthem
+    "TOKEN_PRODUCTION", "TOKEN_DOUBLING", "TOKEN_COPY",
+    # aristocrats
+    "SAC_OUTLET", "DEATH_PAYOFF", "DIES_TRIGGER",
+    # storm_spellslinger
+    "STORM", "CAST_TRIGGER_PAYOFF", "CAST_COUNT_SCALING",
+    "MAGECRAFT_TRIGGER", "SPELL_COPY",
+    # reanimator
+    "GRAVEYARD_RECURSION", "GRAVEYARD_REANIMATION",
+    "CAST_FROM_GRAVEYARD", "RETURN_AS_TOKEN", "RETURN_ON_DEATH",
+    # mill_alt_win
+    "MOVE_TO_GRAVEYARD", "DECK_OUT",
+    # counters_proliferate
+    "PROLIFERATE", "COUNTER_SYNERGY", "COUNTER_DOUBLING",
+    "REPLACEMENT_COUNTER_DOUBLING",
+    # control_grind / stax_lock
+    "TAX_EFFECT", "ACTIVATED_ABILITY_HATE",
+    "FORCED_COMBAT", "TIMING_LOCK", "CAST_RESTRICTION",
+    # landfall_aggro
+    "LANDFALL", "EXTRA_LAND_DROP",
+}
+
 # Per-category swap budgets. Caps how many swaps each category can run
 # so a single category doesn't dominate the deck. Across all categories
 # the engine caps at TOTAL_SWAP_BUDGET regardless.
+# v8 Phase 3 added win_con_coherence (budget 4).
 _PER_CATEGORY_SWAP_BUDGET: Dict[str, int] = {
     "mana_base": 6,
     "card_advantage": 4,
     "curve_smoother": 3,
     "interaction_designer": 4,
+    "win_con_coherence": 4,
 }
-TOTAL_SWAP_BUDGET = 12
+TOTAL_SWAP_BUDGET = 14  # v8 Phase 3: bumped from 12 to accommodate win_con.
 
 
 def compute_pillar_e_aggressive_swaps(
@@ -112,6 +147,7 @@ def compute_pillar_e_aggressive_swaps(
     card_advantage_block: Optional[Dict[str, Any]] = None,
     curve_smoother_block: Optional[Dict[str, Any]] = None,
     interaction_designer_block: Optional[Dict[str, Any]] = None,
+    win_con_coherence_block: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Returns a structured swap plan + the post-swap deck.
 
@@ -403,6 +439,40 @@ def compute_pillar_e_aggressive_swaps(
                         card_in=candidates_in_pool[i]["name"],
                         rationale=f"{cat_name} below min {actual}/{lo}; inject",
                     )
+
+    # ---- 5. win_con_coherence (v8 Phase 3) ----
+    # When the deck flags as a 75pct_pile (no win-con pattern reaches the
+    # bracket's primary floor), inject cards with win-con enabler primitives.
+    # This is the v8 extension that gives the optimizer a path to act on
+    # win_con flags rather than just reporting them.
+    if win_con_coherence_block and win_con_coherence_block.get("active"):
+        report = win_con_coherence_block.get("report") or {}
+        if report.get("flagged_75pct_pile"):
+            primary_floor = int(report.get("primary_floor") or 3)
+            # Inject up to (primary_floor - current_top) enablers from any
+            # win-con pattern. Pick from pool candidates whose primitives
+            # overlap _WIN_CON_ENABLER_PRIMS; rank by pool order (already
+            # archetype-relevant after v8 Phase 1).
+            pattern_scores = report.get("pattern_scores") or {}
+            current_top = max(pattern_scores.values()) if pattern_scores else 0
+            gap = max(1, primary_floor - current_top)
+            candidates_in_pool = _filter_pool_by_primitives(
+                pool_candidates, _WIN_CON_ENABLER_PRIMS,
+                exclude_names=deck_names_lower,
+            )
+            low_priority_out = _find_low_priority_deck_cards(
+                working_deck, must_include_lower,
+                prefer_sources={"slot_fallback:card_draw",
+                                "slot_fallback:removal"},
+            )
+            for i in range(min(gap, len(candidates_in_pool), len(low_priority_out))):
+                _swap_or_skip(
+                    "win_con_coherence",
+                    card_out=low_priority_out[i],
+                    card_in=candidates_in_pool[i]["name"],
+                    rationale=f"75pct_pile flagged; inject win-con enabler "
+                              f"(top pattern score {current_top}, floor {primary_floor})",
+                )
 
     return {
         "version": PILLAR_E_V0_7_VERSION,

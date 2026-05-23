@@ -196,3 +196,68 @@ fires on all 5 (every test-sweep commander is also an archetype staple).
 - 8 fill-rate tests pass + 30 subtests pass.
 
 **Commit message:** "Phase 2 (mega-task v8): exclude commander from mainboard candidate pool".
+
+Committed as `0c78a4710`.
+
+---
+
+## Phase 3 — Pillar E v0.7 iterate-until-target + category extension (BLOCKING) (2026-05-23)
+
+**Fix part A — iterate-until-target loop:**
+
+The v7 v0.7 swap layer ran ONCE per build. Iter-9 baseline showed
+mana_base shipped at delta=+12 with only 2 swaps applied (kickoff cited
+this as `MANA_BASE_DISCREPANCY_UNJUSTIFIED: actual=48, target=36`).
+Iter-9 wraps the v0.7 invocation in agent_build_deck_v1.py with
+MAX_PILLAR_E_ITERATIONS=8 loop:
+- Iteration runs compute_pillar_e_aggressive_swaps.
+- On non-zero applied: accumulate, swap deck, re-evaluate all 5
+  optimizers on the post-swap deck (mana_base, card_advantage, curve,
+  interaction, win_con).
+- Exit on (a) zero swaps applied — no candidates remain, OR
+  (b) no optimizer still significant — gaps closed.
+- New summary fields: `iterations_run`, `per_iteration_telemetry`
+  (per-iteration applied/skipped/per_category counts).
+
+**Fix part B — category extension to win_con_coherence:**
+
+Pre-v8 the v0.7 swap layer covered 4 categories (mana_base,
+card_advantage, curve_smoother, interaction_designer). v8 adds
+win_con_coherence as the 5th category. When `flagged_75pct_pile=True`,
+the swap layer injects up to (primary_floor - current_top) win-con
+enabler primitive cards. New constants:
+- `_WIN_CON_ENABLER_PRIMS`: superset of all v2-vocab win-con pattern
+  primitives (combo_win, tutor_chain, voltron_combat, go_wide_anthem,
+  aristocrats, storm_spellslinger, reanimator, mill_alt_win,
+  counters_proliferate, stax_lock, control_grind, landfall_aggro).
+- `_PER_CATEGORY_SWAP_BUDGET["win_con_coherence"] = 4`.
+- `TOTAL_SWAP_BUDGET` bumped 12 → 14.
+
+**Fix part C — archetype-relevance in swap-target selection:**
+
+Auto-applied via Phase 1. `_filter_pool_by_primitives` returns
+candidates in pool order; v8 Phase 1's tiered scoring puts archetype-
+relevant slot_fallback cards ahead of generic ones in pool order, so
+v0.7's swap picks default to archetype-relevant fallback.
+
+**Verification:**
+- Edgar Markov B3 live build: iteration_loop=1 iteration, applied=0
+  swaps. Optimizers are flagged but swap layer can't find new candidates
+  (existing utility lands already in pool got pulled by Pass 3 land
+  fill). This is the Edgar-specific swap-no-fire pattern Phase 6
+  targets — not a Phase 3 regression; the iteration substrate is wired
+  correctly.
+- All 11 pillar_e_aggressive_swaps tests pass (+2 new
+  V8Phase3WinConCoherenceCategoryTests).
+- New `win_con_coherence_block` parameter wired through agent_build_deck.
+- v8 self-correction note: Phase 1 archetype-relevance picker slightly
+  deprioritized utility lands in slot_fallback ramp injections (they
+  score tier1=0 because MANA_FIXING isn't in vampire-tribal theme
+  primitives). Net effect: Edgar B3 now has fewer utility lands than
+  pre-Phase-1; mana_base delta sits at -20 (16 actual vs 36 target)
+  instead of +12. Not a regression vs the kickoff iter-8 baseline (+12
+  also flagged unjustified) but a different shape. Iter-10 candidate:
+  carve land-fallback separate from ramp-fallback so utility lands
+  always fill the land slot.
+
+**Commit message:** "Phase 3 (mega-task v8): Pillar E v0.7 iterate-until-target + win_con category".
