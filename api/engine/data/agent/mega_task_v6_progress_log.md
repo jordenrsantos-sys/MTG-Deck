@@ -190,5 +190,36 @@ Substrate baseline at v6 start: `95d06c2d9` (Coherence Sweep #3 ship). pytest 14
 **Decisions / open items:**
 - The orphan scanner (`tools/_coherence_sweep_3_orphan_scan.py`) will no longer flag this module after Phase 11 — it's now imported by production code.
 
-**Commit:** `Phase 5 (mega-task v6): voyage_downgrade_pass wiring — decision: WIRE (B4/B5 + storm/combo/tempo/ninja/voltron/reanimator gate)`.
+**Commit:** `Phase 5 (mega-task v6): voyage_downgrade_pass wiring — decision: WIRE (B4/B5 + storm/combo/tempo/ninja/voltron/reanimator gate)` — `5f368485b`.
+
+---
+
+## Phase 6 — voyage_rules_embedding at-scale activation — 2026-05-22 (non-blocking)
+
+**At-scale embedding ran in 8.1s, well under budget.** Found the Comprehensive Rules text on disk at `Mtg deck building brain/01_RULES_SOURCE/source_documents/MagicCompRules_20260417.txt` (1,011,134 chars). `embed_comprehensive_rules` split into **667 rule sections** + embedded all of them via Voyage in 8.1 seconds.
+
+```
+status: ok, sections: 667, inserted: 667, elapsed_s: 8.1
+```
+
+**Cost: ~$0.30** (well under the $1.10 estimate; the docstring's projection over-counted lines). Verified queries return relevant rules:
+- `"infinite combo win"` → 702.186 "Infinity" + 702.185 "Warp" + 701.53 "Incubate" (top-3)
+- `"may put a token"` → 701.7 "Create" + 111.9 (legendary token wording) + 111 "Tokens" (top-3)
+
+Scryfall rulings (~150k entries, ~$0.80 estimated) **deferred** — requires network fetch of rulings JSON I don't have on disk. The rules-only at-scale activation is sufficient for the Phase 11 sweep's "voyage_rules_embedding query count ≥1 per build" criterion.
+
+**C2.2 wiring (opportunistic):**
+- `agent_build_deck_v1.py`: added a single rules query at the end of build (before summary construction). Picks the first `novel_combo_flag` outcome (where C2.2 surfaced a combo idea) as query subject; falls back to commander name when no novel combos surfaced. Capped at 2 queries per build per kickoff. Surfaced as `summary.voyage_rules_query = {"active": <bool>, "query_count": <int>, "queries": [{"query", "matches": [{"rule_id", "similarity", "snippet"}, ...]}, ...]}`.
+- Graceful no-op when the rules index is empty (older snapshots / fresh checkouts) or any internal error fires.
+
+**Tests:**
+- All 3 existing tests in `test_voyage_rules_embedding_v1.py` continue to pass (now genuinely against a populated index).
+- pytest stream-endpoint suite (10 tests) still passes — the new rules_query_block doesn't perturb the SSE wiring.
+- No new tests added — wiring is exercised by Phase 11 live sweep.
+
+**Decisions / open items:**
+- Scryfall rulings embedding deferred. If a future iter wants per-card ruling lookup, run `embed_scryfall_rulings(rulings_data, EMBEDDING_DB_PATH)` after fetching `https://api.scryfall.com/bulk-data` → rulings dump.
+- The current single-query-per-build is conservative. If Phase 11 shows the rules content meaningfully steers C2.2 quality, future iter could fire 2 queries per build (the kickoff-allowed cap).
+
+**Commit:** `Phase 6 (mega-task v6): voyage_rules_embedding at-scale activation (667 sections) + opportunistic C2.2 rules query wiring`.
 

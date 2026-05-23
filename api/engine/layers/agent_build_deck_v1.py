@@ -937,6 +937,58 @@ def compute_agent_build_deck_v1(
             continue
         if cname not in top30_staple_names_lower:
             creativity_delta_count += 1
+
+    # ---- Mega-task v6 Phase 6: voyage_rules_embedding combo validation ----
+    # One opportunistic rules query per build. When the C2.2 wild-combo
+    # pass surfaced a novel_combo_flag with a known outcome, query the
+    # embedded comprehensive rules for that outcome's text. This is the
+    # at-scale activation of the v3/v4 deferred rules-embedding pipeline.
+    rules_query_block: Dict[str, Any] = {
+        "active": False,
+        "query_count": 0,
+        "queries": [],
+    }
+    try:
+        from api.engine.layers.voyage_rules_embedding_v1 import query_rules as _q_rules
+
+        _rules_queries: List[str] = []
+        # Prefer querying for a C2.2 combo's outcome text — that's where
+        # trigger-condition compatibility matters.
+        for f in novel_combo_flags or []:
+            outcome = (f.get("outcome") or "").strip()
+            if outcome and outcome.lower() not in {"unknown", ""}:
+                _rules_queries.append(outcome)
+                break
+        if not _rules_queries:
+            # Fall back to a commander-themed query.
+            _rules_queries.append(commander.strip())
+        _rules_queries = _rules_queries[:2]  # kickoff cap
+
+        _query_results: List[Dict[str, Any]] = []
+        for q in _rules_queries:
+            try:
+                results = _q_rules(q, k=3, source_type="rule") or []
+            except Exception:
+                results = []
+            _query_results.append({
+                "query": q,
+                "matches": [
+                    {
+                        "rule_id": r.get("rule_id"),
+                        "similarity": float(r.get("similarity") or 0.0),
+                        "snippet": (r.get("raw_text") or "")[:200],
+                    }
+                    for r in results
+                ],
+            })
+        rules_query_block["queries"] = _query_results
+        rules_query_block["query_count"] = len(_query_results)
+        rules_query_block["active"] = any(
+            len(qr.get("matches") or []) > 0 for qr in _query_results
+        )
+    except Exception as exc:
+        rules_query_block["error"] = f"{exc.__class__.__name__}: {exc}"
+
     summary = {
         "themes_classified": last_findings.get("themes_classified") or [],
         "bracket_placement": bracket,
@@ -1021,6 +1073,14 @@ def compute_agent_build_deck_v1(
         # mutation. ``active=False`` when the gate's heuristic said no
         # downgrade pass for this case.
         "voyage_downgrade_pass": voyage_downgrade_block,
+        # Mega-task v6 Phase 6: voyage_rules_embedding combo validation —
+        # opportunistic rules-text queries (1-2 per build, capped). When
+        # a C2.2 novel-combo flag has an outcome string, we query the
+        # embedded MTG Comprehensive Rules for the relevant rule
+        # section(s). Used for trigger-condition compatibility checks
+        # downstream. ``active=False`` when no queries returned matches
+        # (e.g., index not populated yet).
+        "voyage_rules_query": rules_query_block,
     }
 
     response = {
