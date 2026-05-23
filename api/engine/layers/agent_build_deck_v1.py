@@ -838,6 +838,30 @@ def compute_agent_build_deck_v1(
         t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
     )
 
+    # ---- Mega-task v6 Phase 10: Pillar E v0.6 anti-meta hate ----
+    # Reads opposition_decks_v1.json (tiered registry) to characterize
+    # the expected meta for the deck's bracket. Recommends hate piece
+    # counts + specific candidate cards per category (graveyard_hate,
+    # artifact_hate, stax_tax, counterspell_density, format_specific_tech).
+    # Pure analysis — no deck mutation. Final Pillar E optimizer.
+    anti_meta_hate_block: Dict[str, Any] = {
+        "active": False,
+        "recommendations": None,
+    }
+    try:
+        from api.engine.layers.anti_meta_hate_v1 import (
+            recommend_anti_meta_hate as _recommend_anti_meta,
+        )
+
+        anti_meta_rec = _recommend_anti_meta(deck=deck, bracket=bracket)
+        anti_meta_hate_block["active"] = True
+        anti_meta_hate_block["recommendations"] = anti_meta_rec.to_dict()
+    except Exception as exc:
+        warnings.append({
+            "code": "ANTI_META_HATE_FAILED",
+            "message": f"{exc.__class__.__name__}: {exc}",
+        })
+
     # ---- Mega-task v6 Phase 9: Pillar E v0.5 win-con coherence ----
     # Identifies the deck's primary win condition + a credible backup
     # plan by primitive-pattern matching. Flags decks where no pattern
@@ -1126,6 +1150,12 @@ def compute_agent_build_deck_v1(
         # the "75% pile of good cards" anti-pattern when no win-con
         # pattern reaches the bracket's primary floor.
         "win_con_coherence_report": win_con_coherence_block,
+        # Mega-task v6 Phase 10: Pillar E v0.6 — anti-meta hate
+        # recommendations. Reads opposition_decks_v1.json to characterize
+        # expected meta for the deck's bracket; recommends hate piece
+        # counts + candidate cards per category. Pure suggestion — no
+        # deck mutation. Final Pillar E optimizer in the 5-pillar plan.
+        "anti_meta_recommendations": anti_meta_hate_block,
     }
 
     response = {
