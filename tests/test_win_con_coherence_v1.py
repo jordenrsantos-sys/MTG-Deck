@@ -146,9 +146,104 @@ class ReportShapeTests(unittest.TestCase):
             for i in range(6)
         ]}
         report = check_win_con_coherence(deck, None, "B3", pool=pool)
-        # Pool primitives let the combo pattern fire.
         self.assertIsNotNone(report.primary_plan)
         self.assertEqual(report.primary_plan["pattern_id"], "combo_win")
+
+
+class V7Phase7DBPrimitiveHydrationTests(unittest.TestCase):
+    """v7 Phase 7: db_snapshot_id triggers DB hydration for deck cards
+    not covered by pool/inlined. Closes CC iter-7 sweep gap #4
+    (win_con_coherence 0/5 because only ~30 of 100 deck cards' primitives
+    were visible to the pattern matcher)."""
+
+    def test_db_hydration_path_uses_mocked_find_card_by_name(self) -> None:
+        # 8 deck cards with no inlined primitives + no pool entries.
+        # Without hydration: 0 primitives visible → 75pct_pile.
+        # With hydration via a mocked find_card_by_name: combo pattern
+        # fires.
+        deck = [_card(f"Mystery Combo {i}", []) for i in range(8)]
+
+        import engine.db as _eng_db
+        original = _eng_db.find_card_by_name
+
+        def _mock(snap, name):
+            return {"primitives": ["combo-assembly"], "name": name}
+
+        try:
+            _eng_db.find_card_by_name = _mock
+            report = check_win_con_coherence(
+                deck, None, "B3", pool=None, db_snapshot_id="any",
+            )
+        finally:
+            _eng_db.find_card_by_name = original
+
+        self.assertIsNotNone(report.primary_plan)
+        self.assertEqual(report.primary_plan["pattern_id"], "combo_win")
+        self.assertGreaterEqual(report.primary_plan["count"], 3)
+        self.assertFalse(report.flagged_75pct_pile)
+
+    def test_db_hydration_skipped_when_db_snapshot_id_is_none(self) -> None:
+        deck = [_card(f"Mystery {i}", []) for i in range(8)]
+        report = check_win_con_coherence(
+            deck, None, "B3", pool=None, db_snapshot_id=None,
+        )
+        self.assertTrue(report.flagged_75pct_pile)
+
+    def test_db_hydration_skipped_for_basic_lands(self) -> None:
+        # Basic lands should NEVER be DB-queried — they have no useful
+        # primitives. Verified by checking that find_card_by_name was
+        # never called with a basic-land name.
+        deck = [_card(name, []) for name in ["Plains", "Island", "Swamp"]] * 4
+
+        import engine.db as _eng_db
+        original = _eng_db.find_card_by_name
+        called_with: List[str] = []
+
+        def _mock(snap, name):
+            called_with.append(name)
+            return None
+
+        try:
+            _eng_db.find_card_by_name = _mock
+            _ = check_win_con_coherence(
+                deck, None, "B3", pool=None, db_snapshot_id="any",
+            )
+        finally:
+            _eng_db.find_card_by_name = original
+
+        for name in called_with:
+            self.assertNotIn(name, ("Plains", "Island", "Swamp"))
+
+    def test_db_hydration_does_not_override_pool_primitives(self) -> None:
+        # Pool has rich primitives for some cards; DB should NOT be
+        # queried for those (precedence: pool > inlined > DB).
+        deck = [_card(f"Mystery {i}", []) for i in range(8)]
+        pool = {"candidates": [
+            {"name": "Mystery 0", "primitives": ["counterspell-hard"]},
+            {"name": "Mystery 1", "primitives": ["counterspell-hard"]},
+        ]}
+
+        import engine.db as _eng_db
+        original = _eng_db.find_card_by_name
+        called_with: List[str] = []
+
+        def _mock(snap, name):
+            called_with.append(name)
+            return None
+
+        try:
+            _eng_db.find_card_by_name = _mock
+            _ = check_win_con_coherence(
+                deck, None, "B3", pool=pool, db_snapshot_id="any",
+            )
+        finally:
+            _eng_db.find_card_by_name = original
+
+        # Pool-covered cards should NOT have been DB-queried; only the
+        # un-pool-covered ones (Mystery 2 through 7) should.
+        self.assertNotIn("Mystery 0", called_with)
+        self.assertNotIn("Mystery 1", called_with)
+        self.assertIn("Mystery 2", called_with)
 
 
 if __name__ == "__main__":

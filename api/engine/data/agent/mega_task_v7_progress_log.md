@@ -451,3 +451,55 @@ this; fixed in the same edit.
 - Swap layer tests: 9 pass (no count change; 2 fixture updates).
 
 **Commit message:** "Phase 6 (mega-task v7): interaction_within per-category bounds".
+
+Committed as `ae6b37b2c`.
+
+---
+
+## Phase 7 — win_con hydrate primitives from DB (2026-05-23)
+
+CC iter-7 sweep gap #4: win_con_coherence 0/5 because the pattern matcher
+only saw primitives for the ~30 of 100 deck cards that came through the
+candidate pool. The other ~70 (basics, slot_fallback fills, agent_select
+picks) had no primitives visible → patterns couldn't fire → every case
+flagged 75pct_pile.
+
+**Implementation in `win_con_coherence_v1.py`:**
+
+1. New `_BASIC_LAND_NAMES` set (mirrors agent_build_deck) — basics are
+   skipped during DB hydration (no useful primitives to fetch).
+
+2. New `_hydrate_deck_primitives_from_db(deck, pool_by_name_lower,
+   db_snapshot_id)` helper:
+   - Identifies deck cards needing hydration: non-basics that aren't in
+     pool (or pool has empty primitives) and have no inlined primitives.
+   - Batch-queries `find_card_by_name` for each needed card.
+   - Returns name-lower → primitives list.
+   - Silently degrades on any DB error so coherence checker still runs.
+
+3. `_resolve_primitives_for_card` precedence chain extended to 3 tiers:
+   pool > inlined > DB-hydrated.
+
+4. `check_win_con_coherence` signature gains `db_snapshot_id: Optional[str]`.
+   When provided, runs hydration before pattern matching.
+
+5. `agent_build_deck_v1.py` passes `db_snapshot_id` to the checker.
+
+6. Version bumped to `win_con_coherence_v1.1_db_primitive_hydration`.
+
+**Tests:**
+- `tests/test_win_con_coherence_v1.py` — added `V7Phase7DBPrimitiveHydrationTests`
+  (4 tests):
+  - Mocked find_card_by_name returns combo-assembly → combo pattern fires
+    on a deck of 8 cards that had no inlined primitives.
+  - db_snapshot_id=None bypasses hydration (defaults to flagged_75pct_pile).
+  - Basic lands skipped during DB queries (verified via mock call log).
+  - Pool-covered cards skipped during DB queries (precedence respected).
+- Total win-con tests: 15 pass (was 11; +4 new).
+
+**Performance note:** Hydration runs ~30-70 find_card_by_name lookups
+per build. At ~30ms each that adds 1-2s wallclock. iter-7 sweep had
+~111s mean wallclock; Phase 7 brings it to ~113s — still under the
+130s budget.
+
+**Commit message:** "Phase 7 (mega-task v7): win_con hydrate primitives from DB for full deck coverage".

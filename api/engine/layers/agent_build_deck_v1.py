@@ -880,6 +880,7 @@ def compute_agent_build_deck_v1(
             theme_profile=_theme_profile_for_coherence,
             bracket=bracket,
             pool=pool,
+            db_snapshot_id=db_snapshot_id,  # v7 Phase 7: enables full-deck primitive hydration
         )
         win_con_coherence_block["active"] = True
         win_con_coherence_block["report"] = win_con_report.to_dict()

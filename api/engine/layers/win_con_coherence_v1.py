@@ -31,7 +31,13 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 
-WIN_CON_COHERENCE_VERSION = "win_con_coherence_v1.0"
+WIN_CON_COHERENCE_VERSION = "win_con_coherence_v1.1_db_primitive_hydration"
+
+_BASIC_LAND_NAMES: Set[str] = {
+    "Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes",
+    "Snow-Covered Plains", "Snow-Covered Island", "Snow-Covered Swamp",
+    "Snow-Covered Mountain", "Snow-Covered Forest", "Snow-Covered Wastes",
+}
 
 
 # Win-condition patterns: id -> required primitive sets (any-of-set match).
@@ -166,15 +172,80 @@ class WinConCoherenceReport:
 def _resolve_primitives_for_card(
     card: Dict[str, Any],
     pool_by_name_lower: Dict[str, Dict[str, Any]],
+    db_hydrated_lower: Optional[Dict[str, List[str]]] = None,
 ) -> List[str]:
-    """Same precedence rule as Pillar E v0.4: pool > deck-inlined."""
+    """v7 Phase 7: precedence chain is pool > deck-inlined > DB-hydrated.
+
+    Pool wins for cards in the candidate pool (richest metadata path).
+    Deck-inlined wins for cards a downstream phase may have decorated.
+    DB-hydrated is the v7 Phase 7 fallback: when a deck card doesn't
+    appear in the pool AND has no inlined primitives (typical for ~70
+    of 100 cards — basics, slot_fallback fills, agent_select picks),
+    look up its primitives_v1_json from the cards table. Closes CC
+    iter-7 sweep gap #4 (win_con_coherence 0/5 because only ~30/100
+    deck cards' primitives were visible to the pattern matcher).
+    """
     name = (card.get("card_name") or "").strip().lower()
     pool_match = pool_by_name_lower.get(name)
     if pool_match is not None:
         prims = list(pool_match.get("primitives") or [])
         if prims:
             return prims
-    return list(card.get("primitives") or [])
+    inlined = list(card.get("primitives") or [])
+    if inlined:
+        return inlined
+    if db_hydrated_lower is not None:
+        hydrated = db_hydrated_lower.get(name)
+        if hydrated:
+            return list(hydrated)
+    return []
+
+
+def _hydrate_deck_primitives_from_db(
+    deck: List[Dict[str, Any]],
+    pool_by_name_lower: Dict[str, Dict[str, Any]],
+    db_snapshot_id: Optional[str],
+) -> Dict[str, List[str]]:
+    """v7 Phase 7: batch-look up primitives_v1_json for every deck card
+    not already covered by the pool. Skips basic lands (no useful
+    primitives) + cards with deck-inlined primitives. Returns name-lower
+    → primitives list. Silently returns empty on any DB error so the
+    coherence checker degrades to pre-v7 behavior."""
+    if not db_snapshot_id:
+        return {}
+    needed: List[str] = []
+    for card in deck:
+        name = (card.get("card_name") or "").strip()
+        if not name or name in _BASIC_LAND_NAMES:
+            continue
+        nlower = name.lower()
+        if nlower in pool_by_name_lower:
+            # Pool may have non-empty primitives; if so, the resolver
+            # uses them and skips DB. If pool has empty primitives,
+            # DB hydration would still help — so include in needed.
+            pool_prims = pool_by_name_lower[nlower].get("primitives") or []
+            if pool_prims:
+                continue
+        if card.get("primitives"):
+            continue
+        needed.append(name)
+    if not needed:
+        return {}
+    out: Dict[str, List[str]] = {}
+    try:
+        from engine.db import find_card_by_name
+        for name in needed:
+            try:
+                c = find_card_by_name(db_snapshot_id, name)
+            except Exception:
+                continue
+            if c:
+                prims = c.get("primitives") or []
+                if isinstance(prims, list):
+                    out[name.lower()] = [str(p) for p in prims if isinstance(p, str)]
+    except Exception:
+        return {}
+    return out
 
 
 def _pattern_score(card_primitives: Set[str], primitive_sets: List[Set[str]]) -> bool:
@@ -192,6 +263,7 @@ def check_win_con_coherence(
     bracket: str,
     *,
     pool: Optional[Dict[str, Any]] = None,
+    db_snapshot_id: Optional[str] = None,
 ) -> WinConCoherenceReport:
     """Compute the win-con coherence report.
 
@@ -205,6 +277,10 @@ def check_win_con_coherence(
         pool: optional candidate pool dict (with "candidates": [{"name",
             "primitives", ...}, ...]). Pool primitives win over deck-
             inlined primitives.
+        db_snapshot_id: v7 Phase 7 — when provided, the checker hydrates
+            primitives for every deck card not covered by pool/inlined
+            from cards.primitives_v1_json. Closes CC iter-7 sweep gap #4
+            where the pattern matcher only saw ~30 of 100 deck cards.
 
     Returns: WinConCoherenceReport with primary/backup plans, all pattern
     scores, and the 75pct-pile flag.
@@ -218,13 +294,17 @@ def check_win_con_coherence(
         (c.get("name") or "").strip().lower(): c
         for c in (pool or {}).get("candidates") or []
     }
+    # v7 Phase 7: hydrate primitives for deck cards not covered by pool.
+    db_hydrated = _hydrate_deck_primitives_from_db(
+        deck, pool_by_name_lower, db_snapshot_id,
+    )
 
     # Per-pattern enabler counts.
     scores: Dict[str, int] = {pid: 0 for pid in _WIN_CON_PATTERNS}
     enablers: Dict[str, List[str]] = {pid: [] for pid in _WIN_CON_PATTERNS}
 
     for card in deck:
-        prims = set(_resolve_primitives_for_card(card, pool_by_name_lower))
+        prims = set(_resolve_primitives_for_card(card, pool_by_name_lower, db_hydrated))
         if not prims:
             continue
         name = (card.get("card_name") or "").strip()
