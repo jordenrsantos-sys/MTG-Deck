@@ -244,3 +244,69 @@ across 6 classes:
 **All 21 pass.** ~280 LOC production + ~260 LOC test.
 
 **Commit message:** "Phase 3 (mega-task v9): turn / phase / step state machine".
+
+Committed as `943771d9a`.
+
+---
+
+## Phase 4 — Replacement effects + state-based actions (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/replacement/`:
+
+1. **events.py** — 9 event dataclasses per scoping doc:
+   `DrawEvent`, `DamageEvent` (creature/player/planeswalker target_kind,
+   is_combat, is_first_strike), `EnterBattlefieldEvent` (tapped_on_etb,
+   counters_on_etb), `DieEvent` (cause, instead_zone), `LifeChangeEvent`,
+   `CounterAddEvent`, `CounterRemoveEvent`, `DiscardEvent`, `MillEvent`.
+   Base `Event` carries `replaced` + `prevent` flags.
+
+2. **replacement.py** — engine + registry:
+   - `register_replacement_fn(name, fn)` + `get_replacement_fn(name)`.
+   - `_pattern_matches(pattern, event)` walks pattern dict; supports
+     scalar equality, list-membership, dict-with-"in"/"ne" predicates.
+   - `apply_replacements(state, event, affected_controller)` — finds
+     matching replacement effects; orders by CR 616 (affected
+     controller's choice; iter-10 picks affected-controller-first
+     then alphabetical source_card_id for stability); applies each
+     at most once (self-replacement CR 614.5); breaks on `prevent`.
+   - 5 built-in replacement_fns registered:
+     `fog_prevent_combat_damage`, `rest_in_peace_die_to_exile`,
+     `etb_tapped`, `doubling_season_counters`,
+     `leyline_of_void_to_exile`.
+
+3. **sba.py** — state-based actions per CR 704:
+   - `check_state_based_actions(state)` — one pass, returns list of
+     action dicts:
+       1. Player ≤0 life loses
+       2. Player drew from empty library → loses
+       3. Player took 21+ commander damage from one commander → loses
+       4. Creature with 0 toughness dies
+       5. Creature with damage ≥ toughness dies
+       6. Planeswalker with 0 loyalty → graveyard
+       7. Legend rule (2+ same name same controller → all but one die)
+       8. Aura with invalid target → graveyard
+   - All dying things routed through `DieEvent` →
+     `apply_replacements()` so Rest in Peace / Leyline of the Void
+     redirect to exile.
+   - `run_sba_loop(state)` — loops until no more SBA fires; sets
+     `state.game_over` + `winner_player_id` when ≤1 player remains.
+   - `COMMANDER_DAMAGE_LETHAL = 21`.
+
+**Tests** in `tests/pillar_f_v0_2/test_phase4_replacement_sba.py`:
+22 tests across 5 classes:
+- **ReplacementEnginePatternMatchTests** (6): no replacement = unchanged,
+  Fog prevents combat damage, Fog ignores non-combat,
+  ETB-tapped replacement, Doubling Season doubles +1/+1 + loyalty,
+  Doubling Season ignores -1/-1.
+- **StateBasedActionsCreatureDeathTests** (4): 0-toughness dies,
+  lethal damage dies, RIP redirects to exile, planeswalker 0 loyalty.
+- **PlayerLossSBATests** (5): 0 life, negative life,
+  commander damage 21 loses, commander damage 20 doesn't, empty library.
+- **LegendRuleTests** (3): same name same controller fires, different
+  controllers don't collide, different names don't collide.
+- **SBALoopTests** (4): loop terminates, game_over with 1 winner,
+  game_over draw when all lose, multi-creature death cascade.
+
+**All 22 pass.** ~450 LOC production across 3 files + ~330 LOC test.
+
+**Commit message:** "Phase 4 (mega-task v9): replacement effects + state-based actions".
