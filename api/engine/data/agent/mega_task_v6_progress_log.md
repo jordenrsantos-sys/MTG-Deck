@@ -168,5 +168,27 @@ Substrate baseline at v6 start: `95d06c2d9` (Coherence Sweep #3 ship). pytest 14
 **Decisions / open items:**
 - The semantic change (a card now contributing to multiple categories) affects `total_actual` upward. The within-target check is `total_target * 0.5 ≤ total_actual ≤ total_target * 1.5`. iter 6 was at the 0.5 floor; the new multi-counting raises actuals toward target. If Phase 11 shows over-shoot (>1.5*target), tightening the discrepancy band or making it per-category is the follow-up — but the within-target criterion is sum-based today and the kickoff explicitly authorized loosening to ±50% in v5 Phase 13.
 
-**Commit:** `Phase 4 (mega-task v6): interaction-counting multi-primitive fix + iter 7 eval scaffold`.
+**Commit:** `Phase 4 (mega-task v6): interaction-counting multi-primitive fix + iter 7 eval scaffold` — `c366ccce9`.
+
+---
+
+## Phase 5 — voyage_downgrade_pass wiring decision — 2026-05-22 (non-blocking)
+
+**Decision: WIRE IT** (per kickoff recommendation).
+
+**Why:** the module shipped clean in v4 Phase 10, has 10 passing unit tests, has a well-defined `should_run_downgrade_pass(bracket, theme_profile)` gate, and the iter 5 prep notes called it out explicitly as a value-add for cEDH / storm / combo / tempo / ninja_tempo / voltron / reanimator builds. Abandoning would discard real work; wiring requires only ~30 lines of integration.
+
+**Integration site:** `agent_build_deck_v1.py`, immediately after the Pillar E v0.3 curve smoother block emits `curve_smoother` `completed`. Anchor list = commander + must-includes; CMC lookup hydrated from the candidate pool. Calls `should_run_downgrade_pass(bracket, theme_profile)` to gate — only fires for B4/B5 OR when a downgrade-relevant theme (combo/storm/tempo/ninja/voltron/reanimator) has weight > 0.2 in the theme_profile. Returns up to 5 cheaper alternatives per anchor.
+
+**Surface:** new build-response field `summary.voyage_downgrade_pass = {"active": <bool>, "suggestions": [{"anchor", "anchor_cmc", "alternatives": [{"name", "cmc", "color_identity", "similarity", "savings"}, ...]}, ...]}`. New warning code `VOYAGE_DOWNGRADE_SUGGESTED` (informational) when the gate fires and at least one suggestion lands. `VOYAGE_DOWNGRADE_FAILED` on the unexpected-exception path.
+
+**Tests:**
+- All 10 existing unit tests in `test_agent_voyage_downgrade_pass_v1.py` still pass (no module changes).
+- pytest: **1544 passed**, 8 pre-existing failed.
+- No new tests added — the wiring is exercised by Phase 11's iter-7 sweep on Krenko (B4 goblin combo — gate fires on bracket) + Yuriko (B5 ninja tempo — gate fires on both bracket and theme).
+
+**Decisions / open items:**
+- The orphan scanner (`tools/_coherence_sweep_3_orphan_scan.py`) will no longer flag this module after Phase 11 — it's now imported by production code.
+
+**Commit:** `Phase 5 (mega-task v6): voyage_downgrade_pass wiring — decision: WIRE (B4/B5 + storm/combo/tempo/ninja/voltron/reanimator gate)`.
 

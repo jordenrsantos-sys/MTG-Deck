@@ -727,6 +727,67 @@ def compute_agent_build_deck_v1(
         t_start=t_start, llm_metrics=llm_metrics, call_counter=call_counter,
     )
 
+    # ---- Mega-task v6 Phase 5: voyage_downgrade_pass wiring ----
+    # Module shipped in mega-task v4 Phase 10 but no production code
+    # path imported it until now. Surfaces cheaper-to-cast Voyage
+    # neighbors of anchor cards for B4/B5 builds + storm/combo/tempo/
+    # ninja_tempo/voltron/reanimator themes. Suggestions only — does
+    # NOT mutate the deck.
+    voyage_downgrade_block: Dict[str, Any] = {
+        "active": False,
+        "suggestions": [],
+    }
+    try:
+        from api.engine.layers.agent_voyage_downgrade_pass_v1 import (
+            run_downgrade_pass_for_deck as _run_downgrade,
+            should_run_downgrade_pass as _should_downgrade,
+        )
+
+        theme_profile_for_gate = None
+        if isinstance(intent_analysis, dict):
+            theme_profile_for_gate = intent_analysis.get("theme_profile")
+
+        if _should_downgrade(bracket, theme_profile_for_gate):
+            # Anchors = must-includes + creative outliers from C2.2 +
+            # commander. The downgrade module filters by anchor_cmc>0
+            # so the commander only appears with a real CMC.
+            _downgrade_anchors: List[str] = [commander.strip()]
+            for mic in must_include_cards:
+                if isinstance(mic, str) and mic.strip():
+                    _downgrade_anchors.append(mic.strip())
+
+            # Build CMC lookup from pool (pool has per-card cmc).
+            _pool_cmc_lookup: Dict[str, float] = {}
+            for c in (pool.get("candidates") or []):
+                nm = (c.get("name") or "").strip()
+                cmc = c.get("cmc")
+                if nm and isinstance(cmc, (int, float)):
+                    _pool_cmc_lookup[nm] = float(cmc)
+
+            voyage_downgrade_block["suggestions"] = _run_downgrade(
+                anchor_names=_downgrade_anchors,
+                deck_cards_with_cmc=_pool_cmc_lookup,
+                color_identity=list(pool.get("color_identity") or []),
+                k_per_anchor=5,
+            )
+            voyage_downgrade_block["active"] = True
+            if voyage_downgrade_block["suggestions"]:
+                warnings.append({
+                    "code": "VOYAGE_DOWNGRADE_SUGGESTED",
+                    "message": (
+                        f"Voyage downgrade pass surfaced cheaper-to-cast "
+                        f"alternatives for "
+                        f"{len(voyage_downgrade_block['suggestions'])} anchor cards "
+                        f"(B4/B5 or storm/combo/tempo/ninja themes). "
+                        f"See response.summary.voyage_downgrade_pass.suggestions."
+                    ),
+                })
+    except Exception as exc:
+        warnings.append({
+            "code": "VOYAGE_DOWNGRADE_FAILED",
+            "message": f"{exc.__class__.__name__}: {exc}",
+        })
+
     # ---- Mega-task v5 Phase 10: Pillar E v0.4 interaction designer ----
     # Computes target counts per interaction category for the commander's
     # bracket + color identity, and counts how the deck currently meets
@@ -954,6 +1015,12 @@ def compute_agent_build_deck_v1(
             ),
             "swap_log": semantic_injection_log,
         },
+        # Mega-task v6 Phase 5: voyage_downgrade_pass — cheaper-to-cast
+        # Voyage neighbors for anchor cards on B4/B5 or
+        # storm/combo/tempo/ninja themes. Suggestions only; no deck
+        # mutation. ``active=False`` when the gate's heuristic said no
+        # downgrade pass for this case.
+        "voyage_downgrade_pass": voyage_downgrade_block,
     }
 
     response = {
