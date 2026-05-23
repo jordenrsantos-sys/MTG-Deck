@@ -187,3 +187,60 @@ across 5 classes:
 **All 16 pass.** ~250 LOC production + ~280 LOC test.
 
 **Commit message:** "Phase 2 (mega-task v9): stack mechanics + priority loop + APNAP".
+
+Committed as `46a209305`.
+
+---
+
+## Phase 3 — Phase/step state machine (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/turn/turn_machine.py`:
+
+- `STEP_ORDER` = canonical 13-step list (untap → upkeep → draw → main_1
+  → 5 combat steps → main_2 → end_step → cleanup).
+- `STEP_TO_PHASE` maps each step to its parent Phase enum.
+- `NO_PRIORITY_STEPS` = {UNTAP, CLEANUP}.
+- `register_step_trigger(step, trigger)` + `clear_step_triggers(step?)`
+  for step-change triggered abilities.
+- `start_step(state, step)` sets state.step + state.phase, fires +
+  drains registered step triggers to the stack.
+- `step_opens_priority(step)` returns False for untap/cleanup.
+- `untap_step(state)` — untaps active player's permanents, clears
+  summoning sickness, empties all mana pools, resets active player's
+  per-turn counters.
+- `draw_step(state, skip_first_turn_draw=True)` — active player draws
+  unless turn 1 AND active=0 (multiplayer EDH convention). Empty
+  library flags has_drawn_from_empty_library SBA.
+- `cleanup_step(state)` — discard to 7, clear damage marks, expire
+  `target_pattern["until_end_of_turn"]` continuous effects, empty
+  mana pools. Returns True if cleanup re-entry needed (iter 10 always
+  False; Phase 4 will return True when SBAs/triggers fire).
+- `advance_step(state)` — moves to next step or rotates to next
+  player's untap (incrementing turn_number when wrapping to P0,
+  skipping eliminated players).
+- `run_turn(state, priority_runner)` — walks one full turn; iter 10
+  uses no-op priority runner. Phase 6 + sub-mega-task B plumb the
+  combat substeps + LLM action prompting.
+
+**Tests** in `tests/pillar_f_v0_2/test_phase3_turn.py`: 21 tests
+across 6 classes:
+- **StepOrderTests** (3): canonical 13-step order, phase mapping,
+  no-priority untap/cleanup.
+- **UntapStepTests** (3): untap + summoning sick clear, mana pool
+  empty, per-turn counters reset (active only).
+- **DrawStepTests** (4): first-turn skip for starting player,
+  first-turn draw NOT skipped for other players, subsequent turns
+  draw, empty library flag.
+- **CleanupStepTests** (3): discard to 7, clear damage,
+  until-end-of-turn expiration.
+- **AdvanceStepTests** (4): step within turn, cleanup rotates to
+  next player, turn_number increments on wrap, skips eliminated
+  players.
+- **RunTurnTests** (2): visits all 13 steps in order, 4-player
+  rotation increments turn_number.
+- **StepTriggerTests** (2): at-beginning-of-combat trigger fires +
+  lands on stack; no triggers = no stack changes.
+
+**All 21 pass.** ~280 LOC production + ~260 LOC test.
+
+**Commit message:** "Phase 3 (mega-task v9): turn / phase / step state machine".
