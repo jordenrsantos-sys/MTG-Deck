@@ -130,3 +130,60 @@ Committed as `6a76fcb4d`.
 file. Pure data modeling — no game logic yet.
 
 **Commit message:** "Phase 1 (mega-task v9): game-state object model + perspective_view + serialization".
+
+Committed as `71c2b5076`.
+
+---
+
+## Phase 2 — Stack mechanics + priority loop (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/stack/stack.py`:
+
+- `push_to_stack(state, **kwargs)` — appends StackEntry; resets
+  priority round per CR 117.3 (mutation invalidates pass-in-succession).
+- `pop_top(state)` / `peek_top(state)` — LIFO accessors.
+- `counter_target(state, target_entry_id)` — generic counterspell API.
+  Specific cards (Counterspell, Negate, Mana Drain) call this in their
+  resolver fn.
+- `register_resolver(name, fn)` + `get_resolver(name)` — resolver
+  registry keyed by name string (lookup via StackEntry.payment["resolver"]).
+  Iter-10 ships 3 minimal resolvers: `noop`, `deal_damage_to_player`,
+  `draw_cards`. Per-card oracle compilation deferred to iter 11+.
+- `resolve_top(state)` — pops top + invokes resolver fn.
+- `apnap_order(state)` — returns player IDs in APNAP order starting from
+  active_player, skipping eliminated players.
+- `priority_round(state, responder_fn)` — runs one CR-117 priority
+  round. Responder contract: return None (pass) or a push_to_stack
+  kwargs dict. Stack mutation resets passes.
+- `run_stack_to_resolution(state, responder_fn)` — top-level helper:
+  loops priority + resolve until stack empty AND all pass. Returns
+  list of resolved entries.
+- `enqueue_triggers(state, triggers)` — adds to delayed_triggers_pending
+  per CR 603.3.
+- `drain_triggers_to_stack(state)` — moves all pending triggers to the
+  stack in APNAP order. Same-controller insertion order preserved
+  (= controller's choice in iter 10).
+
+**Sub-mega-task B prep:** `PriorityResponderFn` is the callback type
+the LLM strategic policy will plug into. Iter-10 ships
+`_pass_responder` mock (always returns None) sufficient for unit tests.
+
+**Tests** in `tests/pillar_f_v0_2/test_phase2_stack.py`: 16 tests
+across 5 classes:
+- **StackPushPopTests** (3): push appends, push resets passes, LIFO pop.
+- **CounterspellTests** (2): counter_target removes entry, nonexistent
+  target returns False.
+- **PriorityLoopTests** (5): simple sorcery resolves after all pass,
+  APNAP from active player, APNAP skips eliminated, 3-deep response
+  sequence resolves LIFO (sorcery → counter → counter-counter →
+  sorcery hits player), active-player action resets round.
+- **APNAPTriggerOrderingTests** (3): enqueue + drain produces APNAP-
+  ordered stack (P2-A, P2-B, P3-A, P0-A when active=1), drain empty
+  returns 0, eliminated-player triggers skipped.
+- **ResolverRegistryTests** (3): noop is no-op, draw_cards moves
+  library→hand + increments cards_drawn_this_turn, draw from empty
+  library flags has_drawn_from_empty_library SBA.
+
+**All 16 pass.** ~250 LOC production + ~280 LOC test.
+
+**Commit message:** "Phase 2 (mega-task v9): stack mechanics + priority loop + APNAP".
