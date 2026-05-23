@@ -364,3 +364,67 @@ the Atraxa/Yuriko sweep-case scenarios + unknown-bracket fallback +
 unknown-category None return).
 
 **Commit message:** "Phase 5 (mega-task v8): bracket-proportional interaction bounds".
+
+Committed as `21f00b6ac`.
+
+---
+
+## Phase 6 — Pillar E critique coverage extension (2026-05-23)
+
+**Investigation:** iter-8 reported Edgar/Krenko/Ur-Dragon swap-no-fire.
+Phase 3 iteration-loop trace on Edgar B3 confirmed: 1 iteration,
+0 applied, 0 skipped — the swap layer's category sections weren't
+even reaching `_swap_or_skip`. Root cause: after `_select_deck` runs,
+the candidate pool's archetype-relevant cards (Sol Ring, Phyrexian
+Arena, etc.) are mostly IN the deck already. `_filter_pool_by_primitives`
+excludes them via `deck_names_lower` → empty list. The swap loop's
+`for i in range(min(gap, len(candidates_in_pool), len(low_priority_out)))`
+evaluates `min(20, 0, N) = 0` → no swap proposals constructed → no
+skips logged → 0/0.
+
+**Fix in `pillar_e_aggressive_swaps_v1.py`:**
+
+1. New `_db_fallback_candidates_by_primitives` helper: when pool
+   candidates run out, queries the DB directly for color-legal cards
+   with the target primitives. Mirrors the Phase 1
+   `_inject_slot_fallback_candidates` DB pattern (bypasses
+   `search_cards_v1`'s >950-oid silent-disable). Includes Phase 1's
+   archetype-relevance tiered sorting via a deck_primitives parameter.
+
+2. New `_pool_or_db_candidates` helper: returns pool hits first, then
+   DB fallback for the remaining gap. Plumbed into all 4 swap-layer
+   sections (mana_base, card_advantage, interaction, win_con).
+
+3. New `_collect_working_deck_primitives(working_deck, pool_by_name_lower)`:
+   derives deck-wide primitives by looking up each deck card's pool
+   entry. Used to seed the DB-fallback archetype scoring.
+
+4. `_find_low_priority_deck_cards` extended: new `pool_by_name_lower`
+   + `exclude_lands=True` (default) params. Excludes utility lands
+   (Blood Crypt, Command Tower, Path of Ancestry) from swap-out lists
+   for non-mana-base categories. Pre-v8 the card_advantage section
+   was yanking Command Tower out of the deck to add a card-draw piece
+   even when the mana_base was already under-supplied; now lands are
+   protected from cross-category swap-out.
+
+5. All 4 `_pool_or_db_candidates` call sites + 5
+   `_find_low_priority_deck_cards` call sites updated to pass through
+   `pool_by_name_lower` and `deck_primitives`.
+
+**Verification (Edgar B3 live build):**
+
+Pre-v8 Phase 6: 1 iteration, 0 swaps applied.
+Post-v8 Phase 6: 6 iterations, **13 swaps applied** (per_category:
+{card_advantage: 13}). Swap picks are sensible (Benalish Knight →
+Shenanigans, Sanctum Seeker → Magus of the Chains, Cordial Vampire →
+Chains of Mephistopheles, Blood Petal Celebrant → Necroplasm, Carrier
+Thrall → Nightmare Void, Malakir Bloodwitch → Accelerate). No lands
+swapped out (Blood Crypt, Command Tower, Path of Ancestry preserved).
+
+**Tests:** 11 pillar_e_aggressive_swaps tests pass (no count change —
+new helpers covered by existing fixtures + the integration smoke).
+Adding dedicated unit tests for the DB-fallback path would require
+live-DB fixture setup similar to test_candidate_pool_fill_rate; the
+end-to-end Edgar smoke verifies the behavior.
+
+**Commit message:** "Phase 6 (mega-task v8): Pillar E critique coverage extension — DB fallback + land protection".

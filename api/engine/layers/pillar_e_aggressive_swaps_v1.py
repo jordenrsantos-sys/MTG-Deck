@@ -180,6 +180,12 @@ def compute_pillar_e_aggressive_swaps(
         (c.get("card_name") or "").strip().lower() for c in working_deck
     }
     ci_set = {c.upper() for c in (commander_color_identity or []) if isinstance(c, str)}
+    # v8 Phase 6: collect deck-wide primitive set once for DB-fallback
+    # archetype-relevance scoring. Cards in working_deck don't carry
+    # primitives directly; we look them up via pool entries by name.
+    deck_primitives = _collect_working_deck_primitives(
+        working_deck, pool_by_name_lower,
+    )
 
     def _swap_or_skip(category: str, card_out: str, card_in: str, rationale: str) -> bool:
         """Validate + apply or skip with reason."""
@@ -288,8 +294,16 @@ def compute_pillar_e_aggressive_swaps(
             delta = actual - target
             if delta > 0:
                 # Too many lands. Swap basics OUT, ramp IN.
-                ramp_in_pool = _filter_pool_by_primitives(
-                    pool_candidates, _RAMP_PRIMS, exclude_names=deck_names_lower,
+                # v8 Phase 6: use _pool_or_db_candidates so DB fallback
+                # supplements pool-exhausted runs (Edgar/Krenko/Ur-Dragon).
+                ramp_in_pool = _pool_or_db_candidates(
+                    pool_candidates=pool_candidates,
+                    target_prims=_RAMP_PRIMS,
+                    exclude_names=deck_names_lower,
+                    gap=delta,
+                    db_snapshot_id=db_snapshot_id,
+                    color_identity=commander_color_identity,
+                    deck_primitives=deck_primitives,
                 )
                 basics_in_deck = [
                     c["card_name"] for c in working_deck
@@ -314,6 +328,7 @@ def compute_pillar_e_aggressive_swaps(
                         "slot_fallback:ramp", "slot_fallback:card_draw",
                         "slot_fallback:removal", "slot_fallback:win_condition",
                     },
+                    pool_by_name_lower=pool_by_name_lower,
                 )
                 gap = abs(delta)
                 for i in range(min(gap, len(land_in_pool), len(low_priority_out))):
@@ -333,13 +348,21 @@ def compute_pillar_e_aggressive_swaps(
             total_actual = sum(int(v) for v in current_counts.values())
             if total_actual < total_target:
                 gap = total_target - total_actual
-                draw_in_pool = _filter_pool_by_primitives(
-                    pool_candidates, _DRAW_PRIMS, exclude_names=deck_names_lower,
+                # v8 Phase 6: DB fallback for card_advantage pool exhaustion.
+                draw_in_pool = _pool_or_db_candidates(
+                    pool_candidates=pool_candidates,
+                    target_prims=_DRAW_PRIMS,
+                    exclude_names=deck_names_lower,
+                    gap=gap,
+                    db_snapshot_id=db_snapshot_id,
+                    color_identity=commander_color_identity,
+                    deck_primitives=deck_primitives,
                 )
                 low_priority_out = _find_low_priority_deck_cards(
                     working_deck, must_include_lower, prefer_sources={
                         "slot_fallback:removal", "slot_fallback:win_condition",
                     },
+                    pool_by_name_lower=pool_by_name_lower,
                 )
                 for i in range(min(gap, len(draw_in_pool), len(low_priority_out))):
                     _swap_or_skip(
@@ -380,6 +403,7 @@ def compute_pillar_e_aggressive_swaps(
                     low_pri = _find_low_priority_deck_cards(
                         working_deck, must_include_lower,
                         prefer_sources={"slot_fallback:win_condition"},
+                        pool_by_name_lower=pool_by_name_lower,
                     )
                     out_candidate = low_pri[0] if low_pri else None
                 if out_candidate:
@@ -425,12 +449,20 @@ def compute_pillar_e_aggressive_swaps(
                 if actual >= lo:
                     continue
                 gap = lo - actual
-                candidates_in_pool = _filter_pool_by_primitives(
-                    pool_candidates, prims, exclude_names=deck_names_lower,
+                # v8 Phase 6: DB fallback for interaction pool exhaustion.
+                candidates_in_pool = _pool_or_db_candidates(
+                    pool_candidates=pool_candidates,
+                    target_prims=prims,
+                    exclude_names=deck_names_lower,
+                    gap=gap,
+                    db_snapshot_id=db_snapshot_id,
+                    color_identity=commander_color_identity,
+                    deck_primitives=deck_primitives,
                 )
                 low_priority_out = _find_low_priority_deck_cards(
                     working_deck, must_include_lower,
                     prefer_sources={"slot_fallback:win_condition", "slot_fallback:removal"},
+                    pool_by_name_lower=pool_by_name_lower,
                 )
                 for i in range(min(gap, len(candidates_in_pool), len(low_priority_out))):
                     _swap_or_skip(
@@ -456,14 +488,21 @@ def compute_pillar_e_aggressive_swaps(
             pattern_scores = report.get("pattern_scores") or {}
             current_top = max(pattern_scores.values()) if pattern_scores else 0
             gap = max(1, primary_floor - current_top)
-            candidates_in_pool = _filter_pool_by_primitives(
-                pool_candidates, _WIN_CON_ENABLER_PRIMS,
+            # v8 Phase 6: DB fallback for win-con pool exhaustion.
+            candidates_in_pool = _pool_or_db_candidates(
+                pool_candidates=pool_candidates,
+                target_prims=_WIN_CON_ENABLER_PRIMS,
                 exclude_names=deck_names_lower,
+                gap=gap,
+                db_snapshot_id=db_snapshot_id,
+                color_identity=commander_color_identity,
+                deck_primitives=deck_primitives,
             )
             low_priority_out = _find_low_priority_deck_cards(
                 working_deck, must_include_lower,
                 prefer_sources={"slot_fallback:card_draw",
                                 "slot_fallback:removal"},
+                pool_by_name_lower=pool_by_name_lower,
             )
             for i in range(min(gap, len(candidates_in_pool), len(low_priority_out))):
                 _swap_or_skip(
@@ -529,19 +568,200 @@ def _filter_pool_by_primitives(
     return out
 
 
+def _db_fallback_candidates_by_primitives(
+    *,
+    db_snapshot_id: str,
+    color_identity: List[str],
+    target_prims: Set[str],
+    exclude_names: Set[str],
+    limit: int = 20,
+    deck_primitives: Optional[Set[str]] = None,
+) -> List[Dict[str, Any]]:
+    """v8 Phase 6: when the candidate pool's swap-in options are
+    exhausted (typical when _select_deck pulled the best fallbacks into
+    the deck before the v0.7 layer runs), query the DB directly for
+    color-legal cards matching the target primitives. Mirrors the
+    Phase 1 _inject_slot_fallback_candidates DB-query pattern but
+    targeted at the swap-target picker. Bypasses search_cards_v1's
+    >950-oid silent-disable quirk via direct primitive_to_cards query.
+
+    Returns up to `limit` candidates as dicts shaped like pool entries
+    ({name, type_line, cmc, color_identity, primitives}). Empty on any
+    error or when no DB matches found.
+
+    Closes CC iter-8 hand-off item #3: Edgar/Krenko/Ur-Dragon swap-no-fire.
+    The root cause was pool exhaustion — slot_fallback fed the same
+    candidates the deck selector consumed, leaving zero unused pool
+    candidates for v0.7 swap-in picks.
+    """
+    import json as _j
+    try:
+        from engine.db import connect as db_connect
+        from api.engine.version_resolve_v1 import resolve_runtime_taxonomy_version
+    except Exception:
+        return []
+    if not target_prims or not color_identity:
+        return []
+    ci_set = {c.upper() for c in color_identity if isinstance(c, str)}
+    try:
+        with db_connect() as con:
+            tv = resolve_runtime_taxonomy_version(
+                snapshot_id=db_snapshot_id, requested=None, db=con,
+            )
+            if not tv:
+                return []
+            prims_list = sorted(target_prims)
+            ph = ",".join("?" for _ in prims_list)
+            sql_oids = (
+                "SELECT DISTINCT oracle_id FROM primitive_to_cards "
+                f"WHERE snapshot_id = ? AND taxonomy_version = ? "
+                f"AND primitive_id IN ({ph})"
+            )
+            oids = [
+                r[0] for r in con.execute(
+                    sql_oids, [db_snapshot_id, tv] + prims_list
+                ).fetchall() if r and r[0]
+            ]
+            if not oids:
+                return []
+            # Chunk to stay under SQLite 999-param cap.
+            card_rows: List[Any] = []
+            for chunk_start in range(0, len(oids), 900):
+                chunk = oids[chunk_start : chunk_start + 900]
+                cph = ",".join("?" for _ in chunk)
+                sql_cards = (
+                    "SELECT name, type_line, cmc, color_identity, "
+                    "primitives_json FROM cards WHERE snapshot_id = ? "
+                    f"AND oracle_id IN ({cph})"
+                )
+                card_rows.extend(
+                    con.execute(sql_cards, [db_snapshot_id] + chunk).fetchall()
+                )
+            out: List[Dict[str, Any]] = []
+            for row in card_rows:
+                name = row["name"]
+                if not name:
+                    continue
+                if name.strip().lower() in exclude_names:
+                    continue
+                # Color identity filter.
+                card_ci = _normalize_ci(row["color_identity"])
+                if not ci_set:
+                    if card_ci:
+                        continue
+                elif card_ci and not set(card_ci).issubset(ci_set):
+                    continue
+                # Parse primitives.
+                prims: List[str] = []
+                pj = row["primitives_json"]
+                if pj:
+                    try:
+                        parsed = _j.loads(pj) if isinstance(pj, str) else pj
+                        if isinstance(parsed, list):
+                            prims = [str(p) for p in parsed if isinstance(p, str)]
+                    except Exception:
+                        pass
+                out.append({
+                    "name": name,
+                    "type_line": row["type_line"],
+                    "cmc": row["cmc"],
+                    "color_identity": card_ci,
+                    "primitives": prims,
+                })
+            # v8 Phase 6 (cross-applies Phase 1's archetype-relevance):
+            # rank DB results by deck-primitive overlap > primitive count
+            # > cmc ascending. Avoids alphabetical SQL-order bias that
+            # would otherwise re-introduce A-prefix picks in swap-target
+            # selection.
+            deck_prims_set = deck_primitives if deck_primitives else set()
+            def _db_sort_key(c: Dict[str, Any]) -> Tuple[int, int, float]:
+                prims_set = set(c.get("primitives") or [])
+                overlap = len(prims_set & deck_prims_set)
+                richness = len(prims_set)
+                cmc_neg = -float(c.get("cmc") or 0)
+                # Returning descending tuple via negation on the cmc
+                # element; primary keys (overlap, richness) sort descending
+                # via Python's reverse=True at the call site.
+                return (overlap, richness, cmc_neg)
+            out.sort(key=_db_sort_key, reverse=True)
+            return out[:limit]
+    except Exception:
+        return []
+
+
+def _pool_or_db_candidates(
+    *,
+    pool_candidates: List[Dict[str, Any]],
+    target_prims: Set[str],
+    exclude_names: Set[str],
+    gap: int,
+    db_snapshot_id: str,
+    color_identity: List[str],
+    deck_primitives: Optional[Set[str]] = None,
+) -> List[Dict[str, Any]]:
+    """v8 Phase 6: returns pool candidates first, then DB fallback if
+    pool yields < gap. Pool entries dominate (they're already archetype-
+    scored from v8 Phase 1); DB candidates fill the remainder, also
+    archetype-scored via deck_primitives overlap."""
+    pool_hits = _filter_pool_by_primitives(
+        pool_candidates, target_prims, exclude_names,
+    )
+    if len(pool_hits) >= gap:
+        return pool_hits
+    pool_names = {(c.get("name") or "").strip().lower() for c in pool_hits}
+    db_needed = gap - len(pool_hits)
+    db_hits = _db_fallback_candidates_by_primitives(
+        db_snapshot_id=db_snapshot_id,
+        color_identity=color_identity,
+        target_prims=target_prims,
+        exclude_names=exclude_names | pool_names,
+        limit=db_needed * 2,  # over-fetch for the swap loop
+        deck_primitives=deck_primitives,
+    )
+    return pool_hits + db_hits
+
+
+def _collect_working_deck_primitives(
+    working_deck: List[Dict[str, str]],
+    pool_by_name_lower: Dict[str, Dict[str, Any]],
+) -> Set[str]:
+    """v8 Phase 6: derive deck_primitives from the post-select-deck
+    working_deck, drawing primitives from the pool entries by name
+    (deck card dicts don't carry primitives directly; the pool entries
+    do)."""
+    out: Set[str] = set()
+    for c in working_deck:
+        name = (c.get("card_name") or "").strip().lower()
+        pool_meta = pool_by_name_lower.get(name)
+        if pool_meta:
+            for p in pool_meta.get("primitives") or []:
+                if isinstance(p, str):
+                    out.add(p)
+    return out
+
+
 def _find_low_priority_deck_cards(
     deck: List[Dict[str, str]],
     must_include_lower: Set[str],
     *,
     prefer_sources: Optional[Set[str]] = None,
+    pool_by_name_lower: Optional[Dict[str, Dict[str, Any]]] = None,
+    exclude_lands: bool = True,
 ) -> List[str]:
     """Return deck card names ordered by swap-out priority:
       1. cards from `prefer_sources` (typically slot_fallback:*)
       2. cards from sources containing 'archetype_staple'
       3. cards from sources containing 'theme:'
       4. cards from sources containing 'agent_select'
-    Excludes the commander and user must-includes. Excludes basic lands
-    (handled by mana_base category swaps separately).
+
+    Excludes the commander, user must-includes, and basic lands by
+    default. v8 Phase 6 adds `exclude_lands=True` (default) which also
+    excludes utility lands (Blood Crypt, Command Tower, etc.) when
+    pool_by_name_lower is provided — without this, the card_advantage
+    and interaction swap sections were yanking dual lands out of the
+    deck even when the mana_base was already short of lands.
+    Mana_base swaps remain free to manipulate lands directly (delta>0
+    swaps basics for ramp; delta<0 swaps spells for utility lands).
     """
     prefer_sources = prefer_sources or set()
     tier1: List[str] = []
@@ -560,6 +780,11 @@ def _find_low_priority_deck_cards(
         reason = c.get("reason") or ""
         if reason.startswith("Commander"):
             continue
+        # v8 Phase 6: skip utility lands when exclude_lands is on.
+        if exclude_lands and pool_by_name_lower:
+            pool_meta = pool_by_name_lower.get(name.strip().lower())
+            if pool_meta and "land" in (pool_meta.get("type_line") or "").lower():
+                continue
         if src in prefer_sources:
             tier1.append(name)
         elif "archetype_staple" in src:
