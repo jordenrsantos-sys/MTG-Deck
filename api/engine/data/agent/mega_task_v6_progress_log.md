@@ -372,5 +372,26 @@ All 8 are **contract drift** between shipped behavior and the tests' original ex
 - Per-case data demonstrates the Phase 1 SSE fix, Phase 3 ontology v2 backfill (90.5% coverage), Phase 5 voyage_downgrade_pass wiring (active on B4 Krenko + B5 Yuriko), Phase 6 rules-query (1/build on every case), Phase 10 anti-meta (5/5) all working as intended.
 - Spend: ~$3 across 2 sweep runs (~$1.50 each).
 
-**Commit:** `Phase 11 (mega-task v6): iter 7 final validation sweep — 10/14, hard halt #5 triggered + Phase 2 anchor fix + Phase 9 floor recalibration`.
+**Commit:** `Phase 11 (mega-task v6): iter 7 final validation sweep — 10/14, hard halt #5 triggered + Phase 2 anchor fix + Phase 9 floor recalibration` — `13ba4f930`.
+
+---
+
+## Phase 12 — Final regression + report + memory update — 2026-05-22 (BLOCKING)
+
+**Final regression results (Phase 11 sweep + this phase):**
+- pytest: **1566 passed, 25 skipped, 0 failed** (baseline 1489 + 77 new v6 tests; the 8 pre-existing pytest failures retired in Phase 7).
+- vitest: **759 passed, 2 failed (pre-existing metricPillHeader source-grep drift on WorkspaceView — orthogonal to v6 + same category as the pytest failures Phase 7 retired)**.
+- Phase 11 5-case Python sweep: 10/14 success criteria (final report covers the gap analysis + iter-8 fix paths).
+
+**Final report:** `repo/api/engine/data/agent/mega_task_v6_final_report.md` — covers commit chain, per-phase summary, headline metrics, iter 7 → iter 8 hand-off questions answered, spend (~$5-7).
+
+**Memory updates** (`C:/Users/jorde/.claude/projects/E--MTG-Root/memory/`):
+- `MEMORY.md` (index) — created
+- `project_mega_task_v6_shipped.md` — load-bearing changes the iter 8 work must honor
+- `feedback_pool_score_does_not_drive_llm_picking.md` — load-bearing learning that drove Phase 2's design
+- `project_5_pillar_forward_plan.md` — Pillar E COMPLETE; iter 8 candidates documented
+
+**Phase 11 halt acknowledgement:** the kickoff hard halt #5 condition triggered (10/14 < 12/14 ship target). Per the kickoff "Halt for user direction." All 4 remaining gaps have identified root causes + iter-8 fix paths. Substrate at hand-off is materially better than the v5 baseline: Pillar E COMPLETE, SSE UI fixed, ontology v2 backfilled, rules-text index populated, voyage_downgrade_pass wired, anti-meta recommendations on every build.
+
+**Commit:** `Phase 12 (mega-task v6): final regression + report + memory update — SHIPPED with halt at Phase 11`.
 
