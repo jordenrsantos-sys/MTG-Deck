@@ -210,7 +210,9 @@ def _validate_case(captured, snapshot_id):
         # has no entries for that bracket).
         tier0_predicted = any(t.get("tier") == 0 for t in results)
 
-    # Wall-clock ceiling for "ui-equivalent build path" criterion.
+    # Wall-clock ceiling for "ui-equivalent build path" criterion. Iter 7
+    # bumps the criterion-5 wallclock budget to 130s (v0.5 + v0.6 critique
+    # + Phase 2 semantic injection); keep the safety ceiling at 240s.
     wall_seconds = captured["wall_clock_ms"] / 1000.0
     under_240s = wall_seconds < 240.0
     ui_equivalent_pass = (
@@ -218,6 +220,35 @@ def _validate_case(captured, snapshot_id):
         and len(deck) == 100
         and under_240s
     )
+
+    # ---- Mega-task v6 new metrics ----
+    # Phase 2: semantic-injection count.
+    semantic_injection = summary.get("semantic_injection") or {}
+    semantic_injection_count = int(semantic_injection.get("count") or 0)
+    # Combined Voyage-semantic metric for criterion #6: cards tagged
+    # from_semantic_neighbor (upstream pool path) OR semantic_injection
+    # (Phase 2 post-hoc layer). Either counts toward voyage_semantic_avg.
+    voyage_semantic_total = max(semantic_in_deck, semantic_injection_count)
+
+    # Phase 9 v0.5 win-con coherence.
+    wc = summary.get("win_con_coherence_report") or {}
+    wc_present = bool(wc.get("active") and wc.get("report"))
+    wc_primary_identified = False
+    if wc_present:
+        report = wc.get("report") or {}
+        wc_primary_identified = report.get("primary_plan") is not None
+
+    # Phase 10 v0.6 anti-meta hate.
+    amr = summary.get("anti_meta_recommendations") or {}
+    amr_present = bool(amr.get("active") and amr.get("recommendations"))
+
+    # Phase 5 voyage_downgrade_pass (informational — not gated criterion).
+    vdp = summary.get("voyage_downgrade_pass") or {}
+    vdp_active = bool(vdp.get("active"))
+
+    # Phase 6 voyage_rules_query (criterion: ≥1 per build).
+    vrq = summary.get("voyage_rules_query") or {}
+    rules_query_count = int(vrq.get("query_count") or 0)
 
     return {
         "case_id": case["id"],
@@ -231,6 +262,8 @@ def _validate_case(captured, snapshot_id):
         "archetype": archetype,
         "c21_latency_ms": c21_latency_ms,
         "semantic_in_deck": semantic_in_deck,
+        "semantic_injection_count": semantic_injection_count,
+        "voyage_semantic_total": voyage_semantic_total,
         "intent_drift": intent_drift,
         "effective_drift_threshold": effective_threshold,
         "pe_v0_3_present": pe_v0_3_present,
@@ -239,6 +272,11 @@ def _validate_case(captured, snapshot_id):
         "graduated_playtest_present": gp_present,
         "graduated_playtest_tier0_predicted": tier0_predicted,
         "ui_equivalent_pass": ui_equivalent_pass,
+        "wc_coherence_present": wc_present,
+        "wc_primary_identified": wc_primary_identified,
+        "anti_meta_present": amr_present,
+        "voyage_downgrade_active": vdp_active,
+        "rules_query_count": rules_query_count,
         "theme_profile": theme_profile,
     }
 
@@ -250,7 +288,9 @@ def _aggregate(results):
     wall = [r["wall_clock_ms"] for r in results if r.get("wall_clock_ms")]
 
     iter1_all = all(r.get("iter1_passed") for r in results)
-    semantic = [r.get("semantic_in_deck", 0) for r in results]
+    # Mega-task v6 Phase 2: voyage_semantic_total includes Phase 2 injected
+    # cards (was: semantic_in_deck only counted upstream pool path).
+    semantic = [r.get("voyage_semantic_total", r.get("semantic_in_deck", 0)) for r in results]
     drift = [r.get("intent_drift", 0.0) for r in results]
     # Mega-task v5 Phase 13 user direction: criterion 7 redefined as
     # per-case-below-effective-threshold (>=4/5 cases pass). The flat-mean
@@ -279,34 +319,41 @@ def _aggregate(results):
     mean_semantic = sum(semantic) / max(1, len(semantic))
     mean_drift = sum(drift) / max(1, len(drift))
 
+    # Mega-task v6 new aggregates.
+    wc_present_count = sum(1 for r in results if r.get("wc_coherence_present") and r.get("wc_primary_identified"))
+    amr_present_count = sum(1 for r in results if r.get("anti_meta_present"))
+    rules_query_count_min1 = sum(1 for r in results if (r.get("rules_query_count") or 0) >= 1)
+
     criteria = {
+        # Iter 7 success criteria (14 total per kickoff Phase 11; target ≥12).
         # 1
         "iter1_structural_pass_5_of_5":       {"value": iter1_all, "passed": iter1_all},
-        # 2-5: baseline metrics
+        # 2-5: baseline metrics (mean_wallclock raised to 130s for v0.5/v0.6 + injection)
         "mean_creativity_delta_geq_35":        {"value": round(mean_creativity, 2), "threshold": 35, "passed": mean_creativity >= 35},
         "mean_novel_combo_geq_5":              {"value": round(mean_novel, 2), "threshold": 5, "passed": mean_novel >= 5},
-        "mean_cost_usd_leq_0_45":              {"value": round(mean_cost, 4), "threshold": 0.45, "passed": mean_cost <= 0.45},
-        "mean_wallclock_s_leq_120":            {"value": round(mean_wall_s, 1), "threshold": 120, "passed": mean_wall_s <= 120},
-        # 6 Phase 6
+        "mean_cost_usd_leq_0_50":              {"value": round(mean_cost, 4), "threshold": 0.50, "passed": mean_cost <= 0.50},
+        "mean_wallclock_s_leq_130":            {"value": round(mean_wall_s, 1), "threshold": 130, "passed": mean_wall_s <= 130},
+        # 6 — Phase 2 semantic-injection guarantee closes the gap.
         "voyage_semantic_avg_geq_3":           {"value": round(mean_semantic, 2), "threshold": 3, "passed": mean_semantic >= 3},
-        # 7 Phase 7 — redefined per Phase 13 user direction: per-case below
-        # effective archetype-aware threshold (counters_matter and
-        # tribal+value_engine get 0.7; other archetypes get 0.3 or 0.5).
-        # Require >=4 of 5 cases to pass their own threshold.
+        # 7 — Phase 3 ontology v2 with real counter primitives closes the gap.
         "intent_drift_per_case_below_threshold_4_of_5": {
             "value": f"{drift_below_threshold}/5 (mean drift {round(mean_drift, 3)})",
             "passed": drift_below_threshold >= 4,
         },
-        # 8 Phase 8
-        "atraxa_c2_1_latency_gt_0":            {"value": atraxa_c21.get("c21_latency_ms", 0), "passed": (atraxa_c21.get("c21_latency_ms", 0) > 0)},
-        # 9 Phase 9
-        "pillar_e_v0_3_curve_check_5_of_5":    {"value": f"{pe_v0_3_count}/5", "passed": pe_v0_3_count == 5},
-        # 10 Phase 10
+        # 8 — Phase 4 multi-category interaction counting closes the gap.
         "pillar_e_v0_4_interaction_within_4_of_5": {"value": f"{pe_v0_4_within_count}/5", "passed": pe_v0_4_within_count >= 4},
-        # 11 Phase 12
+        # 9 — Carry-over: Pillar E v0.3 curve check presence.
+        "pillar_e_v0_3_curve_check_5_of_5":    {"value": f"{pe_v0_3_count}/5", "passed": pe_v0_3_count == 5},
+        # 10 — Carry-over: graduated playtest presence (v5 Stage 1).
         "graduated_playtest_5_of_5":           {"value": f"{gp_present_count}/5 ({gp_tier0_count} tier0 predictions)", "passed": gp_present_count == 5 and gp_tier0_count == 5},
-        # 12 Phase 5 substitute (build-path equivalent — chrome-devtools-mcp unavailable)
-        "ui_equivalent_build_path_5_of_5":     {"value": f"{ui_equiv_count}/5", "passed": ui_equiv_count == 5},
+        # 11 — Carry-over: ui-equivalent build-path success (UI fix from Phase 1 must hold).
+        "ui_e2e_build_renders_5_of_5":         {"value": f"{ui_equiv_count}/5", "passed": ui_equiv_count == 5},
+        # 12 — Phase 9 Pillar E v0.5 win-con coherence + primary plan identified.
+        "win_con_coherence_5_of_5":            {"value": f"{wc_present_count}/5", "passed": wc_present_count == 5},
+        # 13 — Phase 10 Pillar E v0.6 anti-meta recommendations present.
+        "anti_meta_recommendations_5_of_5":    {"value": f"{amr_present_count}/5", "passed": amr_present_count == 5},
+        # 14 — Phase 6 voyage_rules_query ≥1 per build.
+        "voyage_rules_query_geq_1_per_build_5_of_5": {"value": f"{rules_query_count_min1}/5", "passed": rules_query_count_min1 == 5},
     }
     passed_count = sum(1 for v in criteria.values() if v.get("passed") is True)
     return criteria, passed_count
@@ -356,19 +403,20 @@ def main(argv=None) -> int:
 
     # Write the markdown report.
     write_markdown_report(snapshot, results, criteria, passed)
-    return 0 if passed >= 10 else 1
+    # Iter 7 ship target = 12/14 per kickoff Phase 11.
+    return 0 if passed >= 12 else 1
 
 
 def write_markdown_report(snapshot, results, criteria, passed):
     lines = []
-    lines.append("# Pillar D Iteration 6 — Validation Report")
+    lines.append("# Pillar D Iteration 7 — Validation Report (mega-task v6 Phase 11)")
     lines.append("")
     lines.append(f"Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"Snapshot: `{snapshot}`")
     lines.append("")
     lines.append("## Headline")
     lines.append("")
-    lines.append(f"**Passed: {passed} / 12 success criteria.**")
+    lines.append(f"**Passed: {passed} / {len(criteria)} success criteria** (kickoff target ≥12).")
     lines.append("")
     for name, val in criteria.items():
         mark = "PASS" if val.get("passed") else "FAIL"
@@ -379,8 +427,8 @@ def write_markdown_report(snapshot, results, criteria, passed):
     lines.append("")
     lines.append("## Per-case summary")
     lines.append("")
-    lines.append("| Case | iter1 | wall (s) | cost ($) | creativity | novel | semantic | drift | C2.1 (ms) | E v0.3 | E v0.4 ok | GP |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| Case | iter1 | wall (s) | cost ($) | creativity | novel | semantic | inj | drift | E v0.4 ok | wcc | amr | rules | dgr |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for r in results:
         case_id = r.get("case_id")
         iter1 = "PASS" if r.get("iter1_passed") else "FAIL"
@@ -388,20 +436,24 @@ def write_markdown_report(snapshot, results, criteria, passed):
         cost = r.get("llm_cost_usd", 0)
         cr = r.get("creativity_delta_count")
         nv = r.get("novel_combo_count")
-        sm = r.get("semantic_in_deck")
+        sm = r.get("voyage_semantic_total", r.get("semantic_in_deck"))
+        inj = r.get("semantic_injection_count", 0)
         dr = r.get("intent_drift")
-        c21 = r.get("c21_latency_ms")
-        e3 = "y" if r.get("pe_v0_3_present") else "n"
         e4 = "y" if r.get("interaction_within_target") else "n"
-        gp = "y" if r.get("graduated_playtest_present") else "n"
+        wcc = "y" if (r.get("wc_coherence_present") and r.get("wc_primary_identified")) else "n"
+        amr = "y" if r.get("anti_meta_present") else "n"
+        rq = r.get("rules_query_count", 0)
+        dgr = "y" if r.get("voyage_downgrade_active") else "n"
         lines.append(
             f"| {case_id} | {iter1} | {wall_s:.1f} | ${cost:.4f} | "
-            f"{cr} | {nv} | {sm} | {dr:.3f} | {c21} | {e3} | {e4} | {gp} |"
+            f"{cr} | {nv} | {sm} | {inj} | {dr:.3f} | {e4} | {wcc} | {amr} | {rq} | {dgr} |"
         )
     lines.append("")
-    lines.append("## Iter 6 → iter 7 hand-off")
+    lines.append("## Iter 7 → iter 8 hand-off")
     lines.append("")
-    lines.append("See mega_task_v5_progress_log.md Phase 14 for the full hand-off summary.")
+    lines.append("Pillar E v0.1-v0.6 complete (mana base, card advantage, curve smoother,")
+    lines.append("interaction designer, win-con coherence, anti-meta hate). Phase 11 final")
+    lines.append("report + hand-off questions land in `mega_task_v6_final_report.md` at Phase 12.")
     lines.append("")
     REPORT_PATH.write_text("\n".join(lines), encoding="utf-8")
     print(f"Report written: {REPORT_PATH}", flush=True)

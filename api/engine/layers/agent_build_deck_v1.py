@@ -447,19 +447,14 @@ def compute_agent_build_deck_v1(
             SEMANTIC_INJECTION_VERSION,
         )
 
+        # Anchors for Voyage query = commander + must_includes ONLY.
+        # Mega-task v6 Phase 11 fix: do NOT include C2.2 wild_combo cards
+        # as anchors — they're the same cards we want to swap OUT, and
+        # protection-by-anchor would block every legal swap target.
         _injection_anchors: List[str] = [commander.strip()]
         for mic in must_include_cards:
             if isinstance(mic, str) and mic.strip():
                 _injection_anchors.append(mic.strip())
-        # Creative outliers from C2.2 (wild-discovery additions) also
-        # make strong semantic anchors — their neighbors tend to share
-        # the combo/tempo theme that won them their slot.
-        for c in deck:
-            src = c.get("source") or ""
-            if "wild_combo_discovery" in src or "creative_outlier" in src:
-                nm = (c.get("card_name") or "").strip()
-                if nm and nm not in _injection_anchors:
-                    _injection_anchors.append(nm)
 
         _n_target = _resolve_n_target(bracket)
         deck, semantic_injection_log = _inject_semantic_picks(

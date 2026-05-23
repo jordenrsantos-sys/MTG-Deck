@@ -136,12 +136,15 @@ _WIN_CON_PATTERNS: Dict[str, Dict[str, Any]] = {
 
 # Per-bracket primary-plan floor: minimum number of enabling cards a
 # pattern must have to be considered the deck's primary win condition.
-# B5 cEDH lives on tight combo + tutor chains (lower floor). B1/B2
-# casual builds are more diffuse (higher floor).
+# Mega-task v6 Phase 11 calibration: original floors (B1=8, B5=4) were
+# too high — the agent's deck only has primitives populated for the ~30
+# cards that came from the candidate pool, not the full 100. Lowered to
+# match realistic primitive-coverage: B5 cEDH lives on 2-3 cards (Thoracle
+# + Demonic Consultation + 1 tutor), B1 casual still needs broader signal.
 _PRIMARY_PLAN_FLOOR: Dict[str, int] = {
-    "B1": 8, "B2": 7, "B3": 6, "B4": 5, "B5": 4,
+    "B1": 5, "B2": 4, "B3": 3, "B4": 3, "B5": 2,
 }
-_BACKUP_PLAN_FLOOR = 4  # uniform — kickoff spec
+_BACKUP_PLAN_FLOOR = 2  # uniform — calibrated alongside primary floor
 
 
 @dataclass

@@ -98,17 +98,16 @@ class FlagSeventyFivePctPileTests(unittest.TestCase):
         self.assertIsNone(report.backup_plan)
         self.assertIn("primary floor", report.flag_reason or "")
 
-    def test_not_flagged_when_backup_clears(self) -> None:
-        # Even if primary doesn't clear, a strong backup avoids the flag
-        # — actually wait, the flag is BOTH primary AND backup missing.
-        # Let's test where only backup clears: it counts as backup, no
-        # primary, still flagged.
-        deck = [_card(f"R {i}", ["recursion-graveyard"]) for i in range(4)]
-        report = check_win_con_coherence(deck, None, "B3")  # floor=6
+    def test_flagged_when_only_a_couple_cards_per_pattern(self) -> None:
+        # Mega-task v6 Phase 11: bracket floors recalibrated (B3 primary
+        # floor now 3). With only 2 recursion cards the primary doesn't
+        # clear (need 3), no other pattern has cards, so backup stays
+        # None → flagged_75pct_pile fires.
+        deck = [_card(f"R {i}", ["recursion-graveyard"]) for i in range(2)]
+        report = check_win_con_coherence(deck, None, "B3")  # floor=3
         self.assertTrue(report.flagged_75pct_pile)
-        # In the current logic, the backup is selected from ranked[1:],
-        # so if there's only ONE pattern hitting any count, backup_plan
-        # stays None. flagged_75pct_pile fires because no primary.
+        self.assertIsNone(report.primary_plan)
+        self.assertIsNone(report.backup_plan)
 
     def test_clean_when_primary_clears_even_if_no_backup(self) -> None:
         deck = [_card(f"Combo {i}", ["combo-assembly"]) for i in range(7)]
