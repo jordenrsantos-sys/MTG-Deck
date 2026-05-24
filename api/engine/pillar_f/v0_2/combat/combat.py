@@ -47,10 +47,51 @@ from api.engine.pillar_f.v0_2.layers import (
 )
 from api.engine.pillar_f.v0_2.replacement import (
     DamageEvent, apply_replacements, run_sba_loop,
+    CombatDamageDealtEvent,
 )
 
 
-COMBAT_VERSION = "pillar_f_v0_2_combat_v1"
+COMBAT_VERSION = "pillar_f_v0_2_combat_v2"  # v14: CombatDamageDealtEvent emission
+
+
+def _emit_combat_damage_dealt(
+    state: GameState, *,
+    source_card_id: str, source_controller: int,
+    target_kind: str, target_id: Any, amount: int,
+    is_first_strike: bool,
+) -> None:
+    """v14 Phase 1: emit a CombatDamageDealtEvent after damage is
+    dealt. Cards/v11 listeners (Sanctum Seeker, Ragavan, Professional
+    Face-Breaker, Sword of the Animist) subscribe via the cards-layer
+    triggered framework. The substrate keeps no listener registry of
+    its own; this helper does a lazy import of v11's dispatcher so the
+    substrate stays runnable in isolation (e.g. fixture tests that
+    don't load the cards package).
+
+    Read-only signal -- does not mutate state aside from the listener
+    side effects each registered trigger applies. Per CR 603.2, combat
+    damage triggers fire on the damage being DEALT (post-prevention,
+    post-replacement); this helper is called after the substrate
+    has already written damage_marked + life_total updates.
+    """
+    if amount <= 0:
+        return
+    evt = CombatDamageDealtEvent(
+        source_card_id=source_card_id,
+        source_controller=source_controller,
+        target_kind=target_kind,
+        target_id=target_id,
+        amount=amount,
+        is_first_strike=is_first_strike,
+    )
+    try:
+        from api.engine.pillar_f.v0_2.cards.triggered.framework import (
+            fire_event_triggers,
+        )
+        fire_event_triggers(state, evt)
+    except ImportError:
+        # cards/ package not loaded -- substrate-only run; no listeners.
+        pass
 
 
 # ============================================================
@@ -271,6 +312,14 @@ def deal_combat_damage(
                 # Lifelink: attacker's controller gains the damage as life.
                 if atk_chars.has_keyword("lifelink"):
                     state.players[attacker.controller].life_total += evt.amount
+                # v14 Phase 1: notify CombatDamageDealtEvent listeners.
+                _emit_combat_damage_dealt(
+                    state,
+                    source_card_id=decl.attacker_card_id,
+                    source_controller=attacker.controller,
+                    target_kind=evt.target_kind, target_id=evt.target_id,
+                    amount=evt.amount, is_first_strike=is_first_strike,
+                )
             actions.append({
                 "type": "unblocked_damage", "attacker": decl.attacker_card_id,
                 "target": decl.target, "amount": evt.amount,
@@ -338,6 +387,14 @@ def deal_combat_damage(
                         )
                     if atk_chars.has_keyword("lifelink"):
                         state.players[attacker.controller].life_total += evt.amount
+                    # v14 Phase 1: notify CombatDamageDealtEvent listeners.
+                    _emit_combat_damage_dealt(
+                        state,
+                        source_card_id=decl.attacker_card_id,
+                        source_controller=attacker.controller,
+                        target_kind="creature", target_id=blocker_id,
+                        amount=evt.amount, is_first_strike=is_first_strike,
+                    )
                 actions.append({
                     "type": "damage_to_blocker", "attacker": decl.attacker_card_id,
                     "blocker": blocker_id, "amount": evt.amount,
@@ -373,6 +430,14 @@ def deal_combat_damage(
                             )
                     if atk_chars.has_keyword("lifelink"):
                         state.players[attacker.controller].life_total += evt.amount
+                    # v14 Phase 1: notify CombatDamageDealtEvent listeners.
+                    _emit_combat_damage_dealt(
+                        state,
+                        source_card_id=decl.attacker_card_id,
+                        source_controller=attacker.controller,
+                        target_kind=evt.target_kind, target_id=evt.target_id,
+                        amount=evt.amount, is_first_strike=is_first_strike,
+                    )
                 actions.append({
                     "type": "trample_excess",
                     "attacker": decl.attacker_card_id,
@@ -409,6 +474,15 @@ def deal_combat_damage(
                 attacker.damage_marked += evt.amount
                 if blocker_chars.has_keyword("lifelink"):
                     state.players[blocker.controller].life_total += evt.amount
+                # v14 Phase 1: notify CombatDamageDealtEvent listeners.
+                _emit_combat_damage_dealt(
+                    state,
+                    source_card_id=blocker_id,
+                    source_controller=blocker.controller,
+                    target_kind="creature",
+                    target_id=decl.attacker_card_id,
+                    amount=evt.amount, is_first_strike=is_first_strike,
+                )
             actions.append({
                 "type": "blocker_damage_to_attacker",
                 "blocker": blocker_id,

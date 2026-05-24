@@ -77,3 +77,63 @@ turn,replacement,layers,combat}/`. Closes 4 v11/v12 deferrals.
 - No production code changes.
 
 **Commit message:** "Phase 0 (mega-task v14): pre-flight + substrate-extension audit (4 deferrals scoped; estimated 0-4 substrate extensions for long-tail vs kickoff halt threshold of >8)".
+
+Committed as `d0c946149`.
+
+---
+
+## Phase 1 — Substrate event emission (2026-05-24)
+
+**Three new event types added to substrate**
+(`api/engine/pillar_f/v0_2/replacement/events.py`):
+
+1. **TokenCreateEvent** (NEW). Fields: creator_card_id,
+   controller_id, token_name/power/toughness/types/subtypes/colors/
+   keywords, count. Iter-12+ wires emission as token-creating cards
+   need it.
+2. **LibrarySearchEvent** (NEW). Fields: searcher_id,
+   target_player_id, search_predicate (free-form string), reveal,
+   shuffle_after. Forward-compat for tutor cards in iter-12+.
+3. **CombatDamageDealtEvent** (PROMOTED from v11 shim). Fields
+   match v11's exact shim contract (source_card_id,
+   source_controller, target_kind, target_id, amount,
+   is_first_strike). v11's `cards/triggered/framework.py` now
+   re-exports the substrate class so existing listeners
+   (Sanctum Seeker, Ragavan, etc.) work unchanged.
+
+**EVENT_TYPES** registry extended with the 3 new names.
+
+**Combat code wiring** in `combat/combat.py`:
+
+- New `_emit_combat_damage_dealt(...)` helper performs lazy import
+  of v11's `fire_event_triggers` (substrate stays runnable in
+  isolation when cards/ isn't loaded).
+- 4 emission sites added in `deal_combat_damage`:
+  - Unblocked damage (attacker -> player/planeswalker)
+  - Blocked damage (attacker -> blocker creature)
+  - Trample excess (attacker -> player/planeswalker)
+  - Blocker -> attacker damage
+- All sites skip emission when amount <= 0.
+- COMBAT_VERSION bumped from v1 -> v2.
+
+**Tests** in `tests/pillar_f_v0_2/test_v14_phase1_events.py`:
+13 tests across 4 classes:
+- **TokenCreateEventTests** (3): default construction, treasure-
+  token-spec, EVENT_TYPES registration.
+- **LibrarySearchEventTests** (4): default, tutor predicate, fetch-
+  land predicate, EVENT_TYPES registration.
+- **CombatDamageDealtEventTests** (3): default, typical creature
+  attack, v11-shim re-exports substrate class via `is` identity.
+- **CombatEmissionEndToEndTests** (3): unblocked attack fires event
+  for the unblocked damage; blocked attack fires events both
+  directions (attacker -> blocker, blocker -> attacker); 0-power
+  attacker emits no events (amount guard).
+
+**All 13 pass. Full regression: 2334 pass + 25 skip + 88 subtests**
+(+13 vs Phase 0 baseline 2321; iter-10 substrate 224/224, policy
+167/167, playtest 78/78 -- no regressions).
+
+LOC: ~80 production (events + emission helper + 4 wiring sites) +
+~190 test = ~270 LOC.
+
+**Commit message:** "Phase 1 (mega-task v14): substrate event types (TokenCreateEvent + LibrarySearchEvent + CombatDamageDealtEvent promoted from v11 shim) + combat damage emission at 4 sites".

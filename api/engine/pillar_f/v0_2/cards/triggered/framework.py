@@ -185,18 +185,15 @@ class SpellCastEvent(Event):
             self.spell_colors = []
 
 
-@dataclass
-class CombatDamageDealtEvent(Event):
-    """Fired when combat damage is dealt. Used by Ragavan, Professional
-    Face-Breaker, etc. The substrate's combat module dispatches damage
-    in iter-10 but doesn't emit this event — v11 tests fire it
-    manually until the cast/combat pipeline is wired."""
-    event_type: str = "CombatDamageDealtEvent"
-    source_card_id: str = ""
-    source_controller: int = 0
-    target_kind: str = "player"      # "player" | "creature" | "planeswalker"
-    target_id: Any = None
-    amount: int = 0
+# v14 (2026-05-24) promoted CombatDamageDealtEvent to the substrate
+# (api/engine/pillar_f/v0_2/replacement/events.py) so combat code can
+# emit it directly. The v11 shim re-exports the substrate dataclass so
+# existing listeners (Ragavan, Professional Face-Breaker, Sanctum
+# Seeker, etc.) keep working without code changes.
+from api.engine.pillar_f.v0_2.replacement.events import (
+    CombatDamageDealtEvent as _SubstrateCombatDamageDealtEvent,
+)
+CombatDamageDealtEvent = _SubstrateCombatDamageDealtEvent
 
 
 @dataclass

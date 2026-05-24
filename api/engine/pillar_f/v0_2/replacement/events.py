@@ -102,9 +102,81 @@ class MillEvent(Event):
     count: int = 1
 
 
+# ============================================================
+# v14 additions — substrate extension event types.
+# ============================================================
+
+
+@dataclass
+class TokenCreateEvent(Event):
+    """Fires when a card or ability creates a token. Caller registers
+    the token spec; the substrate emit_token_create helper handles
+    battlefield insertion + downstream EnterBattlefieldEvent
+    propagation + replacement effects (Doubling Season-style
+    multipliers).
+
+    `count` is the requested number of tokens; replacement effects
+    (e.g., Doubling Season) may modify it before emission resolves.
+    """
+    event_type: str = "TokenCreateEvent"
+    creator_card_id: Optional[str] = None
+    controller_id: int = 0
+    token_name: str = ""
+    token_power: Optional[str] = None
+    token_toughness: Optional[str] = None
+    token_types: List[str] = field(default_factory=list)
+    token_subtypes: List[str] = field(default_factory=list)
+    token_colors: List[str] = field(default_factory=list)
+    token_keywords: List[str] = field(default_factory=list)
+    count: int = 1
+
+
+@dataclass
+class LibrarySearchEvent(Event):
+    """Fires when a card or ability searches a player's library
+    (tutors, fetch lands, Demonic Tutor). Unlocks interactions with
+    Aven Mindcensor, Stranglehold, Opposition Agent via replacement
+    effects. iter-12+ tutor cards wire emission as they're added.
+
+    `search_predicate`: e.g. "any" | "basic_land" | "creature" |
+    "instant_or_sorcery". Free-form string for iter-11 simplicity;
+    iter-12+ may formalize.
+    """
+    event_type: str = "LibrarySearchEvent"
+    searcher_id: int = 0
+    target_player_id: int = 0       # whose library is being searched
+    search_predicate: str = ""
+    reveal: bool = False
+    shuffle_after: bool = True
+
+
+@dataclass
+class CombatDamageDealtEvent(Event):
+    """Fires after combat damage has been DEALT (post-damage-mark,
+    pre-SBA-cascade). Replaces v11's shim in
+    cards/triggered/framework.py which is now a thin re-export of
+    this substrate dataclass -- listeners are unchanged.
+
+    `target_kind`: "creature" | "player" | "planeswalker".
+    `amount`: damage actually dealt (post-prevention/replacement).
+    `is_first_strike`: True if dealt during the first-strike pass.
+
+    Field names match the v11 shim for drop-in compatibility.
+    """
+    event_type: str = "CombatDamageDealtEvent"
+    source_card_id: str = ""
+    source_controller: int = 0
+    target_kind: str = "player"
+    target_id: Any = None           # card_id (creature/pw) or player_id (int)
+    amount: int = 0
+    is_first_strike: bool = False
+
+
 # Convenience map for pattern matching.
 EVENT_TYPES = {
     "DrawEvent", "DamageEvent", "EnterBattlefieldEvent",
     "DieEvent", "LifeChangeEvent", "CounterAddEvent",
     "CounterRemoveEvent", "DiscardEvent", "MillEvent",
+    # v14 additions:
+    "TokenCreateEvent", "LibrarySearchEvent", "CombatDamageDealtEvent",
 }
