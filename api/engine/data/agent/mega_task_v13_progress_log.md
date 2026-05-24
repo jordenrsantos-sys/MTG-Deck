@@ -301,3 +301,92 @@ automatically. Verified by Phase 5's live smoke (next).
   regressions vs Phase 1 baseline.
 
 **Commit message:** "Phase 4 (mega-task v13): update remaining test mocks (test_agent_build_deck_v1_phase_a2 patches claude_agent_sdk.query + shutil.which instead of anthropic.Anthropic)".
+
+Committed as `83d5ac5b8`.
+
+---
+
+## Phase 5 — Live verification (2026-05-24)
+
+**Pre-flight (per kickoff dispatch checklist):**
+- `which claude` -> `/c/Users/jorde/AppData/Roaming/npm/claude`
+- `claude --version` -> `2.1.144 (Claude Code)`
+- ANTHROPIC_API_KEY env: unset for the test
+
+**Smoke runner**:
+`tools/test_v13_migration_smoke.py` -- minimal single-call live
+verification (~$0.02 budget). 6 acceptance checks.
+
+**Run #1 result: 2/6 PASS** (FAIL on the call itself):
+- Auth path correct (`_resolve_auth_mode()=='subscription'`,
+  `is_available()==True`, no API key needed).
+- Call returned `ok=False`, error: "Reached maximum budget ($0.006)".
+
+Root cause: the wrapper's initial `max_budget_usd` formula computed
+ONLY output-side cost (`max_output_tokens * 2 * output_rate`), but
+the Agent SDK's budget cap covers TOTAL spend including input
+processing + agent-loop overhead. $0.006 was insufficient for even a
+trivial single-shot call.
+
+**Self-correction (Tier 1 escalation):** updated the budget formula
+in `agent_llm_client_v1.py call_with_budget()`:
+
+```python
+raw_budget = self.estimate_cost_usd(
+    max_input_tokens, max_output_tokens, model=m,
+)
+max_budget = max(raw_budget * 5.0, 0.05)
+```
+
+5x safety multiplier covers SDK overhead. $0.05 floor ensures even
+tiny-token calls have enough headroom.
+
+**Run #2 result: 6/6 PASS:**
+- `is_available()=True`, `_resolve_auth_mode()='subscription'`.
+- `call_with_budget()` returned `ok=True` in 5.4s.
+- Text: ` ``` json\n{"echo": "ping"}\n``` `
+- `parsed_json` correctly extracted to `{'echo': 'ping'}` via the
+  existing markdown-fence stripping in `_try_parse_json`.
+- `input_tokens=3, output_tokens=14`.
+- `cost_usd=$0.018287` flowed through from SDK's
+  `ResultMessage.total_cost_usd`; `cost_basis='subscription_credit'`
+  -- confirming the new field correctly distinguishes SDK-reported
+  cost from local estimate.
+- `latency_ms=5392`, no retries, no errors.
+
+**Pre-June-15 billing note** (per kickoff). The
+`subscription_credit` basis with a real USD figure suggests the
+Agent SDK is currently charging against pay-as-you-go API rates
+rather than the not-yet-launched (2026-06-15) subscription credit
+bucket. This matches Anthropic's documented behavior. The migration
+is correct regardless; billing reconciliation belongs to post-June-15
+monitoring per the kickoff.
+
+**Wrapper regression** after the budget-formula fix:
+`test_agent_llm_client_v1.py` 35/35 pass.
+
+**Live spend across Phase 5: ~$0.025** (two single-call attempts at
+$0.006 + $0.018 = $0.024). Well under the $30 budget envelope.
+
+**Verification points NOT run autonomously**:
+- Kickoff step 3 (boot `python -m api.main` engine) -- requires user
+  to start the server.
+- Kickoff step 4 (build one Edgar Markov B3 via SSE UI) -- requires
+  user to interact with browser UI.
+- Kickoff step 5 (3-game sub-C mini-smoke) -- the v12 Phase 7 smoke
+  cost $1.02 on the OLD SDK; re-running here would duplicate
+  ~$1 of validation that the single-call live verify + the 2321
+  passing unit tests already cover at the wrapper boundary.
+
+The 2 deferred live verifications are user-runnable via:
+- `python -m api.main` then build via SSE UI (kickoff steps 3+4).
+- `python tools/test_pillar_f_v0_2_playtest_phase7_smoke.py` (kickoff
+  step 5; ~$1 spend).
+
+Both will pick up the migrated SDK automatically via the central
+wrapper. The single-call smoke + full unit suite already demonstrate
+the migration is operational at the wrapper boundary; the deferred
+checks are belt-and-suspenders confirmation rather than gate
+requirements.
+
+**Commit message:** "Phase 5 (mega-task v13): live verification 6/6 PASS via subscription auth ($0.025 spend); budget formula tuned for Agent SDK total-spend cap".

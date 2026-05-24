@@ -279,12 +279,22 @@ class AnthropicClient:
                 latency_ms=int((time.perf_counter() - started) * 1000),
             )
 
-        # ---- compute max_budget_usd from max_output_tokens cap ----
-        # The Agent SDK uses USD budget instead of token cap. We back
-        # into one from the legacy max_output_tokens contract using
-        # output-side pricing, with a 2x safety multiplier so the SDK
-        # doesn't terminate just below the requested output size.
-        max_budget = self.estimate_cost_usd(0, max_output_tokens * 2, model=m)
+        # ---- compute max_budget_usd from input + output caps ----
+        # The Agent SDK's `max_budget_usd` is a TOTAL-spend ceiling
+        # across the whole agent invocation (input tokens + output
+        # tokens + any tool-loop overhead). The legacy contract
+        # passed in max_input_tokens + max_output_tokens as separate
+        # token caps. We back into a total-USD ceiling that's
+        # generous enough to avoid the SDK terminating before the
+        # response completes -- compute the worst-case raw cost at
+        # the model's published rate, then multiply by a 5x safety
+        # factor to cover Agent SDK overhead (system prompt
+        # processing, response framing, etc.). A $0.05 floor ensures
+        # even tiny calls have enough headroom.
+        raw_budget = self.estimate_cost_usd(
+            max_input_tokens, max_output_tokens, model=m,
+        )
+        max_budget = max(raw_budget * 5.0, 0.05)
         if max_budget <= 0:
             # Unknown model -> permissive fallback cap so the call can
             # proceed (errors will surface naturally if cost explodes).
