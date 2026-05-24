@@ -543,3 +543,46 @@ hooks deferred to Phase 9 (where the live 4-LLM 20-turn integration
 will demonstrate the politics dynamics gate).
 
 **Commit message:** "Phase 7 (mega-task v10): threat-vector + politics state tracker".
+
+Committed as `a4eb2359f`. Push landed.
+
+---
+
+## Phase 8 — Cost guardrails + cheap-fallback responder (2026-05-23)
+
+**Scope note.** Phase 8's CODE was already landed across Phases
+3 + 5 + 6 (CostTracker module, cheap_fallback_responder,
+`is_player_in_fallback` + `game_halted_for_cost` checks in
+llm_responder + mulligan_decider). Phase 8's work was to add the
+explicit cost-guardrail BEHAVIORAL test suite and verify the
+end-to-end fallback flow.
+
+**Tests** in `tests/pillar_f_v0_2_policy/test_phase8_cost_guardrails.py`:
+14 tests across 5 classes:
+- **CostDefaultsTests** (3): per-turn ceiling default $0.30, per-game
+  ceiling default $10, fresh CostTracker uses defaults.
+- **CheapFallbackResponderTests** (2): returns None for all 4 seats,
+  unaffected by eligible-action availability (pass is always legal).
+- **ResponderCostGuardrailsTests** (5): responder skips LLM when
+  player in fallback, skips when game halted, trips per-turn ceiling
+  mid-loop and subsequent calls skip LLM, trips per-game ceiling
+  halts all players, turn rollover clears per-turn fallback.
+- **CrossComponentCostFlowTests** (1): single CostTracker
+  accumulates spend across BOTH mulligan_decider AND
+  priority_responder; per-game ceiling fires regardless of which
+  caller drove the spend.
+- **CostEventsTests** (3): per-turn ceiling emits
+  COST_CEILING_HIT event, per-game ceiling emits
+  GAME_COST_CEILING_EXCEEDED, purpose field recorded per call.
+
+**All 14 pass. Full policy regression: 167/167.**
+
+~340 LOC test (no new production code — Phase 8 is consolidation
++ behavioral verification of the cost-guardrail surface that has
+been incrementally built up over Phases 3, 5, 6).
+
+The cost-tracker contract is now verified for: accumulation,
+per-turn ceiling, per-game ceiling, fallback flag persistence,
+turn rollover reset, cross-component sharing, and event emission.
+
+**Commit message:** "Phase 8 (mega-task v10): cost guardrails + cheap-fallback behavioral test suite".
