@@ -1,0 +1,462 @@
+{
+  "game_idx": 2,
+  "seed": 3,
+  "deck_under_test_pid": 0,
+  "deck_ids": [
+    "krenko-v15-phase1",
+    "heliod-v15-phase1",
+    "imp-v15-phase1",
+    "snapcaster-v15-phase1"
+  ],
+  "winner_pid": null,
+  "turns_run": 8,
+  "halted_for_cost": false,
+  "halted_reason": "max_turns",
+  "elimination_order": [],
+  "final_life_totals": {
+    "0": 40,
+    "1": 40,
+    "2": 40,
+    "3": 40
+  },
+  "final_threat_vectors": {
+    "0": {
+      "1": 0.212,
+      "2": 0.167,
+      "3": 0.212
+    },
+    "1": {
+      "0": 0.142,
+      "2": 0.167,
+      "3": 0.212
+    },
+    "2": {
+      "0": 0.142,
+      "1": 0.212,
+      "3": 0.212
+    },
+    "3": {
+      "0": 0.142,
+      "1": 0.212,
+      "2": 0.167
+    }
+  },
+  "politics_summary": {
+    "alliance_distribution": {
+      "0": {
+        "ally": 0,
+        "neutral": 0,
+        "rival": 0
+      },
+      "1": {
+        "ally": 0,
+        "neutral": 0,
+        "rival": 0
+      },
+      "2": {
+        "ally": 0,
+        "neutral": 0,
+        "rival": 0
+      },
+      "3": {
+        "ally": 0,
+        "neutral": 0,
+        "rival": 0
+      }
+    },
+    "deals_made_count": 0,
+    "deals_honored_count": 0,
+    "damage_log_count": 0
+  },
+  "action_log": [
+    "T1 P0 Play land: Mountain",
+    "T1 P1 Play land: Plains",
+    "T1 P2 Play land: Swamp",
+    "T1 P3 Play land: Island",
+    "T2 P0 Play land: Mountain",
+    "T2 P1 Play land: Plains",
+    "T2 P2 Play land: Swamp",
+    "T2 P3 Play land: Island",
+    "T3 P0 Play land: Mountain",
+    "T3 P1 Play land: Plains",
+    "T3 P2 Play land: Swamp",
+    "T3 P3 Play land: Island",
+    "T4 P0 Play land: Mountain",
+    "T4 P1 Play land: Plains",
+    "T4 P2 Play land: Swamp",
+    "T4 P3 Play land: Island",
+    "T5 P0 Play land: Mountain",
+    "T5 P1 Play land: Plains",
+    "T5 P2 Play land: Swamp",
+    "T5 P3 Play land: Island",
+    "T6 P0 Play land: Mountain",
+    "T6 P1 Play land: Plains",
+    "T6 P2 Play land: Swamp",
+    "T6 P3 Play land: Island",
+    "T7 P0 Play land: Mountain",
+    "T7 P1 Play land: Plains",
+    "T7 P2 Play land: Swamp",
+    "T8 P0 Play land: Mountain",
+    "T8 P2 Play land: Swamp",
+    "T8 P3 Play land: Island"
+  ],
+  "combat_decisions_log": [
+    {
+      "phase": "attackers",
+      "player_id": 0,
+      "turn_number": 1,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 1,
+      "turn_number": 1,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 2,
+      "turn_number": 1,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 3,
+      "turn_number": 1,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 0,
+      "turn_number": 2,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 1,
+      "turn_number": 2,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 2,
+      "turn_number": 2,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 3,
+      "turn_number": 2,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 0,
+      "turn_number": 3,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 1,
+      "turn_number": 3,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 2,
+      "turn_number": 3,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 3,
+      "turn_number": 3,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 0,
+      "turn_number": 4,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 1,
+      "turn_number": 4,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 2,
+      "turn_number": 4,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 3,
+      "turn_number": 4,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 0,
+      "turn_number": 5,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 1,
+      "turn_number": 5,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 2,
+      "turn_number": 5,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 3,
+      "turn_number": 5,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 0,
+      "turn_number": 6,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 1,
+      "turn_number": 6,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 2,
+      "turn_number": 6,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 3,
+      "turn_number": 6,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 0,
+      "turn_number": 7,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 1,
+      "turn_number": 7,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 2,
+      "turn_number": 7,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 3,
+      "turn_number": 7,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 0,
+      "turn_number": 8,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 1,
+      "turn_number": 8,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 2,
+      "turn_number": 8,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    },
+    {
+      "phase": "attackers",
+      "player_id": 3,
+      "turn_number": 8,
+      "eligible_count": 0,
+      "llm_calls_made": 0,
+      "parse_failures": 0,
+      "fallback_used": false,
+      "final_count": 0,
+      "rationale": ""
+    }
+  ],
+  "total_spend_usd": 1.2937518,
+  "total_llm_calls": 53,
+  "fallback_events": [],
+  "elapsed_seconds": 275.71866939999745,
+  "notes": []
+}
