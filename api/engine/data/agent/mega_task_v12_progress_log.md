@@ -442,3 +442,53 @@ Committed as `2a5c026af`.
 ~220 LOC production + ~280 LOC test.
 
 **Commit message:** "Phase 5 (mega-task v12): integration with agent_graduated_playtest_v1 (Stage 1 + Stage 2 dispatcher + calibration log)".
+
+Committed as `03b6e719c`.
+
+---
+
+## Phase 6 — Per-cycle cost ceiling + halt flow (2026-05-23)
+
+**Scope note.** The CORE per-cycle ceiling enforcement landed in
+Phase 4 (cycle_runner checks `cost_to_date >= cycle_cost_ceiling`
+each iteration; aggregator returns INCOMPLETE when halted). Phase 6
+adds:
+
+1. **CYCLE_COST_HALT event recording.** The cycle_runner now collects
+   structured events in a local `cycle_events: List[Dict]`; on halt,
+   appends `{event: CYCLE_COST_HALT, at_game_idx, cost_to_date,
+   ceiling, games_completed, games_remaining_skipped}`. Attached to
+   `report.cost_summary["cycle_events"]` for telemetry + dispatcher
+   surfacing.
+2. **Cost telemetry surfacing.** `report.cost_summary` gains
+   `cycle_cost_ceiling_usd` + `halted_for_cycle_cost` keys so
+   downstream consumers (dispatcher UI, calibration team) can read
+   without inspecting per-game results.
+
+**Tests** in
+`tests/pillar_f_v0_2_playtest/test_phase6_cycle_cost.py`:
+7 tests across 5 classes:
+- **CycleCostCeilingDefaultsTests** (1): default $200 exposed via
+  StageTwoCycleConfig.
+- **CycleCeilingHaltsTests** (2): tight ceiling halts early ->
+  INCOMPLETE; CYCLE_COST_HALT event recorded with correct fields.
+- **CycleCeilingNotTrippedTests** (1): generous ceiling lets cycle
+  complete + no halt events emitted + halted_for_cycle_cost=False.
+- **CycleCeilingOverrideTests** (1): cycle_config.
+  cycle_cost_ceiling_usd is the override path for high-stakes
+  opt-in builds.
+- **CyclePartialArtifactsTests** (2): per-game JSONs through halt
+  point persisted; cycle.json + cycle_report.md marked INCOMPLETE
+  on disk.
+
+**All 7 pass. Full regression: 469/469.**
+
+~30 LOC production (telemetry plumbing) + ~210 LOC test.
+
+The dispatcher contract is now: read `report.cost_summary.
+halted_for_cycle_cost` + `report.cost_summary.cycle_events` to
+distinguish a cost-halted INCOMPLETE from a no-games-run INCOMPLETE.
+Iter-13 UI surfaces the CYCLE_COST_HALT events alongside the
+recommendation tier.
+
+**Commit message:** "Phase 6 (mega-task v12): per-cycle cost ceiling halt telemetry + tests".

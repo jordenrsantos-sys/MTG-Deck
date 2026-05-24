@@ -22,7 +22,7 @@ from __future__ import annotations
 import random
 import time
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from api.engine.pillar_f.v0_2.playtest.orchestrator import (
     StageTwoDeck, StageTwoGameConfig, StageTwoGameResult,
@@ -110,6 +110,7 @@ def run_stage_two_cycle(
     game_results: List[StageTwoGameResult] = []
     cost_to_date = 0.0
     halted_for_cycle_cost = False
+    cycle_events: List[Dict[str, Any]] = []
 
     output_dir = cycle_config.output_dir
     if output_dir is not None:
@@ -118,6 +119,14 @@ def run_stage_two_cycle(
     for game_idx in range(cycle_config.n_games):
         if cost_to_date >= cycle_config.cycle_cost_ceiling_usd:
             halted_for_cycle_cost = True
+            cycle_events.append({
+                "event": "CYCLE_COST_HALT",
+                "at_game_idx": game_idx,
+                "cost_to_date": cost_to_date,
+                "ceiling": cycle_config.cycle_cost_ceiling_usd,
+                "games_completed": len(game_results),
+                "games_remaining_skipped": cycle_config.n_games - game_idx,
+            })
             break
         per_game_config = _build_per_game_config(
             cycle_config, game_idx, rng,
@@ -143,6 +152,13 @@ def run_stage_two_cycle(
         game_results=game_results,
         halted_for_cycle_cost=halted_for_cycle_cost,
     )
+    # Attach cycle events (CYCLE_COST_HALT, etc.) to cost_summary
+    # for telemetry. Phase 6 contract.
+    report.cost_summary["cycle_events"] = cycle_events
+    report.cost_summary["cycle_cost_ceiling_usd"] = (
+        cycle_config.cycle_cost_ceiling_usd
+    )
+    report.cost_summary["halted_for_cycle_cost"] = halted_for_cycle_cost
 
     if output_dir is not None:
         write_cycle_report_json(report, output_dir / "cycle.json")
