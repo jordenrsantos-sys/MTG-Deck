@@ -377,3 +377,68 @@ Captured in `survives_mid_game` boolean.
 ~420 LOC production + ~310 LOC test.
 
 **Commit message:** "Phase 4 (mega-task v12): cycle runner + aggregation + markdown/JSON report writer".
+
+Committed as `2a5c026af`.
+
+---
+
+## Phase 5 — Integration with agent_graduated_playtest_v1 (2026-05-23)
+
+**Implementation** in
+`api/engine/layers/agent_graduated_playtest_stage_2_v1.py`:
+
+- New module sits beside Stage 1's `agent_graduated_playtest_v1.py`
+  (does NOT modify v1). Exposes `run_stage_1_then_stage_2(deck,
+  bracket, enable_stage_2, stage_2_deck, stage_2_control_pool,
+  stage_2_n_games, stage_2_output_dir, stage_2_cycle_cost_ceiling_usd,
+  llm_client, db_snapshot_id, calibration_log_path) -> CombinedReport`.
+- **Flow**:
+  1. Always run Stage 1 (statistical approximator).
+  2. If `enable_stage_2=False` (opt-in default): return CombinedReport
+     with `stage_2_recommendation="SKIPPED"`.
+  3. If `enable_stage_2=True` but stage_2 args missing: SKIPPED with
+     explanation.
+  4. **Budget guard**: if Stage 1 stalled at Tier 0 with pod_winrate
+     < 0.10, skip Stage 2 to save the $150/cycle spend on a
+     definitively bad deck. Returns `RED` with "Pillar D revision
+     before re-test" reason.
+  5. Otherwise: run Stage 2 via run_stage_two_cycle; append
+     calibration log record; stitch into CombinedReport.
+
+- **Calibration log** at
+  `api/engine/data/agent/stage_calibration_log.json` by default
+  (override per call). Append-only JSON array; each record has
+  timestamp, deck_id, archetype, bracket, stage_1_winrate,
+  stage_2_winrate, delta, delta_exceeds_threshold (|delta| > 0.15),
+  stage_2_recommendation, version.
+- Recovers from missing file (creates) AND corrupt file (overwrites
+  with single-record list).
+- `CALIBRATION_DELTA_THRESHOLD = 0.15` per scoping doc section 6.
+
+- **Dispatcher contract**: read `CombinedReport.stage_2_recommendation`
+  to decide ship / ship-with-summary / revise:
+  - `GREEN` -> ship immediately
+  - `YELLOW` -> ship + confirm
+  - `RED` -> Pillar D re-pick before re-test
+  - `INCOMPLETE` -> Stage 2 halted for cost; ship as Stage 1 alone
+  - `SKIPPED` -> user did not opt-in; ship as Stage 1 alone
+
+**Tests** in
+`tests/pillar_f_v0_2_playtest/test_phase5_dispatcher_integration.py`:
+8 tests across 3 classes:
+- **OptInFlagTests** (2): default skips Stage 2; enable=True with
+  missing args -> SKIPPED + explanation.
+- **FullFlowTests** (2): enable=True with mocks -> Stage 2 runs +
+  CombinedReport populated; Stage 1 RED at Tier 0 with low winrate
+  -> Stage 2 skipped via budget guard (uses module-attr stub of
+  run_graduated_sweep so we don't need real opposition data).
+- **CalibrationLogTests** (4): append with timestamp + delta;
+  appends to existing records; recovers from corrupt file; delta
+  threshold constant exposed.
+
+**All 8 pass. Full regression: 462/462 (224 substrate + 167 policy
++ 71 playtest).**
+
+~220 LOC production + ~280 LOC test.
+
+**Commit message:** "Phase 5 (mega-task v12): integration with agent_graduated_playtest_v1 (Stage 1 + Stage 2 dispatcher + calibration log)".
