@@ -246,3 +246,53 @@ LOC: ~330 production (cast/__init__.py + cost_modifier.py) +
 ~370 test = ~700 LOC.
 
 **Commit message:** "Phase 3 (mega-task v14): cast pipeline static_modifier consumer (cast/ subdir; 17 cards covered live across cost_reduction + spell_restriction + attack_tax + additional_land_drops + uncounterable + additional_mana_when_land_taps)".
+
+Committed as `070e11673`.
+
+---
+
+## Phase 4 — 23 long-tail activated-bucket fall-throughs (2026-05-24)
+
+**Implementation:** `cards/activated/long_tail_v14.py` (~280 LOC).
+23 cards from v11's fall-through list -- each now has at least one
+ActivatedAbilityMeta + resolver registered.
+
+Card list: Ancient Den, Bender's Waterskin, Blazemire Verge, Castle
+Garenbrig, Castle Locthwain, Crystal Vein, Graven Cairns, Great
+Furnace, Hall of Heliod's Generosity, Mossfire Valley, Palladium
+Myr, Reassembling Skeleton, Reflecting Pool, Shizo Death's
+Storehouse, Staff of Domination, Sungrass Prairie, The Mycosynth
+Gardens, Throne of Eldraine, Treasure Vault, Underground Sea,
+Urza's Mine/Power Plant/Tower.
+
+**No substrate extensions needed.** Kickoff halt-trigger was ">8
+substrate extensions"; actual: **0**. All 23 handlers use existing
+substrate primitives (push_to_stack, resolve_top, mana_pool,
+move_card, Card.tapped). Staff of Domination's multi-modal pattern
++ Bender's Waterskin's mana-storage pattern documented as iter-12+
+stubs (one mode each wired).
+
+**Coverage tool delta:**
+
+| Metric | Pre-v14 | Post-v14 | Delta |
+|--------|---------|----------|-------|
+| Full handler coverage | 432 (86.4%) | **455 (91.0%)** | +23 |
+| Data-only | 45 (9.0%) | 45 (9.0%) | unchanged |
+| Fall-through | 23 (4.6%) | **0 (0.0%)** | -23 |
+| **Addressed** | 477 (95.4%) | **500 (100.0%)** | **+23** |
+
+Target hit: kickoff said >=96%; achieved **100.0%**.
+
+**Tests** in `test_v14_phase4_long_tail.py`: 10 tests across 3
+classes -- coverage registration (2: all 23 + count cross-check),
+mana production (5: Great Furnace, Ancient Den, Palladium Myr,
+Urza's Tower base + urzatron bonus), special activations (3:
+Crystal Vein 2-colorless, Staff of Domination untap target,
+Reassembling Skeleton graveyard recursion returning tapped).
+
+**All 10 pass. Full regression: 2372 pass + 25 skip + 88 subtests**
+(+10 vs Phase 3 baseline; no regressions).
+
+LOC: ~280 production + ~210 test = ~490 LOC.
+
+**Commit message:** "Phase 4 (mega-task v14): 23 long-tail activated handlers -> oracle_seed_coverage 95.4% to 100.0% (0 fall-throughs; 0 substrate extensions vs kickoff halt threshold of >8)".

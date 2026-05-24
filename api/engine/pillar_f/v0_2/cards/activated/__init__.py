@@ -29,6 +29,10 @@ from api.engine.pillar_f.v0_2.cards.activated import mana_lands  # noqa: F401
 from api.engine.pillar_f.v0_2.cards.activated import equipment  # noqa: F401
 from api.engine.pillar_f.v0_2.cards.activated import dual_lands_bulk  # noqa: F401
 from api.engine.pillar_f.v0_2.cards.activated import bulk_metadata_stubs  # noqa: F401
+# v14 Phase 4: 23 long-tail cards previously in "best-effort interpret"
+# fall-through bucket. Wires explicit ActivatedAbilityMeta + resolver
+# for each so oracle_seed_coverage moves them to "full handler".
+from api.engine.pillar_f.v0_2.cards.activated import long_tail_v14  # noqa: F401
 
 __all__ = [
     "ActivatedAbilityMeta", "register_activated_ability",
