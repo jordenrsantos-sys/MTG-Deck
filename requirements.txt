@@ -14,7 +14,15 @@ httpx>=0.28.0
 # (agent_llm_client_v1). Optional at engine runtime: build_deck_v1
 # gracefully falls back to iteration-1 deterministic behavior if
 # ANTHROPIC_API_KEY is missing or `anthropic` cannot be imported.
+#
+# Mega-task v13 (2026-05-24) migration: the runtime LLM call surface
+# is moving from the `anthropic` SDK (API key auth) to the
+# `claude-agent-sdk` (Claude Code subscription auth via local
+# credentials in ~/.claude/). Both packages installed during the
+# v13 migration window. `anthropic` will be removed in Phase 6 once
+# Phase 5 live verification confirms the Agent SDK path is operational.
 anthropic>=0.50.0
+claude-agent-sdk>=0.1.0
 # Pillar D iter 4 — Voyage AI semantic retrieval
 # (agent_semantic_retrieval_v1). Optional at runtime: query_neighbors
 # returns [] gracefully when the embeddings index isn't populated.
