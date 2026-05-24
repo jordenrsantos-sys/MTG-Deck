@@ -25,6 +25,7 @@ from api.engine.pillar_f.v0_2.cards.etb.framework import (
 # Per-card modules — importing triggers their registration calls.
 from api.engine.pillar_f.v0_2.cards.etb import creatures  # noqa: F401
 from api.engine.pillar_f.v0_2.cards.etb import lands_and_enchantments  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.etb import bulk_metadata_stubs  # noqa: F401
 
 __all__ = [
     "register_etb_trigger", "get_etb_trigger", "fire_etb_triggers",

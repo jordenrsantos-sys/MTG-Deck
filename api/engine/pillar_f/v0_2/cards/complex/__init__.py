@@ -22,3 +22,4 @@ kickoff is "build the full handler set + add a dedicated combo-line
 integration test for each".
 """
 from api.engine.pillar_f.v0_2.cards.complex import multi_handler_cards  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.complex import bulk_metadata_stubs  # noqa: F401

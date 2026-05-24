@@ -27,6 +27,8 @@ from api.engine.pillar_f.v0_2.cards.activated import mana_rocks  # noqa: F401
 from api.engine.pillar_f.v0_2.cards.activated import fetchlands  # noqa: F401
 from api.engine.pillar_f.v0_2.cards.activated import mana_lands  # noqa: F401
 from api.engine.pillar_f.v0_2.cards.activated import equipment  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.activated import dual_lands_bulk  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.activated import bulk_metadata_stubs  # noqa: F401
 
 __all__ = [
     "ActivatedAbilityMeta", "register_activated_ability",

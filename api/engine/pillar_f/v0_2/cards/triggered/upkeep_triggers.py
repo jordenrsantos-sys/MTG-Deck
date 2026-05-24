@@ -198,6 +198,27 @@ BMC_TRIGGER = {
 }
 
 
+# ============================================================
+# Pre-register the metadata for each upkeep-trigger card in the v11
+# step-trigger index. This is purely a discoverability record — the
+# substrate's actual step_trigger registration happens at
+# install_upkeep_trigger() time (ETB). The pre-registration is so
+# the Phase 9 coverage sweep + the LLM policy can see "this card has
+# an upkeep trigger" without needing an instance on the battlefield.
+# ============================================================
+
+
+_UPKEEP_METADATA_CARDS = (
+    "Phyrexian Arena", "Sylvan Library", "Land Tax",
+    "Black Market Connections",
+)
+for _meta_name in _UPKEEP_METADATA_CARDS:
+    register_step_trigger_for_card(_meta_name, {
+        "metadata_only": True,
+        "card_name": _meta_name,
+    })
+
+
 # ==========================================================
 # attach / detach helpers
 # ==========================================================

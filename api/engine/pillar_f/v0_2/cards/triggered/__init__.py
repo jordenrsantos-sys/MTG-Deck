@@ -31,6 +31,7 @@ from api.engine.pillar_f.v0_2.cards.triggered.framework import (
 from api.engine.pillar_f.v0_2.cards.triggered import death_triggers  # noqa: F401
 from api.engine.pillar_f.v0_2.cards.triggered import spell_cast_triggers  # noqa: F401
 from api.engine.pillar_f.v0_2.cards.triggered import upkeep_triggers  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.triggered import bulk_metadata_stubs  # noqa: F401
 
 __all__ = [
     "EventTriggerFn", "register_event_trigger", "get_event_trigger",

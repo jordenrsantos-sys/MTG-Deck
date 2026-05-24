@@ -22,6 +22,7 @@ from api.engine.pillar_f.v0_2.cards.spell import removal  # noqa: F401
 from api.engine.pillar_f.v0_2.cards.spell import counterspells  # noqa: F401
 from api.engine.pillar_f.v0_2.cards.spell import ramp_and_draw  # noqa: F401
 from api.engine.pillar_f.v0_2.cards.spell import mass_removal_and_protection  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.spell import bulk_stubs  # noqa: F401
 
 __all__ = [
     "SpellResolveFn", "register_spell", "get_spell_resolver_key",
