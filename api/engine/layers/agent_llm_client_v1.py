@@ -286,19 +286,23 @@ class AnthropicClient:
         # passed in max_input_tokens + max_output_tokens as separate
         # token caps. We back into a total-USD ceiling that's
         # generous enough to avoid the SDK terminating before the
-        # response completes -- compute the worst-case raw cost at
-        # the model's published rate, then multiply by a 5x safety
-        # factor to cover Agent SDK overhead (system prompt
-        # processing, response framing, etc.). A $0.05 floor ensures
-        # even tiny calls have enough headroom.
+        # response completes.
+        #
+        # v13 originally used (raw_budget * 5, floor $0.05); v15
+        # observed those failing as "Reached maximum budget" on
+        # trivial calls (Agent SDK overhead has grown over the
+        # post-v13 SDK update window). Bumped multiplier to 10x +
+        # floor to $0.50 -- still well under per-game and per-cycle
+        # ceilings, and CostTracker's per-game / per-cycle gates
+        # remain the authoritative spend governance.
         raw_budget = self.estimate_cost_usd(
             max_input_tokens, max_output_tokens, model=m,
         )
-        max_budget = max(raw_budget * 5.0, 0.05)
+        max_budget = max(raw_budget * 10.0, 0.50)
         if max_budget <= 0:
             # Unknown model -> permissive fallback cap so the call can
             # proceed (errors will surface naturally if cost explodes).
-            max_budget = 1.0
+            max_budget = 2.0
 
         # ---- retry loop ----
         retries = 0
