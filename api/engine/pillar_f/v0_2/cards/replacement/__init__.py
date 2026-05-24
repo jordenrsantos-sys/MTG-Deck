@@ -16,4 +16,18 @@ helper tracks per-event applied_ids to enforce this. Per-card handlers
 should be idempotent on the event object (calling them twice with the
 same event shouldn't double-apply).
 """
-# Phase 5 modules wire in as cards are added.
+from api.engine.pillar_f.v0_2.cards.replacement import framework  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.replacement.framework import (
+    ReplacementBuilder, register_replacement_builder,
+    get_replacement_builder, attach_replacements_for,
+    detach_replacements_for, all_registered_card_names,
+)
+
+# Per-card module — wires substrate replacement_fns + builders.
+from api.engine.pillar_f.v0_2.cards.replacement import cards  # noqa: F401
+
+__all__ = [
+    "ReplacementBuilder", "register_replacement_builder",
+    "get_replacement_builder", "attach_replacements_for",
+    "detach_replacements_for", "all_registered_card_names",
+]
