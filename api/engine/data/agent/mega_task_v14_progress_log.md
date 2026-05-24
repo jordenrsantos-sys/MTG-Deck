@@ -198,3 +198,51 @@ change; v14 just made the registration path ergonomic + auditable.
 LOC: ~55 production (helper + counter field) + ~150 test = ~205 LOC.
 
 **Commit message:** "Phase 2 (mega-task v14): UEOT cleanup substrate hook -- ergonomic register_until_end_of_turn_effect helper on GameState (existing cleanup_step filter unchanged)".
+
+Committed as `8824f9406`.
+
+---
+
+## Phase 3 — Cast pipeline static_modifier consumer (2026-05-24)
+
+**New substrate subdir:** `api/engine/pillar_f/v0_2/cast/`.
+
+**Implementation** in `cast/cost_modifier.py`: 6 public functions
+(effective_cast_cost_delta + is_spell_cast_legal +
+is_spell_uncounterable + additional_land_drops_available +
+effective_attack_tax + extra_mana_from_aura_on_land) + ManaCostDelta
+dataclass. Lazy import of v11's static_modifier registry keeps
+substrate runnable in isolation.
+
+**17 cards covered live** (vs 45 data-only entries in v11's
+registry; the other 28 are iter-12+ work):
+- cost_reduction (8): Etherium Sculptor, Foundry Inspector, Goblin
+  Anarchomancer, Emerald/Jet/Pearl/Ruby/Sapphire Medallions.
+- spell_restriction (2): Drannith Magistrate, Grand Abolisher.
+- attack_tax (2): Propaganda, Ghostly Prison.
+- additional_land_drops (2): Azusa, Lost but Seeking; Exploration.
+- additional_mana_when_land_taps (2): Utopia Sprawl, Wild Growth
+  (stubbed pending iter-12 aura-attachment tracking).
+- uncounterable (1): Hexing Squelcher.
+
+**Self-correction:** initial consumer used internal vocab
+(`'own'`/`'opp'`); first test run revealed v11 registry uses
+heterogeneous strings per effect_key (`'your_spells'`, `'opponents'`,
+`'controller'`). Added `_normalize_applies_to` helper as single
+translation point. Also fixed type_filter to be case-insensitive
+(v11 uses `'Artifact'` not `'artifact'`) and restrict to be a list
+of codes (v11 uses `['cast_from_non_hand_zones']`).
+
+**Tests** in `test_v14_phase3_cost_modifier.py`: 20 tests across 7
+classes -- cost reduction (6: baseline + Jet/Etherium/Foundry +
+multiple stack), spell restriction (2), uncounterable (2),
+additional land drops (4), attack tax (4), multi-card interaction
+(2: Goblin Anarchomancer reduces RG; sources list populated).
+
+**All 20 pass. Full regression: 2362 pass + 25 skip + 88 subtests**
+(+20 vs Phase 2 baseline; no regressions).
+
+LOC: ~330 production (cast/__init__.py + cost_modifier.py) +
+~370 test = ~700 LOC.
+
+**Commit message:** "Phase 3 (mega-task v14): cast pipeline static_modifier consumer (cast/ subdir; 17 cards covered live across cost_reduction + spell_restriction + attack_tax + additional_land_drops + uncounterable + additional_mana_when_land_taps)".
