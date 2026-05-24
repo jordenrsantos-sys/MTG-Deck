@@ -653,3 +653,86 @@ state; documented above without re-running ($3.26 already spent
 suffices as evidence).
 
 **Commit message:** "Phase 9 (mega-task v10): 4-LLM 20-turn ship-gate smoke (5/7 PASS, $3.26)".
+
+Committed as `dcabdcffa`. Push landed.
+
+---
+
+## Phase 10 — Final regression + report + memory + sub-C scoping (2026-05-23)
+
+**Full regression** (clean run):
+- `pytest tests/` -> **2234 pass + 25 skip + 88 subtests passed**
+  in 165s. Iter-10 baseline 1852+ met (delta = +382 from sub-B's
+  167 policy tests + earlier iter additions).
+- `npx vitest run` -> **774 pass + 2 fail in
+  `metricPillHeader.test.ts`**. The 2 failures are PRE-EXISTING
+  (committed May 19 before iter-11 started by `784b7af22`, "ui:
+  interactive bracket selector + Pillar A.7 combo data
+  alignment") — they are not sub-B regressions. Vitest baseline
+  of 774 met.
+
+**Deliverable: final report.** Written to
+`MTG-Deck-Builder-Claude/mega_task_v10_final_report.md` (~250
+lines):
+- Executive summary
+- Phase-by-phase table with commits + LOC counts
+- Architecture overview (module layout, substrate plug-points,
+  LLM call flow, cost-guardrail flow)
+- Live ship-gate results (Phase 3 + Phase 6 + Phase 9 details)
+- Token-saving heuristics section
+- Architectural-rule honoring section
+- Test counts table
+- Risks + follow-ups for sub-mega-task C
+- Hand-off section
+
+**Deliverable: sub-C scoping prep.** Written to
+`MTG-Deck-Builder-Claude/pillar_f_v0_2_sub_c_stage_2_playtest_scoping.md`
+(~250 lines, 10 sections):
+- Goals + non-goals
+- Pod orchestrator design (Mode A solo + Mode B round-robin)
+- Win-condition tracking schema
+- Combat + counter-war integration plan (gates 5 + 6 from sub-B
+  Phase 9, deferred to sub-C)
+- Stage 2 validation harness (cycle runner + aggregation)
+- Integration with `agent_graduated_playtest_v1.py`
+- Cost guardrails for sub-C (per-turn + per-game + per-cycle)
+- Per-deck Stage 2 report format
+- Phase plan preview (8 phases, ~4-5 weeks CC)
+- Risks + mitigations table
+
+**Memory update:**
+- Wrote
+  `C:\Users\jorde\.claude\projects\E--MTG-Root\memory\project_mega_task_v10_shipped.md`
+  (project memory; ~70 lines covering ship state + key surfaces +
+  deferred items + git ship trail).
+- Added one-line MEMORY.md index entry.
+- Updated `project_5_pillar_forward_plan.md` to reflect sub-B
+  SHIPPED + sub-C scoped/queued + cross-link to v10 + v11 memories.
+
+**No new production code in Phase 10.** All deliverables are
+markdown reports + memory updates.
+
+**Commit message:** "Phase 10 (mega-task v10): final regression + report + sub-C scoping prep — SHIPPED".
+
+---
+
+## Final state (2026-05-23)
+
+| Phase | Status | Commit |
+|-------|--------|--------|
+| 0 | DONE | (early) |
+| 1 | DONE | `f1310dd8f` |
+| 2 | DONE | `c2dc05a89` |
+| 3 | SHIPPED (Phase 1 gate) | `ad8a5ad36` |
+| 4 | DONE | `e124aca13` |
+| 5 | DONE | `23d079458` |
+| 6 | SHIPPED (Phase 2 gate) | `e809b3143` |
+| 7 | DONE | `a4eb2359f` |
+| 8 | DONE | `5c8368a64` |
+| 9 | SHIPPED (Phase 3 gate, 5/7) | `dcabdcffa` |
+| 10 | THIS COMMIT | (next) |
+
+**Total live API spend:** ~$3.79 across all smokes
+(0.02 + 0.49 + 3.26 + 0.02 cumulative test runs).
+
+**Mega-task v10 -- SHIPPED.**
