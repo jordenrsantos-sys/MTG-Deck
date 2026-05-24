@@ -390,3 +390,74 @@ checks are belt-and-suspenders confirmation rather than gate
 requirements.
 
 **Commit message:** "Phase 5 (mega-task v13): live verification 6/6 PASS via subscription auth ($0.025 spend); budget formula tuned for Agent SDK total-spend cap".
+
+Committed as `37bf5df44`.
+
+---
+
+## Phase 6 — Cleanup + report + memory (2026-05-24)
+
+**Requirements cleanup:**
+- Removed `anthropic>=0.50.0` from `requirements.txt`. Updated the
+  comment block to document the v13 migration outcome and the
+  current auth model (CC subscription CLI primary, ANTHROPIC_API_KEY
+  fallback).
+- Ran `pip uninstall -y anthropic` (uninstalled 0.50.0 cleanly).
+- Re-ran full pytest with `anthropic` UNINSTALLED -> **2321 pass +
+  25 skip + 88 subtests** in 233s. No test or production code path
+  still depends on the old SDK.
+
+**Doc updates:**
+- Module docstring in `agent_llm_client_v1.py` was rewritten in
+  Phase 1 to describe the migration; no further update needed.
+- `ENGINE_API_GUIDE.md` doesn't exist in `api/engine/data/agent/`
+  (per kickoff "if it exists per Coherence Sweep #3 deferrals -- verify");
+  skipped.
+- Inline docstrings throughout the wrapper already mention both
+  subscription + API-key auth paths (Phase 1).
+
+**vitest baseline (re-verified):** 774 pass + 2 pre-existing fails
+in `metricPillHeader.test.ts` from `784b7af22` (May 19, before
+iter-11 started; unrelated to v13). Unchanged from iter-12 baseline.
+
+**Deliverables (live in MTG-Deck-Builder-Claude/ + memory/, both
+separate workspaces from repo/):**
+
+- `mega_task_v13_final_report.md` (~290 lines): exec summary,
+  per-phase table with commits, audit findings table, architecture
+  diff (before/after code snippets), CallResult contract diff, test
+  counts table with before/after, live verification results,
+  architectural rules section, hand-off section, budget burn
+  summary ($0.025 spend).
+- Memory: `project_mega_task_v13_shipped.md` written; MEMORY.md
+  index entry added (chronologically above v12).
+
+**No new production code in Phase 6.** Markdown + memory + the
+single requirements.txt edit.
+
+**Commit message:** "Phase 6 (mega-task v13): remove anthropic from requirements.txt; final report + memory -- SHIPPED".
+
+---
+
+## Final state (2026-05-24)
+
+| Phase | Status | Commit |
+|-------|--------|--------|
+| 0 | DONE | `42f4dd7f3` |
+| 1 | DONE | `367e26859` |
+| 2 + 3 | DONE (verification only) | `4e430e7ff` |
+| 4 | DONE | `83d5ac5b8` |
+| 5 | DONE (6/6 PASS) | `37bf5df44` |
+| 6 | THIS COMMIT | (next) |
+
+**Total live API spend:** **$0.025** (Phase 5 verification only).
+Under $30 budget by 99.9%.
+
+**Test counts:** pytest 2321 (+9 vs iter-12); vitest unchanged.
+
+**Mega-task v13 -- SHIPPED.** Engine LLM runtime now subscription-
+aware via the Claude Agent SDK. Iter-14 picks up post-June-15
+billing reconciliation monitoring + optional `AnthropicClient` ->
+`AgentSdkClient` rename + the v12 deferred Phase 8 calibration
+sweep + the v12 deferred Phase 7 full 30-game re-run, all of which
+now run against the subscription credit bucket once it launches.
