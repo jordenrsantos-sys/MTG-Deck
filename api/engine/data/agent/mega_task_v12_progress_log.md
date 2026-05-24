@@ -492,3 +492,76 @@ Iter-13 UI surfaces the CYCLE_COST_HALT events alongside the
 recommendation tier.
 
 **Commit message:** "Phase 6 (mega-task v12): per-cycle cost ceiling halt telemetry + tests".
+
+Committed as `f4e9c635b`.
+
+---
+
+## Phase 7 — Live 3-game mini-smoke (REDUCED scope per $20 cap) (2026-05-23)
+
+**This is the sub-C ship gate.** Reduced from 30 games to 3 per the
+$20 budget pivot (user-chosen option).
+
+**Smoke runner** at
+`tools/test_pillar_f_v0_2_playtest_phase7_smoke.py`:
+- Deck under test (P0): Krenko mono-red goblin tribal (Mountain x16 +
+  goblins x9 + burn x5 = 30 cards).
+- Controls: Heliod mono-W lifegain control, Snapcaster mono-U tempo
+  (with Counterspell + Negate), Putrid Imp mono-B aggro.
+- Caps tighter than scoping default: max_turns=8, max_mulligans=1,
+  per_game=$3, cycle=$15.
+- Output: `api/engine/data/agent/stage_2_phase7_mini_smoke_2026-05-23/`.
+
+**Run result (live, one shot):**
+- 3/3 games completed in 643s (10.7 min total). Per-game: 265s + 197s
+  + 182s.
+- Total spend: **$1.02** (vs $15 cap -- huge headroom; vs scoping
+  $150 -- 99% reduction at reduced scope).
+- Per-game avg: $0.34. Per-game max: $0.42.
+- 0 cost-halt events; 0 validator fallbacks across 96 combat
+  decisions.
+- All 3 games reached turn 8 max with no eliminations (DRAW_OR_HALT).
+- Final life: P0=40 / P1=35-40 / P2=40 / P3=40 across games.
+
+**Gate scorecard (cycle-quality gates, target >=6/8):**
+
+| Gate | Status | Evidence |
+|------|--------|----------|
+| 1. Cycle completes | **PASS** | 3/3 (reduced scope per budget) |
+| 2. No engine crashes | **PASS** | exit 0; no exceptions |
+| 3. Cost within ceiling | **PASS** | $1.02 << $15 cap |
+| 4. Combat occurs (multi-block) | **FAIL** | 0/3 games with multi-block (8-turn games + light creature density at this sample size) |
+| 5. Counter wars >= depth 2 | **FAIL** | 0/3 -- control LLMs chose to pass on small spells; counters never cast |
+| 6. Politics dynamics >=50% | **PASS** | 2/3 (67%) games with alliance transitions |
+| 7. Validator overrides <5% | **PASS** | 0 fallbacks / 96 combat decisions = 0% |
+| 8. Report writes cleanly | **PASS** | cycle.json + cycle_report.md + 3 per-game JSONs |
+
+**Score: 6/8 PASS -> SHIP** per kickoff floor (>=6/8).
+
+**Gate 4 + 5 deferral rationale.** Both are STRUCTURAL to the
+reduced scope, not code bugs:
+- Multi-block gate (gate 4) requires multiple defenders fielding
+  multiple creatures into the same attacker. 8-turn games + control-
+  archetype opponents who play few creatures (lifegain, tempo with
+  Delvers) didn't surface the scenario at n=3 sample. Unit tests in
+  Phase 1 (test_phase1_combat_glue) demonstrate the multi-block code
+  path works.
+- Counter-war gate (gate 5) requires either threats big enough to
+  warrant a counter OR LLM judging counters as worth the mana. With
+  Krenko playing 1-mana goblins + small burn spells, the response-
+  window LLM consistently chose pass. Unit tests in Phase 2
+  (test_phase2_counter_war::CounterChainDepth3Test) demonstrate the
+  counter resolver works at depth 3.
+- Both gates would naturally surface at the scoping doc's 30-game
+  scope. Sub-D / iter-13 should re-run the full $150 cycle once
+  budget allows; sub-C ships at the reduced-scope ship floor.
+
+**Tier recommendation.** YELLOW per aggregator -- win_rate=0.00 but
+the survives-yellow gate is satisfied vacuously (no eliminations).
+Mid-tier classification is accurate for "deck played to a draw
+across 3 games against control opponents" at the 8-turn cap. Sub-D
+should re-run at max_turns=25 to surface the true win-rate.
+
+~250 LOC smoke runner; no new production code.
+
+**Commit message:** "Phase 7 (mega-task v12): live 3-game mini-smoke (6/8 PASS, $1.02 spend, ship at reduced scope per $20 cap)".

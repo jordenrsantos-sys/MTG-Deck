@@ -1,0 +1,91 @@
+{
+  "deck_under_test_id": "krenko-mono-red-2026-05-23",
+  "deck_under_test_archetype": "mono-red goblin tribal",
+  "games_completed": 3,
+  "games_halted_for_cost": 0,
+  "win_rate": 0.0,
+  "avg_turn_eliminated_when_lost": 0.0,
+  "avg_damage_dealt": 1.0,
+  "avg_damage_taken": 1.0,
+  "politics_summary": {
+    "total_ally": 0,
+    "total_neutral": 0,
+    "total_rival": 2,
+    "total_deals_made": 0,
+    "total_deals_honored": 0,
+    "games_with_alliance_transition": 2,
+    "games_with_deals": 0
+  },
+  "cost_summary": {
+    "total_spend": 1.020918,
+    "per_game_avg": 0.340306,
+    "per_game_max": 0.4249649999999999,
+    "games_halted_for_cost": 0.0,
+    "total_fallback_events": 0.0,
+    "cycle_events": [],
+    "cycle_cost_ceiling_usd": 15.0,
+    "halted_for_cycle_cost": false
+  },
+  "combat_summary": {
+    "games_with_combat": 3,
+    "games_with_multi_block": 0,
+    "total_attacker_decisions": 96,
+    "total_blocker_decisions": 0,
+    "total_combat_fallbacks": 0
+  },
+  "pass_recommendation": "YELLOW",
+  "recommendation_reason": "win_rate=0.00 (need 0.3 for GREEN) OR avg_turn_eliminated=0.0 (need 12.0); mid-tier.",
+  "per_game_brief": [
+    {
+      "game_idx": 0,
+      "seed": 1,
+      "winner_pid": null,
+      "turns_run": 8,
+      "halted_for_cost": false,
+      "halted_reason": "max_turns",
+      "spend_usd": 0.4249649999999999,
+      "llm_calls": 81,
+      "final_life_totals": {
+        "0": 40,
+        "1": 40,
+        "2": 40,
+        "3": 40
+      },
+      "deck_under_test_outcome": "DRAW_OR_HALT"
+    },
+    {
+      "game_idx": 1,
+      "seed": 2,
+      "winner_pid": null,
+      "turns_run": 8,
+      "halted_for_cost": false,
+      "halted_reason": "max_turns",
+      "spend_usd": 0.301899,
+      "llm_calls": 62,
+      "final_life_totals": {
+        "0": 40,
+        "1": 35,
+        "2": 40,
+        "3": 40
+      },
+      "deck_under_test_outcome": "DRAW_OR_HALT"
+    },
+    {
+      "game_idx": 2,
+      "seed": 3,
+      "winner_pid": null,
+      "turns_run": 8,
+      "halted_for_cost": false,
+      "halted_reason": "max_turns",
+      "spend_usd": 0.294054,
+      "llm_calls": 57,
+      "final_life_totals": {
+        "0": 40,
+        "1": 38,
+        "2": 40,
+        "3": 40
+      },
+      "deck_under_test_outcome": "DRAW_OR_HALT"
+    }
+  ]
+}
