@@ -565,3 +565,97 @@ should re-run at max_turns=25 to surface the true win-rate.
 ~250 LOC smoke runner; no new production code.
 
 **Commit message:** "Phase 7 (mega-task v12): live 3-game mini-smoke (6/8 PASS, $1.02 spend, ship at reduced scope per $20 cap)".
+
+Committed as `57907b52c`.
+
+---
+
+## Phase 8 — DEFERRED to iter-13+ per $20 budget pivot (2026-05-23)
+
+Original kickoff: 3 cycles x ~$150 each = ~$450 spend on Edgar
+Markov B3 + Krenko B4 + Ur-Dragon B4. With user's $20 cap, this is
+22x over budget.
+
+The calibration log infrastructure landed in Phase 5
+(`stage_calibration_log.json` schema + append + corrupt-recovery
+behavior all tested). Iter-13 dispatch of Phase 8 will append
+cleanly to the existing log file.
+
+No commit -- this is a Phase 9 reporting/documentation outcome.
+
+---
+
+## Phase 9 — Final regression + report + memory + iter-13 scoping (2026-05-23)
+
+**Regression** (clean run):
+- `pytest tests/ -q` -> **2312 pass + 25 skip + 88 subtests passed**
+  in 259s. Iter-11 baseline 2234 -> +78 sub-C tests (25 P1 + 11 P2 +
+  16 P3 + 11 P4 + 8 P5 + 7 P6).
+- vitest unchanged from iter-11 (774 pass + 2 pre-existing fails in
+  `metricPillHeader.test.ts` from `784b7af22` May 19; not sub-C
+  regressions).
+
+**Substrate byte-identical verification:**
+```
+git diff --stat 955f3c3fc HEAD --
+  api/engine/pillar_f/v0_2/state/
+  api/engine/pillar_f/v0_2/stack/
+  api/engine/pillar_f/v0_2/turn/
+  api/engine/pillar_f/v0_2/replacement/
+  api/engine/pillar_f/v0_2/layers/
+  api/engine/pillar_f/v0_2/combat/
+-> EMPTY OUTPUT (no substrate diff)
+```
+
+Architectural rule held across both v10 (sub-B) and v12 (sub-C).
+Substrate is iter-10's source of truth.
+
+**Deliverables (live in MTG-Deck-Builder-Claude/ + memory/, both
+separate workspaces from repo/):**
+
+- `mega_task_v12_final_report.md` (~290 lines): exec summary, per-
+  phase table with commits + LOC, architecture overview, substrate
+  plug-points + Stage 1 + Stage 2 dispatcher flow, Phase 7 live gate
+  scorecard with structural-deferral notes, test count table,
+  architectural-rules section, sub-C deferrals to iter-13+ (11
+  items), budget burn summary ($1.02 spend), hand-off section with
+  cycle-runner usage example.
+- Memory: `project_mega_task_v12_shipped.md` written; MEMORY.md
+  index entry added (chronologically above v11); updated
+  `project_5_pillar_forward_plan.md` description + iter-12 outcome
+  + iter-13 follow-ups in priority order.
+
+**Iter-13 scoping** rolled into the final report's "Hand-off to
+iter-13" section (vs v10's separate sub-C scoping doc — sub-C's
+follow-ups are largely operational: re-run cycles at full scope,
+add parallelism, add archetype inference. No new architectural
+scoping required.).
+
+**No new production code in Phase 9.** Markdown + memory only.
+
+**Commit message:** "Phase 9 (mega-task v12): final regression + report + memory + iter-13 scoping -- SHIPPED".
+
+---
+
+## Final state (2026-05-23)
+
+| Phase | Status | Commit |
+|-------|--------|--------|
+| 0 | DONE | `0eaeeb7fc` |
+| 1 | DONE (sub-B gate 5 closed) | `72f146b43` |
+| 2 | DONE (sub-B gate 6 closed) | `1849aa963` |
+| 3 | DONE | `c9087987a` |
+| 4 | DONE | `2a5c026af` |
+| 5 | DONE | `03b6e719c` |
+| 6 | DONE | `f4e9c635b` |
+| 7 | SHIPPED 6/8 | `57907b52c` |
+| 8 | DEFERRED to iter-13+ | (per budget pivot) |
+| 9 | THIS COMMIT | (next) |
+
+**Total live API spend:** $1.02 (Phase 7 mini-smoke only).
+Under user's $20 cap by 95%. Under scoping doc's $150-450 by 99%.
+
+**Mega-task v12 -- SHIPPED** at 6/8 Phase 7 ship-gates within $20
+budget. Substrate byte-identical with iter-10. Stage 2 graduated
+playtest framework operational; iter-13 picks up full-scope runs +
+Phase 8 + parallelism.
