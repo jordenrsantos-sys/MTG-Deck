@@ -454,3 +454,92 @@ cost-ceiling-based cheap-fallback responder — Phase 6's responder
 heuristics complement that with structural pre-empt).
 
 **Commit message:** "Phase 6 (mega-task v10): mulligan + bottom-picker prompts + responder cost heuristics ($0.49 < $1 gate)".
+
+Committed as `e809b3143`. Push landed.
+
+---
+
+## Phase 7 — Threat-vector + politics state tracker (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/policy/politics/`:
+
+1. **threat_vector.py** —
+   - `compute_threat_vector(state, viewer_id, opponent_id) → {score,
+     board_strength, tempo, life_pressure, recent_aggression,
+     archetype_hint}`. All components normalized to [0, 1]; score
+     is a weighted sum (board 0.40, tempo 0.20, life-pressure-inverse
+     0.15, recent-aggression 0.15, archetype 0.10).
+   - Keyword multipliers (scoping section 5): deathtouch ×1.20,
+     hexproof ×1.30, lifelink ×1.10, indestructible ×1.25,
+     shroud ×1.25, flying ×1.10, trample ×1.10, menace ×1.05,
+     double_strike ×1.20, first_strike ×1.10. Multiplicative
+     stacking — a hexproof-lifelinker = ×1.43.
+   - Normalization anchors: board_strength cap 30 weighted P/T,
+     tempo cap 12 points, recent_aggression cap 20 damage.
+     life_pressure = life_total / 40 (Commander default; iter-12+
+     reads from state.format).
+   - `_archetype_hint` reveal-based heuristic: ≥3 low-cmc creatures →
+     +0.4 aggro; ≥3 instants in graveyard → +0.4 control; lands >
+     1.5×turn → +0.3 ramp; hand≥7 with high life → +0.2 combo.
+     Capped at 1.0. Iter-12+ replaces with Bayesian inference on
+     commander identity.
+   - `compute_all_threat_vectors(state, viewer_id)` skips viewer +
+     eliminated players.
+
+2. **politics_state.py** — Persistent per-player record stored on
+   `PlayerState.politics_state` (substrate-reserved slot).
+   - Schema: `{threats, deals, alliances, damage_log,
+     damage_log_turn_window}`.
+   - `update_politics_state(state, viewer_id, event)` dispatches on
+     `event["type"]`:
+     - `"combat_damage"`: logs in `damage_log_turn_window`, rolls
+       summary, bumps alliance toward `"rival"`.
+     - `"spell_cast_against"`: 1-unit aggression log entry, no
+       alliance bump (milder signal).
+     - `"deal_made"`: appends deal record, bumps alliance toward
+       `"ally"`, caps deals at 50.
+     - `"deal_honored"`: marks most-recent matching deal `kept=True`,
+       maintains ally.
+     - `"deal_broken"`: snaps alliance straight to `"rival"`
+       (skipping neutral — the betrayal signal).
+     - `"threat_recompute"`: upserts `threats[opponent_id]`.
+   - Alliance transitions are STEPPED (rival ↔ neutral ↔ ally) for
+     combat + deal events, except `deal_broken` snaps to rival.
+   - `roll_damage_log_for_turn(state, viewer_id, current_turn)`
+     drops entries older than `RECENT_AGGRESSION_WINDOW` (3 turns)
+     and recomputes the per-opponent summary.
+   - `export_politics_context(state, viewer_id)` builds the dict the
+     existing prompts (main_phase, response_window) consume.
+
+**Tests** in `tests/pillar_f_v0_2_policy/test_phase7_politics.py`:
+24 tests across 4 classes:
+- **ComputeThreatVectorTests** (12): empty board, large board,
+  keyword bumps (lifelink, hexproof), low-life raises threat, full
+  hand → tempo, recent_aggression from damage_log, archetype signals
+  (aggro from low-cmc creatures, control from gy instants), self-
+  threat zero, eliminated opponent zero, compute_all skips
+  viewer+dead.
+- **UpdatePoliticsStateTests** (8): combat damage records, combat
+  bumps alliance to rival, deal_made → ally, deal_honored marks
+  kept, deal_broken snaps to rival, deals capped at 50 (oldest drops),
+  threat_recompute upserts, spell_cast_against logs mild aggression
+  without alliance bump.
+- **DamageDecayTests** (2): old damage drops after window, in-window
+  damage retained.
+- **ExportPoliticsContextTests** (2): exports threats/alliances/deals
+  with bumped values; unknown viewer returns empty dict.
+
+**All 24 pass. Full policy regression: 153/153. Substrate: 224/224
+(377 total).**
+
+~280 LOC production + ~330 LOC test.
+
+Phase 7 has no LLM-driven ship-gate per the kickoff — gates are unit
+tests only. The politics integration into the responder's prompt-
+context is plumbed by exposing `export_politics_context` so the
+responder can pass `politics_context=...` when caller populates
+the dict. Per-event auto-wiring into the substrate's combat damage
+hooks deferred to Phase 9 (where the live 4-LLM 20-turn integration
+will demonstrate the politics dynamics gate).
+
+**Commit message:** "Phase 7 (mega-task v10): threat-vector + politics state tracker".

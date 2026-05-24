@@ -43,6 +43,15 @@ from api.engine.pillar_f.v0_2.policy.mulligan_decider import (
     make_llm_mulligan_decider,
     make_llm_bottom_picker,
 )
+from api.engine.pillar_f.v0_2.policy.politics import (
+    THREAT_VECTOR_VERSION,
+    POLITICS_STATE_VERSION,
+    compute_threat_vector,
+    compute_all_threat_vectors,
+    update_politics_state,
+    roll_damage_log_for_turn,
+    export_politics_context,
+)
 
 __all__ = [
     "POLICY_VERSION",
@@ -52,4 +61,8 @@ __all__ = [
     "make_llm_priority_responder", "cheap_fallback_responder",
     "MULLIGAN_LLM_VERSION",
     "make_llm_mulligan_decider", "make_llm_bottom_picker",
+    "THREAT_VECTOR_VERSION", "POLITICS_STATE_VERSION",
+    "compute_threat_vector", "compute_all_threat_vectors",
+    "update_politics_state", "roll_damage_log_for_turn",
+    "export_politics_context",
 ]
