@@ -201,3 +201,83 @@ Committed as `72f146b43`.
 ~150 LOC production + ~270 LOC test.
 
 **Commit message:** "Phase 2 (mega-task v12): counter-war hook (counter_target_spell resolver + 14-card annotation helper)".
+
+Committed as `1849aa963`.
+
+---
+
+## Phase 3 — Pod orchestrator + per-game runner (Mode A) (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/playtest/orchestrator/`:
+
+1. **types.py** -- Dataclasses per scoping doc sections 2 + 3:
+   - `StageTwoDeck(deck_id, commander_name, mainboard: List[str],
+     archetype_hint, bracket)`. Validates deck_id + commander_name
+     non-empty.
+   - `StageTwoGameConfig(seed, decks: List[StageTwoDeck] (exactly 4),
+     deck_under_test_pid, max_turns=25, max_mulligans=2,
+     per_turn_cost_ceiling=$0.30, per_game_cost_ceiling=$5,
+     enable_combat=True, starting_life=40)`. Validates pid + deck
+     count.
+   - `StageTwoGameResult` (game_idx, winner_pid, turns_run,
+     halted_for_cost, halted_reason, elimination_order, final
+     life/threat vectors, politics_summary, action_log,
+     combat_decisions_log, total_spend, fallback_events, elapsed).
+   - `StageTwoCycleConfig(deck_under_test, control_pool, n_games=30,
+     parallelism=1, output_dir, cycle_cost_ceiling=$200,
+     per-game knobs, seed_base)`.
+
+2. **card_factory.py** -- name -> Card with appropriate annotation:
+   - Basic lands (5 entries): type_line set; no annotation (sub-B's
+     compute_eligible_actions handles play_land for any is_land card).
+   - Counterspells (14 entries): delegates to Phase 2's
+     `make_counterspell_annotation`.
+   - Damage instants (5 entries: Lightning Bolt, Shock, Lava Spike,
+     Searing Blaze, Skewer the Critics): iter10_annotation with
+     deal_damage_to_player resolver + default_targets=[next opponent].
+   - Known creatures (15 entries covering Krenko goblin tribal,
+     mono-W soldiers, mono-U tempo, mono-B reanimator, Edgar vampire,
+     Ur-Dragon tribal): power/toughness/keywords/cmc/mana_cost
+     populated; no iter10_annotation (creatures fight via combat
+     glue, not cast through sub-B's pipeline in iter-11).
+   - Unknown card -> vanilla placeholder with explicit diag note
+     (deck construction never crashes).
+
+3. **game_runner.py** -- per-game orchestration:
+   - `build_game_state(config) -> GameState`: 4 PlayerStates,
+     starting_life, shuffled libraries per-deck (seeded for
+     reproducibility).
+   - `run_single_game(config, llm_client) -> StageTwoGameResult`:
+     full mulligan (sub-B Phase 6) -> turn loop (sub-B priority
+     responder + sub-C combat glue at DECLARE_ATTACKERS) ->
+     game-end detection (3-of-4 lost OR max_turns OR per_game ceiling)
+     -> result aggregation (threat vectors per surviving viewer,
+     politics summary, fallback events, combat decision diagnostics).
+   - Cost-halt tie-break: when per_game ceiling fires, winner =
+     highest-life surviving player.
+   - Damage events wired into politics_state in flight (post-resolve
+     diff of life totals).
+
+**Tests** in
+`tests/pillar_f_v0_2_playtest/test_phase3_game_runner.py`:
+16 tests across 4 classes:
+- **StageTwoTypesTests** (3): deck/config validation.
+- **CardFactoryTests** (6): basic land, counterspell annotation,
+  damage instant targeting, known creature stats, unknown placeholder,
+  is_x helpers.
+- **BuildGameStateTests** (2): 4 players with 30-card libraries each,
+  shuffle deterministic with seed.
+- **RunSingleGameTests** (5): short game completes via max_turns,
+  total_spend tracked, per_game ceiling halts + tie-breaks,
+  threat_vectors + politics populated, result JSON-serializable.
+
+**All 16 pass. Full regression: 443/443 (224 substrate + 167 policy
++ 52 playtest).**
+
+~600 LOC production + ~310 LOC test.
+
+Live multi-LLM end-to-end deferred to Phase 7 cycle smoke (single-
+game LLM runs cost ~$0.50 each; pytest CI cost-effective only with
+mocks).
+
+**Commit message:** "Phase 3 (mega-task v12): pod orchestrator + per-game runner (Mode A) + StageTwo types + card factory".
