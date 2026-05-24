@@ -11,4 +11,19 @@ substrate's `register_resolver(name, fn)` API. The casting side
 controlled in iter-10; per-card resolvers assume targets + payment
 have already been validated.
 """
-# Phase 7 modules wire in as cards are added.
+from api.engine.pillar_f.v0_2.cards.spell import framework  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.spell.framework import (
+    SpellResolveFn, register_spell, get_spell_resolver_key,
+    all_registered_spell_names, build_spell_payload,
+)
+
+# Per-card modules.
+from api.engine.pillar_f.v0_2.cards.spell import removal  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.spell import counterspells  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.spell import ramp_and_draw  # noqa: F401
+from api.engine.pillar_f.v0_2.cards.spell import mass_removal_and_protection  # noqa: F401
+
+__all__ = [
+    "SpellResolveFn", "register_spell", "get_spell_resolver_key",
+    "all_registered_spell_names", "build_spell_payload",
+]
