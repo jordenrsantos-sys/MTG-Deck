@@ -172,3 +172,78 @@ baseline 2312 + 9 new tests, no regressions).
 updates.
 
 **Commit message:** "Phase 1 (mega-task v13): migrate central LLM wrapper to claude-agent-sdk (preserves CallResult shape; adds cost_basis field)".
+
+Committed as `367e26859`.
+
+---
+
+## Phase 2 — Pillar D + Pillar C + per-set automation verification (2026-05-24)
+
+**No production code changes required.** The Phase 0 audit established
+that all four Phase 2 targets are Category A (route through the
+central wrapper), and Phase 1 migrated the wrapper. Phase 2 is
+verification-only: confirm the test suites stay green now that the
+wrapper invokes `claude-agent-sdk` underneath.
+
+**Modules verified:**
+
+- `api/engine/layers/agent_build_deck_v1.py` (Pillar D, 6 LLM phases)
+- `api/engine/layers/new_set_report_writer_v1.py` (per-set automation)
+- `api/engine/extractors/primitive_extractor_llm_v1.py` (Pillar C)
+- `tools/backfill_primitives_v2.py` (ontology v2 backfill)
+
+**Test results:**
+
+- Pillar D: 70/70 across phase_a2 + phase_b2 + phase_c2_1 + phase_c2_2
+  + phase_d2 + iter3_phase_3 + stream + stream_e2e.
+- Pillar C extractor: 64/64 across primitive_extractor_golden +
+  primitive_extractor_v2_counters_and_proliferate +
+  primitive_extractor_v2_rules_modifiers + new_set_report_writer_v1.
+
+**No commit for Phase 2** -- nothing to ship; the verification is
+captured in the combined Phase 2+3 verification commit below.
+
+---
+
+## Phase 3 — Sub-B + sub-C verification (2026-05-24)
+
+**No production code changes required.** Same logic as Phase 2:
+sub-B's policy module + sub-C's playtest module all route through
+the central wrapper via `get_default_client().call_with_budget()`.
+Phase 1's wrapper migration carries them forward transparently.
+
+**Modules verified** (all already audited as Category A):
+
+- `api/engine/pillar_f/v0_2/policy/llm_responder.py`
+- `api/engine/pillar_f/v0_2/policy/mulligan_decider.py`
+- `api/engine/pillar_f/v0_2/playtest/orchestrator/game_runner.py`
+- `api/engine/pillar_f/v0_2/playtest/cycle/cycle_runner.py`
+- `api/engine/pillar_f/v0_2/playtest/combat_glue/combat_decider.py`
+- `api/engine/layers/agent_graduated_playtest_stage_2_v1.py`
+
+**Test results:**
+
+- Sub-B + sub-C: 245/245 across `tests/pillar_f_v0_2_policy/` and
+  `tests/pillar_f_v0_2_playtest/`.
+
+**Cost-tracker reconciliation note.** Sub-B's `CostTracker` and
+sub-C's per-cycle cost guardrails sum `CallResult.cost_usd`.
+Post-migration, those USD figures will be labeled
+`api_estimate` until the SDK's `ResultMessage.total_cost_usd`
+returns a non-zero value (then they flip to `subscription_credit`
+per call). Sub-B/sub-C UIs render the figure as `$X.XX` either
+way; the new `cost_basis` field on CallResult lets future UI
+improvements add a caption ("subscription credit"/"API rate
+estimate"). No UI changes shipped in v13.
+
+**No commit for Phase 3 alone.** Combined with Phase 2 in the
+verification commit below.
+
+---
+
+## Phase 2 + 3 — Combined verification commit (2026-05-24)
+
+**Verification-only commit.** Updates the progress log with the
+Phase 2 + 3 outcomes. No production code or test files touched.
+
+**Commit message:** "Phase 2 + 3 (mega-task v13): Pillar D + C + per-set + sub-B + sub-C verification -- all Category-A callers pass tests with migrated wrapper".
