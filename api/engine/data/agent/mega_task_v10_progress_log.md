@@ -348,3 +348,109 @@ holding priority opportunities at each level) deferred to Phase 9.
 **Full policy regression: 98/98 passing.**
 
 **Commit message:** "Phase 5 (mega-task v10): response-window prompt + responder routing".
+
+Committed as `23d079458`. Push landed.
+
+---
+
+## Phase 6 — Mulligan + bottom-picker prompts (Phase 2 ship gate) (2026-05-23)
+
+**Implementation** in `api/engine/pillar_f/v0_2/policy/`:
+
+1. **prompts/mulligan.py** —
+   - `MULLIGAN_SYSTEM_PROMPT` — London-mulligan-aware role with
+     keep heuristics (2-5 lands, free interaction strong keep, going
+     below 5 = usually game-losing).
+   - `BOTTOM_PICKER_SYSTEM_PROMPT` — picks N card_ids from current
+     7-card hand to bottom.
+   - `build_mulligan_prompt(hand_desc, num_mulligans_taken, ...)`
+     shows hand contents + mulligan count + bottom-warning when
+     num_mulligans > 0.
+   - `build_bottom_picker_prompt(hand_desc, n, ...)` shows hand with
+     visible card_id values for echo-back.
+
+2. **parsers/mulligan_parser.py** —
+   - `MulliganResponse(keep: bool, rationale: str)` — LLM-facing
+     "keep" semantic (True = "keep this hand"); factory inverts to
+     the substrate's "True = mulligan" convention.
+   - `parse_mulligan_response` coerces common truthy/falsy string
+     forms ("yes"/"no"/"keep"/"mulligan") for robustness.
+   - `BottomPickerResponse(cards_to_bottom: List[str], rationale)`.
+   - `parse_bottom_picker_response` validates: each card_id in
+     hand, no duplicates, count exactly = n_to_put_on_bottom.
+
+3. **mulligan_decider.py** — Two factories:
+   - `make_llm_mulligan_decider(llm_client, cost_tracker,
+     deck_archetype_hint_by_player) → MulliganDeciderFn`.
+     Inverts LLM "keep" boolean to substrate "mulligan" boolean.
+     Fallback after re-prompts exhausted = keep (conservative).
+   - `make_llm_bottom_picker(...) → BottomPickerFn`. Fallback after
+     re-prompts exhausted = take last N (substrate default).
+   - Both record cost via shared CostTracker with `turn_number=0`
+     (pre-game) + purposes `"mulligan_decider"` + `"bottom_picker"`.
+
+4. **llm_responder.py** — Added two token-saving heuristics that
+   surfaced from the Phase 6 ship-gate live-run:
+   - **Non-active player + empty stack + only pass/cast eligible →
+     skip LLM call**. In real play almost no one burns an instant on
+     an opponent's main phase with no stack object to respond to.
+   - **Active player at low-decision step (UPKEEP, DRAW,
+     BEGINNING_OF_COMBAT, END_OF_COMBAT, END_STEP, CLEANUP) + empty
+     stack + only pass/cast eligible → skip LLM call**. Iter-11 simple
+     decks have no end-step cantrips or mana-rocks-into-pool plays,
+     so these windows reflexively pass. Iter-12+ can re-enable
+     when decks ship instant-speed value plays.
+
+   These heuristics live in the responder (not in
+   compute_eligible_actions) so the primitive stays general — the
+   policy layer makes the cost/value trade.
+
+**Tests** in `tests/pillar_f_v0_2_policy/test_phase6_mulligan.py`:
+31 tests across 9 classes:
+- **MulliganPromptAssemblyTests** (5): mulligan count, no-bottom-
+  warning at 0, all hand cards listed, archetype hint, re-prompt
+  error message.
+- **BottomPickerPromptAssemblyTests** (2): PUT_ON_BOTTOM count,
+  card_ids visible for echo-back.
+- **MulliganParserTests** (6): keep=true/false, missing key
+  rejected, string coercion ("yes"/"no"), non-coercible value
+  rejected, markdown fences stripped.
+- **BottomPickerParserTests** (5): clean parse, wrong count,
+  unknown card_id, duplicate, missing key.
+- **MulliganSystemPromptTests** (2): JSON contract + London text.
+- **LLMMulliganDeciderFactoryTests** (5): keep inverts to "don't
+  mulligan", keep=false → mulligan, unavailable LLM → keep,
+  cost recorded, fallback to keep after re-prompts exhaust.
+- **LLMBottomPickerFactoryTests** (4): returns LLM choice, n=0
+  short-circuits, fallback to last-N on failure, unavailable LLM
+  → fallback.
+- **LLMMulliganIntegrationTests** (2): all 4 keep first hand,
+  P0-mulligans-once-then-keeps-with-bottom.
+
+**All 31 pass. Full policy regression: 129/129. Substrate: 224/224.**
+
+**Phase 6 ship-gate live smoke** —
+`tools/test_pillar_f_v0_2_policy_mulligan_smoke.py`:
+- 4 LLMs, max 2 mulligans, 5-turn 4-player game vs the real
+  Anthropic API.
+- **Run history (this iteration):**
+  - Run #1 (pre-heuristic): $2.00 spend, 441 calls. FAIL (gate <$1).
+  - Run #2 (after non-active-skip heuristic): $1.18 spend, 255 calls.
+    FAIL.
+  - Run #3 (after non-active + active-low-decision skip heuristics):
+    **$0.49 spend, 110 calls. PASS.**
+- Mulligan cycle: 8 mulligans across 4 players (2 each at gate
+  cap), all hand sizes correct (5 each = 7 − 2).
+- 5-turn game: progressed cleanly, 22 actions logged (20 lands +
+  2 Lightning Bolt casts), no SBA / illegal-action errors, no
+  cost ceiling halt.
+
+~270 LOC production (prompts + parsers + factories + responder
+heuristic) + ~480 LOC test + 200-LOC smoke runner.
+
+Full counter-war integration test, mulligan-rule-violation
+integration deferred to Phase 9 (and Phase 8 will add the
+cost-ceiling-based cheap-fallback responder — Phase 6's responder
+heuristics complement that with structural pre-empt).
+
+**Commit message:** "Phase 6 (mega-task v10): mulligan + bottom-picker prompts + responder cost heuristics ($0.49 < $1 gate)".

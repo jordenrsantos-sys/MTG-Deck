@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
-from api.engine.pillar_f.v0_2.state import GameState
+from api.engine.pillar_f.v0_2.state import GameState, Step
 from api.engine.pillar_f.v0_2.policy.eligible_actions import (
     apply_action, compute_eligible_actions,
 )
@@ -104,6 +104,49 @@ def make_llm_priority_responder(
         # skip the LLM call (save tokens).
         eligible = compute_eligible_actions(state, player_id)
         if len(eligible) == 1 and eligible[0]["action_type"] == "pass_priority":
+            return None
+
+        # Token-saving heuristic: skip the LLM call when this player is
+        # NOT the active player AND the stack is empty AND every non-pass
+        # eligible action is just casting an instant for value. In real
+        # play almost no one burns an instant for value during an
+        # opponent's main phase with an empty stack — they wait for a
+        # spell to respond to, a creature to remove, or end-of-turn.
+        # Skipping these "structurally default-pass" windows is what
+        # collapses the 4-LLM 5-turn budget below the $1 gate (without
+        # this, the active player has 4× chatter cost from defenders
+        # spinning on every priority opportunity). Trade-off: a 4-mana
+        # cantrip you'd want to fire at end-of-turn-trigger window is
+        # missed — acceptable for iter-11 simple decks.
+        if (state.active_player != player_id
+                and not state.stack
+                and all(
+                    a["action_type"] in ("pass_priority", "cast_spell")
+                    for a in eligible
+                )):
+            return None
+
+        # Token-saving heuristic 2: even for the active player, skip
+        # priority windows at non-decision steps (upkeep, draw, begin-
+        # combat, end-of-combat, end_step, cleanup) when the stack is
+        # empty and no triggered abilities are pending. The interesting
+        # plays at these steps (mana-rocks-into-pool, end-of-turn
+        # cantrips, instant tutors) are not represented in iter-11's
+        # simple deck substrate; skipping these windows here is what
+        # brings the 4-LLM 5-turn smoke under the $1 Phase 2 ship gate.
+        # Iter-12+ can re-enable per-step active-player decisions when
+        # decks carry instant-speed value plays.
+        _LOW_DECISION_STEPS = {
+            Step.UPKEEP, Step.DRAW, Step.BEGINNING_OF_COMBAT,
+            Step.END_OF_COMBAT, Step.END_STEP, Step.CLEANUP,
+        }
+        if (state.active_player == player_id
+                and state.step in _LOW_DECISION_STEPS
+                and not state.stack
+                and all(
+                    a["action_type"] in ("pass_priority", "cast_spell")
+                    for a in eligible
+                )):
             return None
 
         # Build prompt context.
