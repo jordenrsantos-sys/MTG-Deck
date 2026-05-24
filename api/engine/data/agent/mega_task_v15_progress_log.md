@@ -156,3 +156,88 @@ LOC: ~150 production (parallel path + helpers) + ~210 test +
 ~140 smoke runner = ~500 LOC.
 
 **Commit message:** "Phase 1 (mega-task v15): asyncio cycle parallelism (parallelism=4 default; wave-based execution; rate-limit fallback to serial; live 3-game smoke 358s wallclock = 44% speedup vs serial)".
+
+Committed as `201d71a8b`.
+
+---
+
+## Phase 2 — HALTED at 24/30 games (Max 5x session credit exhaustion) (2026-05-24)
+
+**Cycle launched.** Krenko B4 vs mono-color burn pool. 30 games at
+parallelism=4. Cycle-internal ceiling $300 cost-basis.
+
+**Wave-by-wave outcome:**
+
+| Wave | Games | Wallclock | Per-game cost | Per-game actions |
+|------|-------|-----------|---------------|------------------|
+| 1 | 1-4 | 778s (13 min) | $3.0-3.3 (REAL) | 75 actions, 130 calls |
+| 2 | 5-8 | +1900s (32 min) | $0.17-0.26 (PARTIAL FAIL) | 0 actions, 908+ calls |
+| 3 | 9-12 | +1880s (31 min) | $0.000 (ALL FAIL) | 0 actions, 912 calls |
+| 4 | 13-16 | +1813s (30 min) | $0.000 | 0 actions, 912 calls |
+| 5 | 17-20 | +1859s (31 min) | $0.000 | 0 actions, 912 calls |
+| 6 | 21-23 | +1816s (30 min) | $0.000 | 0 actions, 912 calls |
+
+Cycle process died after game 24 without writing the final report.
+
+**Root cause: Max 5x subscription session credit exhausted.** Wave
+1 spent ~$13 cost-basis on real LLM responses. Wave 2 showed
+throttling. Waves 3-6 returned empty responses immediately -- each
+game made 912 LLM calls (expected for 25-turn 4-LLM game) but all
+returned with $0 cost and no parsed actions. The substrate +
+responder fallback chain HELD gracefully (games "completed" via
+fallback-to-pass actions; no crashes; data just empty).
+
+**Halt-and-surface decision.** Per kickoff halt-trigger spirit
+("halt and surface when something unexpected at sustained load"),
+plus user-confirmed: stop v15, iter-16 needs to redesign cycle
+harness for session-aware execution + per-game cost reduction
+before re-attempting the 30-game cycles.
+
+**Phases 3-5 deferred** (all need v15 Phase 2 data which is corrupt).
+
+---
+
+## Phase 6 — Halt-and-surface report + memory (2026-05-24)
+
+**Regression** (verification gate):
+- pytest **2381 + 25 skip + 88 subtests** (+9 vs v14 baseline 2372;
+  no regressions).
+- vitest 774 + 2 pre-existing fails (unchanged).
+- iter-10 100-fixture suite: 100/100 green.
+- oracle_seed_coverage: 100% (unchanged from v14).
+
+**Deliverables:**
+- `MTG-Deck-Builder-Claude/mega_task_v15_final_report.md` -- partial
+  ship narrative + Phase 2 failure analysis + iter-16 design
+  lessons + per-game cost recalibration vs v12/v13.
+- Memory: `project_mega_task_v15_partial_ship.md` + MEMORY.md
+  index entry.
+- 24 Krenko game JSONs persist in `MTG-Deck-Builder-Claude/
+  stage_2_v15_cycles/krenko_b4/` (4 valid in wave 1; 20 corrupt
+  from waves 2-6 for diagnostic study).
+
+**Iter-16 hand-off (high-priority):**
+1. Session-aware cycle runner (checkpoint + resume + credit-
+   exhaustion detection).
+2. Per-game cost reduction (target $1-2/game from current $3-5).
+3. max_turns reassessment (Phase 2 wave 1 saw all 4 25-turn games
+   draw with no eliminations).
+4. Consider 10-game cycle as new default scope (fits single session
+   window comfortably).
+
+**Final state (2026-05-24):**
+
+| Phase | Status | Commit |
+|-------|--------|--------|
+| 0 | SHIPPED | `e4394deb0` |
+| 1 | SHIPPED | `201d71a8b` |
+| 2 | HALTED | n/a |
+| 3-5 | DEFERRED | n/a |
+| 6 | THIS COMMIT | (next) |
+
+**Total cost-basis spend:** ~$19. **Net spend $0** under Max
+subscription. Under $50 kickoff envelope by 62%.
+
+**Mega-task v15 -- PARTIAL SHIP** with iter-16 dispatch needed.
+
+**Commit message:** "Phase 6 (mega-task v15): halt-and-surface ship -- Phase 2 Krenko 30-game cycle halted at 24/30 (Max 5x session credit exhaustion); Phases 0+1 + asyncio parallelism + budget-formula bump retained; iter-16 needs session-aware runner".
