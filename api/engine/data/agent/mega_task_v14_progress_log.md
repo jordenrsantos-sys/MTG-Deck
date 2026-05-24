@@ -296,3 +296,75 @@ Reassembling Skeleton graveyard recursion returning tapped).
 LOC: ~280 production + ~210 test = ~490 LOC.
 
 **Commit message:** "Phase 4 (mega-task v14): 23 long-tail activated handlers -> oracle_seed_coverage 95.4% to 100.0% (0 fall-throughs; 0 substrate extensions vs kickoff halt threshold of >8)".
+
+Committed as `18ce503bb`.
+
+---
+
+## Phase 5 + 6 — Regression sweep + final report + memory (2026-05-24)
+
+**Regression sweep** (Phase 5 -- no production code; verification
+gate only):
+
+- `pytest tests/pillar_f_v0_2/fixtures/test_100_interactions.py`
+  -> **100/100 iter-10 fixtures pass** (correctness floor held;
+  v14's substrate changes are additive + don't disrupt the 100
+  baseline scenarios).
+- `python tools/oracle_seed_coverage.py` -> **500/500 (100.0%)
+  addressed; 0 fall-through; 0 exception**. Coverage 95.4% ->
+  100.0% achieved per kickoff target (>=96%).
+- `pytest tests/pillar_f_v0_2_policy/ tests/pillar_f_v0_2_playtest/`
+  -> 245/245 pass (sub-B + sub-C still green).
+- Full `pytest tests/` -> **2372 pass + 25 skip + 88 subtests**
+  (+51 vs iter-13 baseline 2321; no regressions).
+- vitest 774 pass + 2 pre-existing fails (unchanged from iter-13).
+
+All Phase 5 gates GREEN.
+
+**Phase 6 deliverables** (Phase 6 -- markdown + memory):
+
+- `MTG-Deck-Builder-Claude/mega_task_v14_final_report.md` (~290
+  lines): exec, per-phase table, per-deferral status table,
+  coverage tool delta, test count delta, Stage-2-readiness note,
+  iter-15 hand-off list.
+- Memory: `project_mega_task_v14_shipped.md` written; MEMORY.md
+  index entry added (chronologically above v13).
+
+**Stage-2-readiness note** (per kickoff Phase 6 spec): with v14
+closing substrate deferrals and v13's Max subscription billing in
+place, **iter-15 can dispatch the deferred Stage 2 real cycles at
+near-$0 net cost** (v12's Phase 7 full 30-game re-run + Phase 8
+3-deck calibration sweep all bill against the Max subscription
+credit pool).
+
+**Combined Phase 5 + 6 commit message:** "Phase 5 + 6 (mega-task v14): regression sweep 100/100 iter-10 fixtures + oracle_seed_coverage 100.0% + 2372 pytest pass; final report + memory -- SHIPPED at $0 spend".
+
+---
+
+## Final state (2026-05-24)
+
+| Phase | Status | Commit |
+|-------|--------|--------|
+| 0 | DONE (audit doc) | `d0c946149` |
+| 1 | DONE (3 events + 4 emission sites) | `423204002` |
+| 2 | DONE (UEOT helper) | `8824f9406` |
+| 3 | DONE (cast/ subdir; 17 cards live) | `070e11673` |
+| 4 | DONE (23 long-tail handlers) | `18ce503bb` |
+| 5 + 6 | THIS COMMIT (regression + report + memory) | (next) |
+
+**Total live API spend:** **$0.00** (rules-driven authoring; no
+LLM call sites). Under $20 budget by 100%.
+
+**Test counts:**
+- pytest **2372 pass + 25 skip + 88 subtests** (+51 v14 tests;
+  no regressions).
+- vitest 774 pass + 2 pre-existing fails (unchanged).
+- 100/100 iter-10 fixtures green.
+- 245/245 sub-B + sub-C green.
+
+**Coverage:** oracle_seed_coverage 95.4% -> **100.0%**.
+
+**Mega-task v14 -- SHIPPED.** Substrate is extension-complete for
+the iter-11/12 deferrals. Iter-15 dispatches Stage 2 real cycles +
+the `primitive_to_cards` v2 ontology rebuild + the 3 remaining v11
+shim event types' substrate promotion.
