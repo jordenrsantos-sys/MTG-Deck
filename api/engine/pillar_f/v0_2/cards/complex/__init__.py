@@ -21,4 +21,4 @@ These are the hardest cards in the corpus. Phase 8's bar per the
 kickoff is "build the full handler set + add a dedicated combo-line
 integration test for each".
 """
-# Phase 8 modules wire in as cards are added.
+from api.engine.pillar_f.v0_2.cards.complex import multi_handler_cards  # noqa: F401

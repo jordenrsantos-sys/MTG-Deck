@@ -68,9 +68,44 @@ def fire_event_triggers(state: GameState, event: Event) -> int:
     (event_type, card_name) registration, invoke its trigger fn +
     enqueue the resulting trigger dicts.
 
+    For DieEvent specifically, ALSO check the dying card's name (via
+    event.card_id → cards_by_id lookup) against the registry. This
+    honors CR 603.6c "last known information" — Solemn Simulacrum's
+    LTB trigger fires based on the card's state immediately before it
+    left the battlefield, even though the dispatcher's walk happens
+    after the card has moved.
+
     Returns the total number of trigger dicts enqueued. APNAP ordering
     is handled by the substrate's drain_triggers_to_stack."""
     enqueued = 0
+    # Track (card_id, event_type) pairs we've already fired so the
+    # "dying-card LKI check" doesn't double-fire when the dying card
+    # also happens to still be on the battlefield (shouldn't, but
+    # defensive).
+    fired_pairs: set = set()
+
+    def _dispatch(card_id: str, card_name: str) -> None:
+        nonlocal enqueued
+        key = (card_id, event.event_type, card_name)
+        if key in fired_pairs:
+            return
+        fn = _EVENT_TRIGGER_REGISTRY.get((event.event_type, card_name))
+        if fn is None:
+            return
+        try:
+            triggers = fn(state, event) or []
+        except Exception:
+            return
+        if not triggers:
+            return
+        enqueue_triggers(state, triggers, source_event={
+            "type": event.event_type,
+            "source_card_id": card_id,
+        })
+        fired_pairs.add(key)
+        enqueued += len(triggers)
+
+    # Pass 1: walk battlefield.
     for ps in state.players:
         if ps.has_lost:
             continue
@@ -78,22 +113,19 @@ def fire_event_triggers(state: GameState, event: Event) -> int:
             card = state.get_card(cid)
             if card is None:
                 continue
-            fn = _EVENT_TRIGGER_REGISTRY.get(
-                (event.event_type, card.name),
-            )
-            if fn is None:
-                continue
-            try:
-                triggers = fn(state, event) or []
-            except Exception:
-                continue
-            if not triggers:
-                continue
-            enqueue_triggers(state, triggers, source_event={
-                "type": event.event_type,
-                "source_card_id": cid,
-            })
-            enqueued += len(triggers)
+            _dispatch(cid, card.name)
+
+    # Pass 2: for DieEvent, also dispatch on the dying card itself
+    # (which has just moved to graveyard but retains its name in
+    # cards_by_id). This honors CR 603.6c last-known-information for
+    # LTB triggers like Solemn Simulacrum, Reveillark, etc.
+    if event.event_type == "DieEvent":
+        dying_cid = getattr(event, "card_id", "")
+        if dying_cid:
+            dying_card = state.get_card(dying_cid)
+            if dying_card is not None:
+                _dispatch(dying_cid, dying_card.name)
+
     return enqueued
 
 
