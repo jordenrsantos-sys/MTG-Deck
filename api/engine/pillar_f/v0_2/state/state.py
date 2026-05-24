@@ -197,6 +197,8 @@ class GameState:
     replacement_effects: List[ReplacementEffect] = field(default_factory=list)
     continuous_effects: List[ContinuousEffect] = field(default_factory=list)
     delayed_triggers_pending: List[Dict[str, Any]] = field(default_factory=list)
+    # v14 Phase 2: counter for auto-generated UEOT effect ids.
+    _ueot_effect_counter: int = 0
 
     # Commander identity per player. commander_card_ids[player_id] = card_id of
     # that player's commander (in command zone at game start).
@@ -235,6 +237,56 @@ class GameState:
         if card and to_zone == "battlefield":
             card.controller = to_player
             # ETB tapped/untapped: callers handle via replacement effects.
+
+    # ------- v14 Phase 2: until-end-of-turn helper -------
+
+    def register_until_end_of_turn_effect(
+        self,
+        *,
+        source_card_id: Optional[str],
+        controller: int,
+        layer: int,
+        sublayer: Optional[str] = None,
+        effect_fn_name: str = "",
+        target_pattern: Optional[Dict[str, Any]] = None,
+        description: str = "",
+    ) -> ContinuousEffect:
+        """Register a continuous effect that automatically expires
+        at the cleanup step of the current turn.
+
+        Sub-mega-task v14 Phase 2: wraps the existing
+        `continuous_effects` registry with the
+        `target_pattern["until_end_of_turn"] = True` flag the
+        substrate's `cleanup_step` already removes. Also stamps the
+        turn number into `applies_during_turn_number` so callers can
+        audit which turn registered the effect.
+
+        Returns the registered ContinuousEffect (for caller diagnostics).
+
+        Iter-11+ cards emitting until-end-of-turn buffs (Giant Growth,
+        Berserk, Threaten, etc.) should call this helper at resolve
+        time instead of directly mutating Card.power / Card.toughness
+        / Card.controller -- the layer engine then applies the buff
+        each layer pass, and cleanup_step removes it automatically.
+        """
+        self._ueot_effect_counter += 1
+        tp: Dict[str, Any] = dict(target_pattern or {})
+        tp["until_end_of_turn"] = True
+        tp.setdefault("applies_during_turn_number", self.turn_number)
+        effect = ContinuousEffect(
+            effect_id=(
+                f"ueot_{self.turn_number}_{self._ueot_effect_counter}"
+            ),
+            source_card_id=source_card_id,
+            controller=controller,
+            layer=layer,
+            sublayer=sublayer,
+            effect_fn_name=effect_fn_name,
+            target_pattern=tp,
+            description=description,
+        )
+        self.continuous_effects.append(effect)
+        return effect
 
     # ------- Serialization -------
 

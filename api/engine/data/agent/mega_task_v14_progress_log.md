@@ -137,3 +137,64 @@ LOC: ~80 production (events + emission helper + 4 wiring sites) +
 ~190 test = ~270 LOC.
 
 **Commit message:** "Phase 1 (mega-task v14): substrate event types (TokenCreateEvent + LibrarySearchEvent + CombatDamageDealtEvent promoted from v11 shim) + combat damage emission at 4 sites".
+
+Committed as `423204002`.
+
+---
+
+## Phase 2 — Until-end-of-turn cleanup substrate hook (2026-05-24)
+
+**Scope shrunk from kickoff estimate.** Kickoff said:
+> Add `state.until_end_of_turn_effects` list. Each entry: ...
+
+The substrate ALREADY has `state.continuous_effects` + `cleanup_step`
+already filters by `target_pattern["until_end_of_turn"]=True`. Phase
+2 doesn't need a parallel list -- it needs an ERGONOMIC HELPER that
+makes registering UEOT effects safe + consistent + with the right
+flag.
+
+**Implementation** in `api/engine/pillar_f/v0_2/state/state.py`:
+
+- New `GameState._ueot_effect_counter: int` field (private counter
+  for auto-generated effect ids).
+- New `GameState.register_until_end_of_turn_effect(source_card_id,
+  controller, layer, sublayer, effect_fn_name, target_pattern,
+  description) -> ContinuousEffect` method:
+  - Auto-injects `target_pattern["until_end_of_turn"] = True` so
+    the existing cleanup_step filter catches the effect.
+  - Auto-stamps `target_pattern["applies_during_turn_number"] =
+    state.turn_number` for audit / debugging.
+  - Generates a unique `effect_id` of the form
+    `ueot_<turn>_<counter>`.
+  - Appends to `state.continuous_effects` and returns the registered
+    ContinuousEffect.
+  - Preserves caller-supplied target_pattern keys alongside the
+    auto-injected ones.
+
+**No iter-11 cards need migration.** Audited via
+`grep -rn "ContinuousEffect(" cards/`: v11 cards only register
+permanent-while-on-battlefield effects (anthems, type-adders,
+keywords). No UEOT cards in v11's top-500 handler set -- the
+helper is infrastructure for iter-12+ adoption (Giant Growth,
+Berserk, Threaten, etc., which weren't in v11's coverage seed).
+
+**Substrate cleanup_step UNCHANGED.** The existing filter
+(`if not ce.target_pattern.get("until_end_of_turn")`) already
+removes the effects the new helper registers. No substrate behavior
+change; v14 just made the registration path ergonomic + auditable.
+
+**Tests** in `tests/pillar_f_v0_2/test_v14_phase2_ueot.py`:
+8 tests across 2 classes:
+- **UEOTHelperTests** (5): returns ContinuousEffect, sets UEOT flag
+  + turn_number, appends to continuous_effects, generates unique
+  effect_ids, preserves caller-supplied target_pattern keys.
+- **UEOTCleanupExpiryTests** (3): cleanup removes UEOT effects,
+  cleanup keeps non-UEOT effects (anthem), mixed-only-UEOT-expires
+  scenario.
+
+**All 8 pass. Full regression: 2342 pass + 25 skip + 88 subtests**
+(+8 Phase 2 tests; no regressions).
+
+LOC: ~55 production (helper + counter field) + ~150 test = ~205 LOC.
+
+**Commit message:** "Phase 2 (mega-task v14): UEOT cleanup substrate hook -- ergonomic register_until_end_of_turn_effect helper on GameState (existing cleanup_step filter unchanged)".
