@@ -247,3 +247,57 @@ verification commit below.
 Phase 2 + 3 outcomes. No production code or test files touched.
 
 **Commit message:** "Phase 2 + 3 (mega-task v13): Pillar D + C + per-set + sub-B + sub-C verification -- all Category-A callers pass tests with migrated wrapper".
+
+Committed as `4e430e7ff`.
+
+---
+
+## Phase 4 — Tests + conftest + mocking strategy (2026-05-24)
+
+**Scope.** Phase 1 already updated `test_agent_llm_client_v1.py`
+(primary target) and `tests/conftest.py` was already SDK-agnostic
+(only references `MTG_ENGINE_DISABLE_LLM` env + the
+`reset_default_client_for_tests` helper, both preserved verbatim in
+the wrapper migration). Phase 4 sweeps the remaining test files
+identified in the Category-D audit.
+
+**Remaining test updates:**
+
+- `tests/test_agent_build_deck_v1_phase_a2.py`: the
+  `NoNetworkContactTests::test_no_anthropic_client_constructed_when_key_missing`
+  test patched `anthropic.Anthropic` to assert "no network call
+  occurs when API key missing." Post-v13 the wrapper never invokes
+  `anthropic.Anthropic` (irrelevant target), so the assertion was
+  vacuously satisfied -- it stopped guarding what it intended.
+  Updated to patch `claude_agent_sdk.query` (the Agent SDK entry
+  point the migrated wrapper invokes) AND `shutil.which` (force CLI
+  absence). Renamed test to `test_no_sdk_call_when_no_auth_available`
+  for clarity.
+
+**Kill switch verification.** Manual check confirms
+`MTG_ENGINE_DISABLE_LLM=1` -> `is_available()=False` ->
+`unavailable_reason()` mentions the env var. The conftest autouse
+fixture continues to work; pytest runs do not make live API calls.
+
+**Conftest unchanged.** The autouse
+`_disable_llm_layer_by_default` fixture continues to set
+`MTG_ENGINE_DISABLE_LLM=1` and call
+`reset_default_client_for_tests()`. The `enable_llm_layer` fixture
+also unchanged (still sets `ANTHROPIC_API_KEY=sk-test-fixture` as
+the legacy API-key fallback path; under v13 that's still a valid
+auth route).
+
+**Sub-B / sub-C smoke runners** in `tools/` (e.g.
+`test_pillar_f_v0_2_policy_phase9_smoke.py`,
+`test_pillar_f_v0_2_playtest_phase7_smoke.py`) use
+`get_default_client()` to fetch the real wrapper -- no test mocks
+needed; these are LIVE-API smoke runners that opt into network
+calls explicitly. Post-migration they will hit the Agent SDK path
+automatically. Verified by Phase 5's live smoke (next).
+
+**Test results:**
+- `test_agent_build_deck_v1_phase_a2.py`: 3/3 pass.
+- Full pytest regression: **2321 pass + 25 skip + 88 subtests** -- no
+  regressions vs Phase 1 baseline.
+
+**Commit message:** "Phase 4 (mega-task v13): update remaining test mocks (test_agent_build_deck_v1_phase_a2 patches claude_agent_sdk.query + shutil.which instead of anthropic.Anthropic)".

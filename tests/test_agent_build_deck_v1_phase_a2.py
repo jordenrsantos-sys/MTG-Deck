@@ -105,8 +105,14 @@ class FallbackPathTests(unittest.TestCase):
 
 
 class NoNetworkContactTests(unittest.TestCase):
-    """A defense-in-depth check: with API key UNSET, even
-    anthropic.Anthropic() instantiation must NOT occur during a build."""
+    """A defense-in-depth check: with all auth paths UNSET, no SDK
+    network call must occur during a build.
+
+    v13 migration: assertion target changed from `anthropic.Anthropic`
+    to `claude_agent_sdk.query` (the Agent SDK entry point the
+    migrated wrapper invokes). Also patches `shutil.which` to force
+    CLI absence so the wrapper's `is_available()` returns False.
+    """
 
     def setUp(self) -> None:
         reset_default_client_for_tests()
@@ -117,7 +123,7 @@ class NoNetworkContactTests(unittest.TestCase):
             os.environ["ANTHROPIC_API_KEY"] = self._saved_key
         reset_default_client_for_tests()
 
-    def test_no_anthropic_client_constructed_when_key_missing(self) -> None:
+    def test_no_sdk_call_when_no_auth_available(self) -> None:
         from api.engine.layers import agent_build_deck_v1 as mod
 
         def _stub_pool(**_kwargs):
@@ -137,14 +143,18 @@ class NoNetworkContactTests(unittest.TestCase):
 
         with patch.object(mod, "_build_candidate_pool", side_effect=_stub_pool), \
              patch.object(mod, "_validate_deck", side_effect=_stub_validate), \
-             patch("anthropic.Anthropic") as mock_class:
+             patch(
+                "api.engine.layers.agent_llm_client_v1.shutil.which",
+                return_value=None,
+             ), \
+             patch("claude_agent_sdk.query") as mock_query:
             mod.compute_agent_build_deck_v1(
                 db_snapshot_id="test-snap",
                 commander="Yuriko, the Tiger's Shadow",
                 bracket="B3",
                 skip_strength_check=True,
             )
-            mock_class.assert_not_called()
+            mock_query.assert_not_called()
 
 
 if __name__ == "__main__":
