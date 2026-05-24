@@ -1,32 +1,34 @@
 """Phase A2 tests for agent_llm_client_v1.
 
-Covers the LLM client wrapper that iteration 2 stacks four reasoning
-phases on top of (intent / candidate critic / wild combo / final
-rationale). Tests are pure-Python + mock-only — no actual Anthropic
-network calls.
+Covers the LLM client wrapper. Tests are pure-Python + mock-only --
+no actual LLM network calls.
 
-Three groups:
-  - Pricing + token estimation — pure math.
-  - JSON parsing helper — string handling.
-  - is_available() / call_with_budget() — mocked SDK paths covering
-    success, retry, budget overflow, missing-key fallback.
+Updated in mega-task v13 (2026-05-24) for the migration from the
+`anthropic` SDK to `claude-agent-sdk`. Mocks now target the wrapper's
+internal `_invoke_agent_sdk` async helper + `shutil.which` (for CLI
+auth detection) instead of the old `anthropic.Anthropic` class.
 
-The end-to-end "agent runs without API key" path is verified in the
-phase-A2 integration test in test_agent_build_deck_v1_phase_a2.py.
+The end-to-end "agent runs without API key / without CLI" path is
+verified in the phase-A2 integration test in
+test_agent_build_deck_v1_phase_a2.py.
 """
 from __future__ import annotations
 
 import os
 import unittest
+from typing import Optional
 from unittest.mock import MagicMock, patch
 
 from api.engine.layers.agent_llm_client_v1 import (
     AnthropicClient,
+    AgentSdkClient,  # v13: alias for AnthropicClient
     CallResult,
     DEFAULT_MODEL,
     PRICING_USD_PER_MTOK,
     _classify_error_code,
     _is_retriable,
+    _classify_agent_sdk_error,
+    _is_retriable_agent_sdk_error,
     _try_parse_json,
     get_default_client,
     reset_default_client_for_tests,
@@ -117,22 +119,77 @@ class IsAvailableTests(unittest.TestCase):
             os.environ["MTG_ENGINE_DISABLE_LLM"] = self._saved_kill
         reset_default_client_for_tests()
 
-    def test_unavailable_when_env_var_missing_and_no_explicit_key(self) -> None:
-        # No env var; no constructor key.
-        c = AnthropicClient()
-        self.assertFalse(c.is_available())
-        reason = c.unavailable_reason()
-        self.assertIn("ANTHROPIC_API_KEY", reason)
+    def test_unavailable_when_no_cli_and_no_api_key(self) -> None:
+        """v13 migration: 'available' = (claude CLI in PATH) OR
+        ANTHROPIC_API_KEY env. Without either, unavailable."""
+        # Force CLI absent so the new auth path falls through.
+        with patch(
+            "api.engine.layers.agent_llm_client_v1.shutil.which",
+            return_value=None,
+        ):
+            c = AnthropicClient()
+            self.assertFalse(c.is_available())
+            reason = c.unavailable_reason()
+            self.assertIn("ANTHROPIC_API_KEY", reason)
+            self.assertIn("Claude Code CLI", reason)
 
     def test_available_with_explicit_api_key_arg(self) -> None:
-        c = AnthropicClient(api_key="sk-test-explicit")
-        self.assertTrue(c.is_available())
-        self.assertEqual(c.unavailable_reason(), "")
+        # Even with CLI absent, an explicit API key is acceptable
+        # auth (API-fallback path).
+        with patch(
+            "api.engine.layers.agent_llm_client_v1.shutil.which",
+            return_value=None,
+        ):
+            c = AnthropicClient(api_key="sk-test-explicit")
+            self.assertTrue(c.is_available())
+            self.assertEqual(c.unavailable_reason(), "")
 
     def test_available_with_env_var_set(self) -> None:
         os.environ["ANTHROPIC_API_KEY"] = "sk-test-env"
-        c = AnthropicClient()
-        self.assertTrue(c.is_available())
+        with patch(
+            "api.engine.layers.agent_llm_client_v1.shutil.which",
+            return_value=None,
+        ):
+            c = AnthropicClient()
+            self.assertTrue(c.is_available())
+
+    def test_available_via_claude_cli_without_api_key(self) -> None:
+        """v13 NEW: with CLI present and NO API key, the wrapper
+        reports available via subscription auth."""
+        with patch(
+            "api.engine.layers.agent_llm_client_v1.shutil.which",
+            return_value="/usr/local/bin/claude",
+        ):
+            c = AnthropicClient()
+            self.assertTrue(c.is_available())
+            self.assertEqual(c.unavailable_reason(), "")
+            self.assertEqual(c._resolve_auth_mode(), "subscription")
+
+    def test_resolve_auth_mode_priorities(self) -> None:
+        """CLI takes priority over API key in auth-mode reporting."""
+        # Both available -> subscription wins.
+        os.environ["ANTHROPIC_API_KEY"] = "sk-test"
+        with patch(
+            "api.engine.layers.agent_llm_client_v1.shutil.which",
+            return_value="/usr/local/bin/claude",
+        ):
+            c = AnthropicClient()
+            self.assertEqual(c._resolve_auth_mode(), "subscription")
+        # No CLI but API key -> api_key.
+        with patch(
+            "api.engine.layers.agent_llm_client_v1.shutil.which",
+            return_value=None,
+        ):
+            c = AnthropicClient()
+            self.assertEqual(c._resolve_auth_mode(), "api_key")
+        # Neither -> none.
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        with patch(
+            "api.engine.layers.agent_llm_client_v1.shutil.which",
+            return_value=None,
+        ):
+            c = AnthropicClient()
+            self.assertEqual(c._resolve_auth_mode(), "none")
 
     def test_kill_switch_disables_even_with_key(self) -> None:
         # MTG_ENGINE_DISABLE_LLM=1 forces is_available() to False.
@@ -163,28 +220,32 @@ class BudgetGuardTests(unittest.TestCase):
         c = AnthropicClient(api_key="sk-test")
         # Inflate user prompt past the budget.
         huge = "x" * 20_000  # ~5700 tokens at 3.5 chars/token
-        # No network call should occur — assert by patching sdk import.
-        with patch("anthropic.Anthropic") as mock_class:
+        # v13: assert no SDK invocation occurs by patching the async
+        # helper at the wrapper layer.
+        with patch(
+            "api.engine.layers.agent_llm_client_v1._invoke_agent_sdk",
+        ) as mock_invoke:
             result = c.call_with_budget(
-                system="sys",
-                user=huge,
-                max_input_tokens=100,
-                max_output_tokens=1000,
+                system="sys", user=huge,
+                max_input_tokens=100, max_output_tokens=1000,
             )
-            mock_class.assert_not_called()
+            mock_invoke.assert_not_called()
         self.assertFalse(result.ok)
         self.assertTrue(result.budget_exceeded)
         self.assertEqual(result.error_code, "INPUT_TOKEN_BUDGET_EXCEEDED")
 
     def test_fallback_path_when_unavailable(self) -> None:
+        # v13: BOTH auth paths must be absent for is_available()=False.
         os.environ.pop("ANTHROPIC_API_KEY", None)
-        c = AnthropicClient()  # no api key, env var unset
-        result = c.call_with_budget(
-            system="s",
-            user="u",
-            max_input_tokens=1000,
-            max_output_tokens=100,
-        )
+        with patch(
+            "api.engine.layers.agent_llm_client_v1.shutil.which",
+            return_value=None,
+        ):
+            c = AnthropicClient()  # no api key, no CLI
+            result = c.call_with_budget(
+                system="s", user="u",
+                max_input_tokens=1000, max_output_tokens=100,
+            )
         self.assertFalse(result.ok)
         self.assertTrue(result.fallback_used)
         self.assertEqual(result.error_code, "LLM_UNAVAILABLE")
@@ -204,31 +265,39 @@ class SuccessfulCallTests(unittest.TestCase):
     def tearDown(self) -> None:
         os.environ.pop("ANTHROPIC_API_KEY", None)
 
-    def _make_response(self, text: str, input_tokens: int = 1000,
-                       output_tokens: int = 200) -> MagicMock:
-        block = MagicMock()
-        block.type = "text"
-        block.text = text
-        usage = MagicMock()
-        usage.input_tokens = input_tokens
-        usage.output_tokens = output_tokens
-        response = MagicMock()
-        response.content = [block]
-        response.usage = usage
-        return response
+    def _make_fake_invoke(
+        self, text: str, input_tokens: int = 1000,
+        output_tokens: int = 200,
+        total_cost_usd: Optional[float] = None,
+        error_category: Optional[str] = None,
+    ):
+        """Return an async function suitable for patching
+        `_invoke_agent_sdk`. v13: replaces the old MagicMock SDK shape."""
+        async def _fake(*, system, user, model, max_budget_usd):
+            return {
+                "text": text,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_cost_usd": total_cost_usd,
+                "error_category": error_category,
+                "error_message": None,
+                "api_error_status": None,
+                "stop_reason": "end_turn",
+            }
+        return _fake
 
     def test_returns_text_and_parsed_json(self) -> None:
         c = AnthropicClient(api_key="sk-test")
-        fake_sdk_client = MagicMock()
-        fake_sdk_client.messages.create.return_value = self._make_response(
+        fake = self._make_fake_invoke(
             '{"hello": "world"}', input_tokens=1500, output_tokens=300,
         )
-        with patch("anthropic.Anthropic", return_value=fake_sdk_client):
+        with patch(
+            "api.engine.layers.agent_llm_client_v1._invoke_agent_sdk",
+            new=fake,
+        ):
             result = c.call_with_budget(
-                system="sys",
-                user="user prompt",
-                max_input_tokens=10_000,
-                max_output_tokens=2_000,
+                system="sys", user="user prompt",
+                max_input_tokens=10_000, max_output_tokens=2_000,
             )
         self.assertTrue(result.ok)
         self.assertEqual(result.text, '{"hello": "world"}')
@@ -237,25 +306,64 @@ class SuccessfulCallTests(unittest.TestCase):
         self.assertEqual(result.output_tokens, 300)
         # Sonnet 4.6 pricing: 1500/1M * 3 + 300/1M * 15 = 0.0045 + 0.0045 = 0.009
         self.assertAlmostEqual(result.cost_usd, 0.009, places=4)
+        # No total_cost_usd from SDK -> cost_basis falls back to estimate.
+        self.assertEqual(result.cost_basis, "api_estimate")
         self.assertEqual(result.model, DEFAULT_MODEL)
 
     def test_invalid_json_text_still_returns_ok(self) -> None:
-        # Text that isn't JSON — parsed_json should be None but ok=True.
         c = AnthropicClient(api_key="sk-test")
-        fake_sdk_client = MagicMock()
-        fake_sdk_client.messages.create.return_value = self._make_response(
-            "plain text response, no json",
-        )
-        with patch("anthropic.Anthropic", return_value=fake_sdk_client):
+        fake = self._make_fake_invoke("plain text response, no json")
+        with patch(
+            "api.engine.layers.agent_llm_client_v1._invoke_agent_sdk",
+            new=fake,
+        ):
             result = c.call_with_budget(
-                system="s",
-                user="u",
-                max_input_tokens=10_000,
-                max_output_tokens=2_000,
+                system="s", user="u",
+                max_input_tokens=10_000, max_output_tokens=2_000,
             )
         self.assertTrue(result.ok)
         self.assertIsNone(result.parsed_json)
         self.assertTrue(result.text.startswith("plain text"))
+
+    def test_sdk_reported_cost_promotes_basis_to_subscription(self) -> None:
+        """v13 NEW: when ResultMessage.total_cost_usd > 0, cost_basis
+        flips to 'subscription_credit' so callers can render the
+        right caption."""
+        c = AnthropicClient(api_key="sk-test")
+        fake = self._make_fake_invoke(
+            '{"ok": 1}', input_tokens=500, output_tokens=100,
+            total_cost_usd=0.0123,
+        )
+        with patch(
+            "api.engine.layers.agent_llm_client_v1._invoke_agent_sdk",
+            new=fake,
+        ):
+            result = c.call_with_budget(
+                system="s", user="u",
+                max_input_tokens=10_000, max_output_tokens=2_000,
+            )
+        self.assertTrue(result.ok)
+        self.assertEqual(result.cost_basis, "subscription_credit")
+        self.assertAlmostEqual(result.cost_usd, 0.0123, places=4)
+
+    def test_api_error_category_classifies_correctly(self) -> None:
+        """v13 NEW: AssistantMessage.error='invalid_request' should
+        map to LLM_BAD_REQUEST. Non-retriable -> single attempt."""
+        c = AnthropicClient(api_key="sk-test")
+        fake = self._make_fake_invoke(
+            "", input_tokens=10, output_tokens=0,
+            error_category="invalid_request",
+        )
+        with patch(
+            "api.engine.layers.agent_llm_client_v1._invoke_agent_sdk",
+            new=fake,
+        ):
+            result = c.call_with_budget(
+                system="s", user="u",
+                max_input_tokens=10_000, max_output_tokens=2_000,
+            )
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "LLM_BAD_REQUEST")
 
 
 class RetryTests(unittest.TestCase):
@@ -290,6 +398,53 @@ class RetryTests(unittest.TestCase):
         class AuthenticationError(Exception):
             pass
         self.assertFalse(_is_retriable(AuthenticationError("x")))
+
+
+class AgentSdkErrorEnumTests(unittest.TestCase):
+    """v13 NEW: Agent SDK reports errors via AssistantMessage.error
+    enum, not raised exceptions. Separate helpers map those to
+    LLM_* codes + retriability."""
+
+    def test_classify_known_categories(self) -> None:
+        self.assertEqual(
+            _classify_agent_sdk_error("authentication_failed"),
+            "LLM_AUTH_FAILED",
+        )
+        self.assertEqual(
+            _classify_agent_sdk_error("rate_limit"),
+            "LLM_RATE_LIMITED",
+        )
+        self.assertEqual(
+            _classify_agent_sdk_error("server_error"),
+            "LLM_SERVER_ERROR",
+        )
+        self.assertEqual(
+            _classify_agent_sdk_error("billing_error"),
+            "LLM_BILLING_ERROR",
+        )
+
+    def test_classify_unknown_falls_through(self) -> None:
+        self.assertEqual(
+            _classify_agent_sdk_error("some_new_category"),
+            "LLM_UNEXPECTED_ERROR",
+        )
+
+    def test_retriable_rate_limit_and_server_error(self) -> None:
+        self.assertTrue(_is_retriable_agent_sdk_error("rate_limit"))
+        self.assertTrue(_is_retriable_agent_sdk_error("server_error"))
+
+    def test_not_retriable_auth_or_billing(self) -> None:
+        self.assertFalse(_is_retriable_agent_sdk_error("authentication_failed"))
+        self.assertFalse(_is_retriable_agent_sdk_error("billing_error"))
+        self.assertFalse(_is_retriable_agent_sdk_error("invalid_request"))
+
+
+class AgentSdkClientAliasTests(unittest.TestCase):
+    """v13: AgentSdkClient is an alias for AnthropicClient (class
+    renamed conceptually; old name kept for backwards compat)."""
+
+    def test_alias_is_anthropic_client(self) -> None:
+        self.assertIs(AgentSdkClient, AnthropicClient)
 
 
 class DefaultClientSingletonTests(unittest.TestCase):

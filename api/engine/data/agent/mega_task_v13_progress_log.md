@@ -78,3 +78,97 @@ are noise -- pydantic-core 2.41.5 installed cleanly per
 requirements.txt; baseline tests still pass post-install.
 
 **Commit message:** "Phase 0 (mega-task v13): pre-flight + LLM call site audit + claude-agent-sdk dependency bump".
+
+Committed as `42f4dd7f3`.
+
+---
+
+## Phase 1 — Central wrapper migration (2026-05-24)
+
+**Migration** in `api/engine/layers/agent_llm_client_v1.py`:
+
+- Replaced `import anthropic` with `import claude_agent_sdk`. Module
+  version bumped: `LLM_CLIENT_VERSION = "agent_llm_client_v1.1"`.
+- `AnthropicClient` class name retained for backwards compat with all
+  10 Category-A import sites + existing tests. New alias
+  `AgentSdkClient = AnthropicClient` for callers who want to
+  reference the migrated semantics explicitly.
+- New `CallResult.cost_basis: str` field (`"api_estimate"` |
+  `"subscription_credit"`) per kickoff Phase 1 Option A. Tracks
+  whether the reported `cost_usd` came from local PRICING table
+  (api_estimate) or the SDK's `ResultMessage.total_cost_usd`
+  (subscription_credit).
+- New `_resolve_auth_mode() -> 'subscription' | 'api_key' | 'none'`
+  helper. `is_available()` now checks: SDK imported AND (CLI on PATH
+  OR ANTHROPIC_API_KEY env). CLI takes priority over API key in
+  auth-mode reporting.
+- `unavailable_reason()` updated to mention both auth paths in the
+  user-facing error message.
+- `call_with_budget()`:
+  - Replaced sync `self._client.messages.create(...)` with
+    `asyncio.run(_invoke_agent_sdk(...))`. Sync surface preserved
+    for callers (no async/await infection beyond the wrapper).
+  - Maps legacy `max_output_tokens` cap to Agent SDK's
+    `max_budget_usd` parameter via `estimate_cost_usd(0,
+    max_output_tokens * 2)` (2x safety multiplier so the SDK
+    doesn't terminate just below requested output).
+  - Pre-call input-token budget guard preserved verbatim.
+  - Retry loop honors BOTH legacy exception classification
+    (`_is_retriable` on `RateLimitError`, `APIConnectionError`,
+    plus new entries for `CLIConnectionError`/`ProcessError`) AND
+    new Agent SDK error-enum classification
+    (`_is_retriable_agent_sdk_error` on `rate_limit` +
+    `server_error` categories).
+
+- New private async helper `_invoke_agent_sdk(system, user, model,
+  max_budget_usd) -> dict`:
+  - `ClaudeAgentOptions(system_prompt=system, model=model,
+    max_turns=1, allowed_tools=[], permission_mode=
+    "bypassPermissions", max_budget_usd=max_budget_usd)`.
+  - Walks the async iterator returned by `query(prompt=user,
+    options=options)`.
+  - Accumulates `AssistantMessage.content[].text` from TextBlocks.
+  - Captures `AssistantMessage.error` (enum) for error
+    classification.
+  - Reads `ResultMessage.usage` (input/output tokens),
+    `total_cost_usd`, `is_error`, `api_error_status`, `errors`.
+  - Some Agent SDK paths put final text in `ResultMessage.result`
+    instead of `AssistantMessage.content`; fallback covered.
+
+- New `_classify_agent_sdk_error(category)` + `_is_retriable_agent_sdk_error(category)`
+  free functions for the new error-enum classification surface. Map
+  the 6 documented categories ('authentication_failed',
+  'billing_error', 'rate_limit', 'invalid_request', 'server_error',
+  'unknown') to stable `LLM_*` codes. Retriable: rate_limit +
+  server_error only.
+
+**Test updates** in `tests/test_agent_llm_client_v1.py`:
+
+- Mock target updated from `anthropic.Anthropic` to
+  `api.engine.layers.agent_llm_client_v1._invoke_agent_sdk` (the
+  new async helper). Mocks use an async function (`async def
+  _fake(*, system, user, model, max_budget_usd)`) returning the
+  same dict shape `_invoke_agent_sdk` produces in production.
+- `IsAvailableTests` rewritten: tests now patch `shutil.which` to
+  control CLI-presence detection. New tests cover:
+  - subscription-via-CLI-without-API-key path
+  - auth-mode priority (CLI > API key > none)
+- `BudgetGuardTests` rewritten: short-circuit assertion patches
+  `_invoke_agent_sdk` (asserts not_called); fallback path patches
+  `shutil.which`.
+- `SuccessfulCallTests` rewritten via the new `_make_fake_invoke()`
+  async-function builder. New tests cover:
+  - `total_cost_usd` from SDK flipping `cost_basis` to
+    `subscription_credit`
+  - Agent SDK error enum classification end-to-end
+- New `AgentSdkErrorEnumTests` (4 tests) covers the new helpers.
+- New `AgentSdkClientAliasTests` (1 test) covers the alias.
+
+**Result**: wrapper tests **35/35 pass** (was 26 -> +9 v13-specific).
+Full regression: **2321 pass + 25 skip + 88 subtests** (iter-12
+baseline 2312 + 9 new tests, no regressions).
+
+~280 LOC production rewrite (wrapper) + ~180 LOC test additions /
+updates.
+
+**Commit message:** "Phase 1 (mega-task v13): migrate central LLM wrapper to claude-agent-sdk (preserves CallResult shape; adds cost_basis field)".

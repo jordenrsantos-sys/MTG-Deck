@@ -1,39 +1,50 @@
 """
-agent_llm_client_v1 — Pillar D iteration 2: Anthropic SDK wrapper used by
-the LLM reasoning layer that sits on top of iteration 1's deterministic
-deck-building skeleton.
+agent_llm_client_v1 — LLM client wrapper for Pillar D iteration 2+
+and the iter-10/11/12 substrate + policy + playtest layers.
+
+Mega-task v13 (2026-05-24) migrated the underlying SDK from the
+`anthropic` package (API key auth) to `claude-agent-sdk` (Claude
+Code subscription auth via local `~/.claude/` credentials, with
+ANTHROPIC_API_KEY fallback).
+
+The migration is plumbing-only. The CallResult contract is preserved
+modulo a new `cost_basis` field. All 10 production call sites that
+route through `get_default_client().call_with_budget(...)` pick up
+the migration transparently.
 
 Responsibilities (this module is intentionally narrow):
-  - Single source of truth for `is_available()` — answers "can we make an
-    LLM call right now?" by checking both that the `anthropic` import
-    succeeded AND that the ANTHROPIC_API_KEY env var is set.
-  - `call_with_budget()` — one Anthropic `messages.create()` call with a
-    declared input/output token budget. Returns a structured CallResult
-    that records the parsed response text, token counts, cost estimate,
-    wall-clock time, error (if any), and whether the budget was exceeded.
-  - Retry with exponential backoff for transient errors (429 + 5xx).
-  - Pricing math for Sonnet 4.6 / Opus 4.6 / Haiku 4.5 so callers can sum
-    per-build cost without re-deriving it from the docs.
+  - `is_available()` — answers "can we make an LLM call right now?"
+    by checking that the Agent SDK imported AND either the Claude
+    Code CLI is reachable OR ANTHROPIC_API_KEY is set as fallback.
+  - `call_with_budget()` — one single-shot completion via the Agent
+    SDK's `query()` async iterator. Returns a structured CallResult.
+    Sync surface preserved for the engine's sync call sites; uses
+    `asyncio.run()` once per call internally.
+  - Retry with exponential backoff for transient errors (rate limit,
+    server errors).
+  - Pricing math (api_estimate) — useful as a benchmark even when
+    subscription billing pays. The new `cost_basis` field tells
+    consumers whether the `cost_usd` figure came from the SDK's
+    `total_cost_usd` (subscription_credit) or our local table
+    (api_estimate).
 
-Why a thin wrapper (and not just calling `anthropic.Anthropic()` directly
-from each LLM call site): iteration 2 has four call sites (intent
-interpreter, candidate critic, wild combo discovery, final rationale
-rewrite). Centralizing budget-tracking, retry, fallback, and pricing
-prevents drift across them and keeps the iteration 2 → 3 prompt-tuning
-work confined to the prompt strings — not the plumbing.
+Fallback contract (UNCHANGED): if `is_available()` is False,
+build_deck_v1 must NEVER call any function in this module that
+performs a network request. It should log a warning and proceed
+with iteration 1 behavior.
 
-Fallback contract: if `is_available()` is False, build_deck_v1 must NEVER
-call any function in this module that performs a network request. It
-should log a warning and proceed with iteration 1 behavior. The four
-LLM-augmentation phases (B2 / C2.1 / C2.2 / D2) all guard on
-`client.is_available()` before invoking `call_with_budget()`.
+Kill switch (UNCHANGED): `MTG_ENGINE_DISABLE_LLM=1` forces
+`is_available()` to False. Used by tests/conftest.py to prevent
+stray real API calls.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import re
+import shutil
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -42,18 +53,18 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
-LLM_CLIENT_VERSION = "agent_llm_client_v1.0"
+LLM_CLIENT_VERSION = "agent_llm_client_v1.1"  # v13 migration bump
 
-# Default model for iteration 2. Iteration 3 will revisit (per project
-# memory project_pillar_d_creative_agent_arc.md, iteration 3 is the
-# Sonnet-4.6 → Opus-4.6 / Opus-4.7 upgrade arc).
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
 # Per-model pricing in USD per million tokens. Used for the per-build
 # cost estimate that surfaces in the response + UI. Numbers are public
-# Anthropic pricing as of 2026-Q2; keep this table here so the cost
-# accounting lives next to the LLM client (not scattered across the four
-# call sites).
+# Anthropic pricing as of 2026-Q2. Post-v13 migration: this is now an
+# "api_estimate" figure -- the actual billing under subscription auth
+# is reported by the SDK via ResultMessage.total_cost_usd, surfaced in
+# CallResult.cost_usd with cost_basis="subscription_credit" when
+# available. The estimate is kept as a benchmark + fallback when the
+# SDK does not surface a cost figure.
 PRICING_USD_PER_MTOK: Dict[str, Dict[str, float]] = {
     "claude-sonnet-4-6": {"input": 3.00, "output": 15.00},
     "claude-opus-4-6":   {"input": 5.00, "output": 25.00},
@@ -71,20 +82,25 @@ PRICING_USD_PER_MTOK: Dict[str, Dict[str, float]] = {
 class CallResult:
     """Result of a single LLM call. Always has all fields populated so
     callers can blindly forward the cost / token / latency fields to the
-    response payload regardless of success or failure."""
+    response payload regardless of success or failure.
+
+    v13 migration added `cost_basis` field to distinguish API-rate
+    estimates (legacy) from real subscription-credit charges (Agent
+    SDK ResultMessage.total_cost_usd)."""
     ok: bool
-    text: str = ""                              # Raw assistant text, or empty on error.
-    parsed_json: Optional[Any] = None           # JSON parsed from `text` if valid; else None.
+    text: str = ""
+    parsed_json: Optional[Any] = None
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
+    cost_basis: str = "api_estimate"            # NEW v13: "api_estimate" | "subscription_credit"
     latency_ms: int = 0
     model: str = ""
-    budget_exceeded: bool = False               # True if input estimate exceeded `max_input_tokens`.
+    budget_exceeded: bool = False
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     retries: int = 0
-    fallback_used: bool = False                 # True if call_with_budget skipped (no API key, etc.)
+    fallback_used: bool = False
 
 
 # ============================================================
@@ -93,33 +109,30 @@ class CallResult:
 
 
 class AnthropicClient:
-    """Thin wrapper around the Anthropic SDK. Instantiated once and shared
-    across the four LLM call sites within a build. `is_available()` is
-    cheap and idempotent — call sites can check it without paying any
-    SDK-import cost.
+    """Wrapper around the Claude Agent SDK (subscription auth) with
+    ANTHROPIC_API_KEY fallback. Class name retained from iter-2 for
+    backwards compatibility with existing test imports + module
+    references; functionally this is the Agent SDK client now.
 
-    The client itself does NOT cache results; iteration 2 makes 4 calls
-    per build, each with build-specific inputs, so caching would be
-    counterproductive. (Iteration 3 may revisit if a deterministic
-    'commander + bracket → intent interpretation' prefix emerges that
-    benefits from prompt caching across builds.)
+    v13 migration: underlying SDK is `claude_agent_sdk.query()` instead
+    of `anthropic.Anthropic().messages.create()`. CallResult contract
+    preserved modulo the new cost_basis field.
     """
 
-    def __init__(self, model: str = DEFAULT_MODEL, api_key: Optional[str] = None) -> None:
+    def __init__(self, model: str = DEFAULT_MODEL,
+                 api_key: Optional[str] = None) -> None:
         self.model = model
-        # Resolve api_key + sdk lazily so a missing/late-set env var
-        # doesn't crash module import.
+        # Resolve api_key lazily so a missing/late-set env var doesn't
+        # crash module import.
         self._api_key = api_key
-        self._client = None              # type: ignore[assignment]
         self._sdk_import_error: Optional[str] = None
-
         # Probe SDK availability without raising. Tests may pre-import
-        # anthropic and patch it; in production, a missing SDK should
+        # the SDK and patch it; in production, a missing SDK should
         # surface as a clean fallback rather than a build-time crash.
         try:
-            import anthropic  # noqa: F401
+            import claude_agent_sdk  # noqa: F401
             self._sdk_available = True
-        except Exception as exc:  # pragma: no cover — defensive
+        except Exception as exc:  # pragma: no cover -- defensive
             self._sdk_available = False
             self._sdk_import_error = f"{exc.__class__.__name__}: {exc}"
 
@@ -130,21 +143,42 @@ class AnthropicClient:
             return self._api_key
         return os.environ.get("ANTHROPIC_API_KEY")
 
-    def is_available(self) -> bool:
-        """True iff the SDK imported AND we have an API key. Cheap to
-        call repeatedly. Callers MUST guard every network-invoking method
-        on this — the fallback path (skip LLM augmentation, emit warning)
-        is the only legal alternative.
+    def _has_claude_cli(self) -> bool:
+        """True if the `claude` CLI is reachable on PATH. The Agent SDK
+        invokes it as a subprocess transport; without it the SDK can't
+        complete a call even if subscription credentials exist."""
+        return shutil.which("claude") is not None
 
-        Kill switch: setting MTG_ENGINE_DISABLE_LLM=1 in the environment
-        forces is_available() to False even if everything else is set.
-        Used by the test suite (tests/conftest.py) to prevent stray real
-        Anthropic API calls during local pytest runs on developer
-        machines where ANTHROPIC_API_KEY may already be present.
+    def _resolve_auth_mode(self) -> str:
+        """Returns 'subscription' if Claude Code CLI is reachable
+        (preferred for v13 migration), 'api_key' if ANTHROPIC_API_KEY
+        is set (fallback), or 'none' if neither."""
+        if self._has_claude_cli():
+            return "subscription"
+        if self._resolve_api_key():
+            return "api_key"
+        return "none"
+
+    def is_available(self) -> bool:
+        """True iff the SDK imported AND at least one auth path works.
+
+        Auth paths checked, in priority order:
+          1. Claude Code CLI (`claude` in PATH) -- subscription auth
+          2. ANTHROPIC_API_KEY env var -- API-key fallback
+
+        Cheap to call repeatedly. Callers MUST guard every
+        network-invoking method on this -- the fallback path (skip LLM
+        augmentation, emit warning) is the only legal alternative.
+
+        Kill switch (UNCHANGED): setting MTG_ENGINE_DISABLE_LLM=1 in
+        the environment forces is_available() to False even if
+        everything else is set. Used by tests/conftest.py.
         """
         if os.environ.get("MTG_ENGINE_DISABLE_LLM") == "1":
             return False
-        return bool(self._sdk_available and self._resolve_api_key())
+        if not self._sdk_available:
+            return False
+        return self._resolve_auth_mode() != "none"
 
     def unavailable_reason(self) -> str:
         """Human-readable reason why is_available() returned False.
@@ -152,20 +186,26 @@ class AnthropicClient:
         they're seeing iteration-1 behavior."""
         if os.environ.get("MTG_ENGINE_DISABLE_LLM") == "1":
             return (
-                "MTG_ENGINE_DISABLE_LLM=1 is set; the iteration-2 LLM reasoning layer "
-                "is disabled by this kill switch. Unset the env var to re-enable."
+                "MTG_ENGINE_DISABLE_LLM=1 is set; the LLM reasoning "
+                "layer is disabled by this kill switch. Unset the env "
+                "var to re-enable."
             )
         if not self._sdk_available:
             return (
-                f"`anthropic` SDK could not be imported: {self._sdk_import_error}. "
-                f"Run `pip install -r requirements.txt` (Pillar D iteration 2 added `anthropic>=0.50.0`)."
+                f"`claude_agent_sdk` could not be imported: "
+                f"{self._sdk_import_error}. Run `pip install -r "
+                f"requirements.txt`."
             )
-        if not self._resolve_api_key():
+        auth = self._resolve_auth_mode()
+        if auth == "none":
             return (
-                "ANTHROPIC_API_KEY environment variable is not set. "
-                "Pillar D iteration 2 requires an Anthropic API key to run the LLM reasoning layer. "
-                "Without it the agent falls back to iteration 1's deterministic-only behavior. "
-                "Set ANTHROPIC_API_KEY=... in your shell and restart the server (or `launch_dev.cmd`)."
+                "Neither Claude Code CLI nor ANTHROPIC_API_KEY is "
+                "available. Sub-mega-task v13 migrated the LLM client "
+                "to the Claude Agent SDK -- preferred auth is via the "
+                "Claude Code CLI (run `claude login`). Without that, "
+                "set ANTHROPIC_API_KEY=... in your shell as fallback. "
+                "Without either, the agent falls back to iteration 1's "
+                "deterministic-only behavior."
             )
         return ""
 
@@ -176,9 +216,6 @@ class AnthropicClient:
         m = model or self.model
         prices = PRICING_USD_PER_MTOK.get(m)
         if not prices:
-            # Unknown model — return 0 rather than raise so the warning
-            # surfaces but the build doesn't crash. Callers can detect
-            # cost==0 + a token count > 0 and emit a warning if they want.
             return 0.0
         return (input_tokens / 1_000_000.0) * prices["input"] + (output_tokens / 1_000_000.0) * prices["output"]
 
@@ -186,22 +223,13 @@ class AnthropicClient:
 
     @staticmethod
     def estimate_input_tokens(text: str) -> int:
-        """Rough pre-call estimate used by the budget check. Real token
-        count comes back in `usage.input_tokens`; this is intentionally a
-        conservative approximation (~3.5 chars/token for English + JSON
-        prompts) so we never under-estimate and skip a call we should
-        have made.
+        """Rough pre-call estimate (~3.5 chars/token conservative).
+        Real token count comes back in `usage.input_tokens`.
 
-        Not a substitute for the actual tokenizer — Anthropic's tokenizer
-        is BPE and ratios vary. For iteration 2 we only need this to
-        bail BEFORE a call when the assembled prompt is wildly over
-        budget (e.g. a 200k-token candidate dump).
+        Not a substitute for the actual tokenizer.
         """
         if not text:
             return 0
-        # ~3.5 chars/token is conservative; long technical text closer
-        # to 4.0, short prose closer to 3.0. Stay conservative (smaller
-        # divisor → larger estimate → more likely to fail-fast).
         return max(1, int(len(text) / 3.5))
 
     # ----- the workhorse call -----
@@ -217,13 +245,13 @@ class AnthropicClient:
         max_retries: int = 3,
         base_backoff_sec: float = 0.5,
     ) -> CallResult:
-        """Make one Anthropic messages.create() call with cost/latency
-        tracking, exponential-backoff retry on 429/5xx, and a pre-call
-        budget guard.
+        """One Agent SDK `query()` call with cost/latency tracking,
+        exponential-backoff retry on rate-limit / server-error, and a
+        pre-call budget guard.
 
-        Returns a CallResult — never raises. Callers can branch on
+        Returns a CallResult -- never raises. Callers can branch on
         `result.ok` to decide whether to use the parsed output or fall
-        back to iteration-1 behavior for that phase.
+        back to deterministic behavior for that phase.
         """
         m = model or self.model
         started = time.perf_counter()
@@ -244,106 +272,220 @@ class AnthropicClient:
                 input_tokens=est_input,
                 error_code="INPUT_TOKEN_BUDGET_EXCEEDED",
                 error_message=(
-                    f"Estimated input tokens {est_input} exceeds budget {max_input_tokens}. "
-                    f"Trim the prompt context (candidate pool, deck list) and retry."
+                    f"Estimated input tokens {est_input} exceeds budget "
+                    f"{max_input_tokens}. Trim the prompt context "
+                    f"(candidate pool, deck list) and retry."
                 ),
                 latency_ms=int((time.perf_counter() - started) * 1000),
             )
 
-        # ---- import sdk lazily (we already verified import succeeds via is_available) ----
-        import anthropic  # type: ignore
-
-        # ---- build / cache client ----
-        if self._client is None:
-            try:
-                self._client = anthropic.Anthropic(api_key=self._resolve_api_key())
-            except Exception as exc:
-                return CallResult(
-                    ok=False, model=m,
-                    error_code="LLM_CLIENT_INIT_FAILED",
-                    error_message=f"{exc.__class__.__name__}: {exc}",
-                    latency_ms=int((time.perf_counter() - started) * 1000),
-                )
+        # ---- compute max_budget_usd from max_output_tokens cap ----
+        # The Agent SDK uses USD budget instead of token cap. We back
+        # into one from the legacy max_output_tokens contract using
+        # output-side pricing, with a 2x safety multiplier so the SDK
+        # doesn't terminate just below the requested output size.
+        max_budget = self.estimate_cost_usd(0, max_output_tokens * 2, model=m)
+        if max_budget <= 0:
+            # Unknown model -> permissive fallback cap so the call can
+            # proceed (errors will surface naturally if cost explodes).
+            max_budget = 1.0
 
         # ---- retry loop ----
         retries = 0
-        last_exc: Optional[BaseException] = None
+        last_error_code: Optional[str] = None
+        last_error_message: Optional[str] = None
         while retries <= max_retries:
             try:
-                response = self._client.messages.create(
-                    model=m,
-                    max_tokens=max_output_tokens,
-                    system=system,
-                    messages=[{"role": "user", "content": user}],
-                )
-                # Extract text content. The SDK returns a Message with a
-                # `content` list of typed blocks; we want the first text
-                # block. Tool use is not supported in iteration 2 (kept
-                # simple intentionally).
-                text_parts: List[str] = []
-                for block in getattr(response, "content", []) or []:
-                    btype = getattr(block, "type", None)
-                    if btype == "text":
-                        text_parts.append(getattr(block, "text", "") or "")
-                text = "".join(text_parts)
-
-                usage = getattr(response, "usage", None)
-                inp = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
-                outp = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
-                cost = self.estimate_cost_usd(inp, outp, model=m)
-
-                parsed_json = _try_parse_json(text)
-
-                return CallResult(
-                    ok=True,
-                    text=text,
-                    parsed_json=parsed_json,
-                    input_tokens=inp,
-                    output_tokens=outp,
-                    cost_usd=cost,
-                    latency_ms=int((time.perf_counter() - started) * 1000),
-                    model=m,
-                    retries=retries,
-                )
-
+                raw_result = asyncio.run(_invoke_agent_sdk(
+                    system=system, user=user, model=m,
+                    max_budget_usd=max_budget,
+                ))
             except Exception as exc:
-                last_exc = exc
-                # Retry on transient errors only (rate limit / overloaded / 5xx /
-                # connection drops). Other errors fall through and surface.
+                last_error_code = _classify_error_code(exc)
+                last_error_message = f"{exc.__class__.__name__}: {exc}"
                 if _is_retriable(exc) and retries < max_retries:
-                    # Deterministic exponential backoff (no jitter). The
-                    # `random` module is banned in engine runtime modules
-                    # by test_no_random_imports; we don't need jitter for
-                    # the small retry counts (max_retries=3 by default).
                     sleep_for = base_backoff_sec * (2 ** retries)
                     logger.warning(
                         "agent_llm_client retry %d/%d after %s: %s",
-                        retries + 1, max_retries, exc.__class__.__name__, exc,
+                        retries + 1, max_retries,
+                        exc.__class__.__name__, exc,
                     )
                     time.sleep(sleep_for)
                     retries += 1
                     continue
-                # Permanent failure.
-                code = _classify_error_code(exc)
                 return CallResult(
                     ok=False, model=m,
-                    error_code=code,
-                    error_message=f"{exc.__class__.__name__}: {exc}",
+                    error_code=last_error_code,
+                    error_message=last_error_message,
                     latency_ms=int((time.perf_counter() - started) * 1000),
                     retries=retries,
                 )
 
+            # The async invocation returned a structured dict; convert
+            # to CallResult.
+            if raw_result.get("error_category"):
+                # API-level error came back via AssistantMessage.error.
+                err_code = _classify_agent_sdk_error(raw_result["error_category"])
+                err_msg = raw_result.get("error_message") or err_code
+                if _is_retriable_agent_sdk_error(raw_result["error_category"]) \
+                        and retries < max_retries:
+                    sleep_for = base_backoff_sec * (2 ** retries)
+                    logger.warning(
+                        "agent_llm_client retry %d/%d after %s: %s",
+                        retries + 1, max_retries, err_code, err_msg,
+                    )
+                    time.sleep(sleep_for)
+                    retries += 1
+                    last_error_code = err_code
+                    last_error_message = err_msg
+                    continue
+                return CallResult(
+                    ok=False, model=m,
+                    error_code=err_code,
+                    error_message=err_msg,
+                    latency_ms=int((time.perf_counter() - started) * 1000),
+                    retries=retries,
+                    input_tokens=raw_result.get("input_tokens", 0),
+                    output_tokens=raw_result.get("output_tokens", 0),
+                )
+
+            text = raw_result.get("text", "")
+            inp = int(raw_result.get("input_tokens", 0) or 0)
+            outp = int(raw_result.get("output_tokens", 0) or 0)
+            # Cost basis: prefer the SDK's reported total_cost_usd if
+            # present (subscription_credit); fall back to api_estimate.
+            sdk_cost = raw_result.get("total_cost_usd")
+            if sdk_cost is not None and sdk_cost > 0:
+                cost = float(sdk_cost)
+                basis = "subscription_credit"
+            else:
+                cost = self.estimate_cost_usd(inp, outp, model=m)
+                basis = "api_estimate"
+
+            return CallResult(
+                ok=True,
+                text=text,
+                parsed_json=_try_parse_json(text),
+                input_tokens=inp,
+                output_tokens=outp,
+                cost_usd=cost,
+                cost_basis=basis,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                model=m,
+                retries=retries,
+            )
+
         # All retries exhausted on retriable errors.
         return CallResult(
             ok=False, model=m,
-            error_code="RETRIES_EXHAUSTED",
+            error_code=last_error_code or "RETRIES_EXHAUSTED",
             error_message=(
-                f"Exhausted {max_retries} retries; last error: "
-                f"{last_exc.__class__.__name__ if last_exc else 'unknown'}: {last_exc}"
+                last_error_message or
+                f"Exhausted {max_retries} retries with no successful response."
             ),
             latency_ms=int((time.perf_counter() - started) * 1000),
             retries=retries,
         )
+
+
+# ============================================================
+# Agent SDK async invocation helper.
+# ============================================================
+
+
+async def _invoke_agent_sdk(
+    *, system: str, user: str, model: str, max_budget_usd: float,
+) -> Dict[str, Any]:
+    """One async invocation of `claude_agent_sdk.query()`. Walks the
+    async iterator, accumulates AssistantMessage TextBlocks, captures
+    error categorization, and reads ResultMessage usage + cost.
+
+    Returns a dict with keys: text, input_tokens, output_tokens,
+    total_cost_usd, error_category, error_message, api_error_status,
+    stop_reason.
+
+    Raises (passing through to caller's retry loop):
+      - CLINotFoundError if `claude` CLI missing
+      - CLIConnectionError if subprocess fails
+      - Other ClaudeSDKError variants
+    """
+    from claude_agent_sdk import (
+        query, ClaudeAgentOptions,
+        AssistantMessage, ResultMessage,
+    )
+    from claude_agent_sdk.types import TextBlock
+
+    options = ClaudeAgentOptions(
+        system_prompt=system,
+        model=model,
+        max_turns=1,                # single-shot completion semantics
+        allowed_tools=[],           # no tool surface -- pure completion
+        permission_mode="bypassPermissions",
+        max_budget_usd=max_budget_usd,
+    )
+
+    text_parts: List[str] = []
+    input_tokens = 0
+    output_tokens = 0
+    total_cost_usd: Optional[float] = None
+    error_category: Optional[str] = None
+    error_message: Optional[str] = None
+    api_error_status: Optional[int] = None
+    stop_reason: Optional[str] = None
+
+    async for msg in query(prompt=user, options=options):
+        if isinstance(msg, AssistantMessage):
+            for block in msg.content:
+                if isinstance(block, TextBlock):
+                    text_parts.append(block.text or "")
+            if msg.error:
+                error_category = msg.error
+            if msg.usage:
+                # Usage may appear here per-message; we'll prefer
+                # ResultMessage.usage if it arrives later (more
+                # authoritative).
+                input_tokens = max(
+                    input_tokens,
+                    int(msg.usage.get("input_tokens", 0) or 0),
+                )
+                output_tokens = max(
+                    output_tokens,
+                    int(msg.usage.get("output_tokens", 0) or 0),
+                )
+            if msg.stop_reason:
+                stop_reason = msg.stop_reason
+        elif isinstance(msg, ResultMessage):
+            if msg.total_cost_usd is not None:
+                total_cost_usd = msg.total_cost_usd
+            if msg.is_error and not error_category:
+                error_category = "unknown"
+            if msg.api_error_status is not None:
+                api_error_status = msg.api_error_status
+            if msg.usage:
+                # ResultMessage.usage is authoritative; override.
+                rm_in = int(msg.usage.get("input_tokens", 0) or 0)
+                rm_out = int(msg.usage.get("output_tokens", 0) or 0)
+                if rm_in > 0:
+                    input_tokens = rm_in
+                if rm_out > 0:
+                    output_tokens = rm_out
+            if msg.errors:
+                error_message = "; ".join(msg.errors)
+            if msg.result and not text_parts:
+                # Some SDK paths put the final text in ResultMessage.result
+                # rather than AssistantMessage.content.
+                text_parts.append(msg.result)
+
+    return {
+        "text": "".join(text_parts),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_cost_usd": total_cost_usd,
+        "error_category": error_category,
+        "error_message": error_message,
+        "api_error_status": api_error_status,
+        "stop_reason": stop_reason,
+    }
 
 
 # ============================================================
@@ -367,19 +509,16 @@ def _try_parse_json(text: str) -> Optional[Any]:
     if not text:
         return None
     s = text.strip()
-    # 1. Direct.
     try:
         return json.loads(s)
     except Exception:
         pass
-    # 2. Code-fence content.
     m = _JSON_FENCE_RE.search(s)
     if m:
         try:
             return json.loads(m.group(1).strip())
         except Exception:
             pass
-    # 3. Balanced-bracket extraction.
     for opener, closer in (("{", "}"), ("[", "]")):
         start = s.find(opener)
         if start == -1:
@@ -412,21 +551,27 @@ def _try_parse_json(text: str) -> Optional[Any]:
     return None
 
 
+# ----- Legacy exception-name-based classification -----
+# Kept for backwards compat with tests that pass synthetic Exception
+# subclasses by name. Real Agent SDK errors flow through
+# _classify_agent_sdk_error + _is_retriable_agent_sdk_error below.
+
 _RETRIABLE_ERROR_NAMES = {
     "RateLimitError",
     "APIConnectionError",
     "APITimeoutError",
     "InternalServerError",
     "OverloadedError",
-    "APIStatusError",  # 5xx mapped here by older SDK versions
+    "APIStatusError",
+    # v13: Agent SDK transport-level retriable errors
+    "CLIConnectionError",
+    "ProcessError",
 }
 
 
 def _is_retriable(exc: BaseException) -> bool:
     name = exc.__class__.__name__
     if name in _RETRIABLE_ERROR_NAMES:
-        # Some SDKs map all status errors to APIStatusError — distinguish
-        # by status code where possible.
         status = getattr(exc, "status_code", None)
         if name == "APIStatusError" and isinstance(status, int):
             return status == 429 or status >= 500
@@ -435,10 +580,12 @@ def _is_retriable(exc: BaseException) -> bool:
 
 
 def _classify_error_code(exc: BaseException) -> str:
-    """Map an exception to a stable error_code string for the response.
+    """Map an exception class name to a stable error_code string.
 
-    These codes show up in build_deck_v1 warnings so the UI can render a
-    targeted message ("rate-limited; backoff", "auth failed; check key").
+    Legacy contract: stable mapping for the old `anthropic` SDK
+    exception types. The Agent SDK migration in v13 surfaces errors
+    differently (via AssistantMessage.error enum) -- see
+    `_classify_agent_sdk_error` below.
     """
     name = exc.__class__.__name__
     mapping = {
@@ -451,8 +598,43 @@ def _classify_error_code(exc: BaseException) -> str:
         "APIConnectionError": "LLM_CONNECTION_FAILED",
         "InternalServerError": "LLM_SERVER_ERROR",
         "OverloadedError": "LLM_OVERLOADED",
+        # v13: Agent SDK exceptions
+        "CLINotFoundError": "LLM_CLI_MISSING",
+        "CLIConnectionError": "LLM_CONNECTION_FAILED",
+        "CLIJSONDecodeError": "LLM_BAD_RESPONSE",
+        "ProcessError": "LLM_SERVER_ERROR",
+        "ClaudeSDKError": "LLM_SDK_ERROR",
     }
     return mapping.get(name, "LLM_UNEXPECTED_ERROR")
+
+
+# ----- Agent SDK error-enum classification (v13) -----
+
+# Agent SDK's AssistantMessage.error is one of:
+# 'authentication_failed' | 'billing_error' | 'rate_limit' |
+# 'invalid_request' | 'server_error' | 'unknown' | None
+_AGENT_SDK_ERROR_MAP: Dict[str, str] = {
+    "authentication_failed": "LLM_AUTH_FAILED",
+    "billing_error":         "LLM_BILLING_ERROR",
+    "rate_limit":            "LLM_RATE_LIMITED",
+    "invalid_request":       "LLM_BAD_REQUEST",
+    "server_error":          "LLM_SERVER_ERROR",
+    "unknown":               "LLM_UNEXPECTED_ERROR",
+}
+
+_AGENT_SDK_RETRIABLE_CATEGORIES = {
+    "rate_limit",
+    "server_error",
+}
+
+
+def _classify_agent_sdk_error(category: str) -> str:
+    """Map an Agent SDK error category enum to a stable error_code."""
+    return _AGENT_SDK_ERROR_MAP.get(category, "LLM_UNEXPECTED_ERROR")
+
+
+def _is_retriable_agent_sdk_error(category: str) -> bool:
+    return category in _AGENT_SDK_RETRIABLE_CATEGORIES
 
 
 # ============================================================
@@ -460,13 +642,18 @@ def _classify_error_code(exc: BaseException) -> str:
 # ============================================================
 
 
+# Alias for v13 callers who want to reference the migrated class name
+# explicitly. AnthropicClient remains the canonical name for backwards
+# compat with all existing import sites + tests.
+AgentSdkClient = AnthropicClient
+
+
 _default_client: Optional[AnthropicClient] = None
 
 
 def get_default_client() -> AnthropicClient:
-    """Return the process-wide AnthropicClient singleton. Initializing
-    lazily so import is side-effect-free. build_deck_v1 calls this once
-    per build and re-uses the same client across the four LLM phases.
+    """Return the process-wide LLM-client singleton. Initializes
+    lazily so import is side-effect-free.
     """
     global _default_client
     if _default_client is None:
@@ -475,7 +662,7 @@ def get_default_client() -> AnthropicClient:
 
 
 def reset_default_client_for_tests() -> None:
-    """Forget the singleton — used by unit tests that mock anthropic
-    after import. Not part of the production interface."""
+    """Forget the singleton. Used by tests that mock the SDK after
+    import. Not part of the production interface."""
     global _default_client
     _default_client = None
