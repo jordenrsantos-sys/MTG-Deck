@@ -138,3 +138,66 @@ Phase 7 cycle smoke (each combat live test costs $0.03-0.05; the
 unit suite covers the structural cases mockable without LLM).
 
 **Commit message:** "Phase 1 (mega-task v12): combat hook glue (LLM-driven attackers + blockers)".
+
+Committed as `72f146b43`.
+
+---
+
+## Phase 2 — Counter-war hook (counter_target_spell resolver) (2026-05-23)
+
+**Owns sub-B Phase 9 deferred gate 6.**
+
+**v11 substrate context.** v11 already shipped:
+- `stack.counter_target(state, target_entry_id)` substrate primitive
+- 7 counterspell-family resolvers in `cards/spell/counterspells.py`
+  via `register_spell` (Counterspell, Negate, Mana Drain, Swan Song,
+  Arcane Denial, An Offer You Can't Refuse, Fierce Guardianship).
+
+**What sub-C added** in `playtest/counter_war/`:
+
+1. **counterspell_annotations.py** —
+   - `COUNTERSPELL_FAMILY_NAMES`: 14-card list per kickoff Phase 2 spec.
+   - `_register_missing_counterspells()`: backfill resolvers for the
+     7 family cards v11 didn't ship (Force of Will, Force of Negation,
+     Dovin's Veto, Mindbreak Trap, Mental Misstep, Pact of Negation,
+     Daze). Each uses substrate's counter_target; alt-cost side
+     effects (FoW's exile-blue, Daze's bounce-Island) stubbed for
+     iter-12+.
+   - `make_counterspell_annotation(card_name)`: builds the
+     iter10_annotation dict sub-B's compute_eligible_actions
+     consumes -- includes `target_stack_top: True`.
+   - `attach_counterspell_annotation(card)`: convenience helper to
+     set on a Card instance at deck-build time.
+
+2. **policy/eligible_actions.py patch** -- honors target_stack_top:
+   - When set AND state.stack is empty: skip emitting the cast_spell
+     action (no legal target).
+   - When set AND state.stack is non-empty: resolve default_targets
+     to `[state.stack[-1].entry_id]` so the counter actually points
+     at something.
+
+   Edit is policy-layer only; substrate untouched.
+
+**Tests** in
+`tests/pillar_f_v0_2_playtest/test_phase2_counter_war.py`:
+11 tests across 4 classes:
+- **CounterspellRegistrationTests** (4): all 14 family resolvers
+  registered, annotation builder works for v11-shipped + sub-C-
+  backfilled cards, unknown card rejected.
+- **EligibleActionsCounterTests** (3): counter NOT eligible when
+  stack empty, eligible when non-empty (with correct top entry_id
+  in default_targets), targets resolve to TOP at cast time even with
+  multiple stack entries.
+- **CounterResolutionTests** (2): counterspell cast + resolve removes
+  target from stack; substrate's counter_target primitive sanity.
+- **CounterChainDepth3Test** (2): full 4-depth chain (P1 spell ->
+  P2 counter -> P3 counter -> P0 counter) resolves correctly with
+  correct cancellation pattern; simpler 3-depth chain where P3's
+  counter saves P1's spell from P2's counter.
+
+**All 11 pass. Full regression: 427/427 (224 substrate + 167 policy
++ 36 playtest).**
+
+~150 LOC production + ~270 LOC test.
+
+**Commit message:** "Phase 2 (mega-task v12): counter-war hook (counter_target_spell resolver + 14-card annotation helper)".

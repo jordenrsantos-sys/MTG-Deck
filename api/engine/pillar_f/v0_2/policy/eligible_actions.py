@@ -128,6 +128,17 @@ def compute_eligible_actions(
         # tracks the LLM-call cost, not the in-game mana cost). Engine
         # accepts the spell on faith. v11+ wires real mana payment.
         targets = annotation.get("default_targets") or []
+        # Sub-C Phase 2: counterspell-family cards carry a
+        # `target_stack_top: True` flag. When the stack is non-empty,
+        # resolve target to the top entry's id so the counter can
+        # actually point at something. If the stack is empty, the
+        # counter has no legal target and we skip emitting this cast
+        # action (LLM can't cast a counter with no target).
+        if annotation.get("target_stack_top"):
+            if not state.stack:
+                continue
+            top_entry = state.stack[-1]
+            targets = [top_entry.entry_id]
         actions.append({
             "action_type": "cast_spell",
             "card_id": cid,
